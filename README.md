@@ -147,8 +147,9 @@ and can be run from the command-line.
 Each mdio library will provide an associated CMake alias, e.g. mdio::mdio
 which can be use to link against mdio in a large project.
 
-
-
+## Authors
+- **Ben Lasscock** - *Initial Work* - [blasscoc](https://github.com/blasscoc)
+- **Brian Michell** - *Initial Work* - 
 
 
 
