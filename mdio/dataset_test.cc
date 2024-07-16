@@ -1,0 +1,491 @@
+#include <filesystem>
+#include <fstream>
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
+#include <sstream>
+
+#include "tensorstore/driver/driver.h"
+#include "tensorstore/driver/registry.h"
+#include "tensorstore/index_space/dim_expression.h"
+#include "tensorstore/kvstore/kvstore.h"
+#include "tensorstore/kvstore/operations.h"
+#include "tensorstore/open.h"
+#include "tensorstore/tensorstore.h"
+#include "tensorstore/util/future.h"
+#include "tensorstore/util/status_testutil.h"
+#include <tensorstore/index_space/index_domain_builder.h>
+
+#include "mdio/dataset.h"
+#include "mdio/dataset_factory.h"
+
+namespace {
+::nlohmann::json GetToyExample() {
+    std::string schema = R"(
+        {
+  "metadata": {
+    "name": "campos_3d",
+    "apiVersion": "1.0.0",
+    "createdOn": "2023-12-12T15:02:06.413469-06:00",    
+    "attributes": {
+      "textHeader": [
+        "C01 .......................... ",
+        "C02 .......................... ",
+        "C03 .......................... "
+      ],
+      "foo": "bar"
+    }
+  },
+  "variables": [
+    {
+      "name": "image",
+      "dataType": "float32",
+      "dimensions": [
+        {"name": "inline", "size": 256},
+        {"name": "crossline", "size": 512},
+        {"name": "depth", "size": 384}
+      ],
+      "metadata": {
+        "chunkGrid": {
+          "name": "regular",
+          "configuration": { "chunkShape": [128, 128, 128] }
+        },
+        "statsV1": {
+          "count": 100,
+          "sum": 1215.1,
+          "sumSquares": 125.12,
+          "min": 5.61,
+          "max": 10.84,
+          "histogram": {"binCenters":  [1, 2], "counts":  [10, 15]}
+        },
+        "attributes": {
+          "fizz": "buzz"
+        }
+    },
+      "coordinates": ["inline", "crossline", "depth", "cdp-x", "cdp-y"],
+      "compressor": {"name": "blosc", "algorithm": "zstd"}
+    },
+    {
+      "name": "velocity",
+      "dataType": "float16",
+      "dimensions": ["inline", "crossline", "depth"],
+      "metadata": {
+        "chunkGrid": {
+          "name": "regular",
+          "configuration": { "chunkShape": [128, 128, 128] }
+        },
+        "unitsV1": {"speed": "m/s"}
+      },
+      "coordinates": ["inline", "crossline", "depth", "cdp-x", "cdp-y"]
+    },
+    {
+      "name": "image_inline",
+      "dataType": "float32",
+      "dimensions": ["inline", "crossline", "depth"],
+      "longName": "inline optimized version of 3d_stack",
+      "compressor": {"name": "blosc", "algorithm": "zstd"},
+      "metadata": {
+        "chunkGrid": {
+          "name": "regular",
+          "configuration": { "chunkShape": [4, 512, 512] }
+        }
+      },
+      "coordinates": ["inline", "crossline", "depth", "cdp-x", "cdp-y"]
+    },
+    {
+      "name": "image_headers",
+      "dataType": {
+        "fields": [
+          {"name": "cdp-x", "format": "int32"},
+          {"name": "cdp-y", "format": "int32"},
+          {"name": "elevation", "format": "float16"},
+          {"name": "some_scalar", "format": "float16"}
+        ]
+      },
+      "dimensions": ["inline", "crossline"],
+      "metadata": {
+        "chunkGrid": {
+          "name": "regular",
+          "configuration": { "chunkShape": [128, 128] }
+        }
+      },
+      "coordinates": ["inline", "crossline", "cdp-x", "cdp-y"]
+    },
+    {
+      "name": "inline",
+      "dataType": "uint32",
+      "dimensions": [{"name": "inline", "size": 256}]
+    },
+    {
+      "name": "crossline",
+      "dataType": "uint32",
+      "dimensions": [{"name": "crossline", "size": 512}]
+    },
+    {
+      "name": "depth",
+      "dataType": "uint32",
+      "dimensions": [{"name": "depth", "size": 384}],
+      "metadata": {
+        "unitsV1": { "length": "m" }
+      }
+    },
+    {
+      "name": "cdp-x",
+      "dataType": "float32",
+      "dimensions": [
+        {"name": "inline", "size": 256},
+        {"name": "crossline", "size": 512}
+      ],
+      "metadata": {
+        "unitsV1": { "length": "m" }
+      }
+    },
+    {
+      "name": "cdp-y",
+      "dataType": "float32",
+      "dimensions": [
+        {"name": "inline", "size": 256},
+        {"name": "crossline", "size": 512}
+      ],
+      "metadata": {
+        "unitsV1": { "length": "m" }
+      }
+    }
+  ]
+}
+    )";
+    return ::nlohmann::json::parse(schema);
+};
+
+::nlohmann::json base_variable = {{"driver", "zarr"},
+                                  {"kvstore", {{"driver", "file"}, {"path", "name"}}},
+                                  {"attributes",
+                                   {
+                                       {"long_name", "foooooo ....."},  // required
+                                       {"dimension_names", {"x", "y"}}, // required
+                                   }},
+                                  {"metadata",
+                                   {
+                                       {"compressor", {{"id", "blosc"}}},
+                                       {"dtype", "<i2"},
+                                       {"shape", {500, 500}},
+                                       {"dimension_separator", "/"},
+                                   }}};
+
+std::vector<::nlohmann::json> make_vars() {
+    auto jvar1 = base_variable;
+    jvar1["kvstore"]["path"] = "dataset/var1";
+    jvar1["attributes"]["long_name"] = "variable_1";
+    jvar1["metadata"]["shape"] = {100, 200, 300};
+    jvar1["attributes"]["dimension_names"] = {"inline", "crossline", "sample"};
+    jvar1["attributes"]["coordinates"] = {"var2"};
+
+    auto jvar2 = base_variable;
+    jvar2["kvstore"]["path"] = "dataset/var2";
+    jvar2["attributes"]["long_name"] = "variable_2";
+    jvar2["metadata"]["shape"] = {100, 200};
+    jvar2["metadata"]["chunks"] = {20, 20};
+    jvar2["attributes"]["dimension_names"] = {"inline", "crossline"};
+
+    return {jvar1, jvar2};
+}
+
+mdio::Dataset make() {
+    auto json_vars = make_vars();
+
+    auto var1 =
+        mdio::Variable<>::Open(json_vars[0], mdio::constants::kCreateClean)
+            .value();
+
+    auto var2 =
+        mdio::Variable<>::Open(json_vars[1], mdio::constants::kCreateClean)
+            .value();
+
+    ::nlohmann::json metadata = {{"name", "my dataset"}};
+
+    mdio::VariableCollection variables;
+    variables.add("var1", var1);
+    variables.add("var2", var2);
+
+    mdio::coordinate_map coords = {
+        {"var1", {"inline", "crossline", "sample"}},
+        {"var2", {"inline", "crossline"}},
+    };
+
+    // there is an implied sorting for dimensions here.
+    auto domain_result = tensorstore::IndexDomainBuilder<>(3)
+                             .origin({0, 0, 0})
+                             .shape({100, 200, 300})
+                             .labels({"inline", "crossline", "sample"})
+                             .Finalize();
+
+    return {metadata, variables, coords, domain_result.value()};
+}
+
+TEST(DatasetSpec, valid) {
+    auto dataset = make();
+
+    for (const auto& i : dataset.variables.get_keys()) {
+        std::cout << i << std::endl;
+    }
+    auto result = dataset.variables.get("var1");
+    std::cout << result.status() << std::endl;
+}
+
+TEST(Dataset, isel) {
+    auto json_vars = GetToyExample();
+
+    auto dataset = mdio::Dataset::from_json(json_vars,
+                                            "zarrs/acceptance",
+                                            mdio::constants::kCreateClean)
+                       .result();
+
+    ASSERT_TRUE(dataset.ok());
+
+    mdio::SliceDescriptor desc1 = {"inline", 0, 5, 1};
+
+    auto slice = dataset->isel(desc1);
+
+    ASSERT_TRUE(slice.ok());
+
+    auto domain = slice->domain;
+
+    ASSERT_EQ(domain.rank(), 3) << "Tensorstore should have 3 dimensions";
+
+    // Check depth range
+    auto depthRange = domain[1];
+    EXPECT_EQ(depthRange.interval().inclusive_min(), 0) << "Depth range should start at 0";
+    EXPECT_EQ(depthRange.interval().exclusive_max(), 384) << "Depth range should end at 384";
+
+    // Check crossline range
+    auto crosslineRange = domain[0];
+    EXPECT_EQ(crosslineRange.interval().inclusive_min(), 0) << "Crossline range should start at 0";
+    EXPECT_EQ(crosslineRange.interval().exclusive_max(), 512) << "Crossline range should end at 512";
+
+    // Check inline range
+    auto inlineRange = domain[2];
+    EXPECT_EQ(inlineRange.interval().inclusive_min(), 0) << "Inline range should start at 0";
+    EXPECT_EQ(inlineRange.interval().exclusive_max(), 5) << "Inline range should end at 5";
+}
+
+TEST(Dataset, FromConsolidatedMeta) {
+    auto json_vars = GetToyExample();
+
+    auto dataset = mdio::Dataset::from_json(json_vars,
+                                            "zarrs/acceptance",
+                                            mdio::constants::kCreateClean)
+                       .result();
+
+    ASSERT_TRUE(dataset.ok());
+
+    std::string dataset_path = "zarrs/acceptance/";
+
+    auto new_dataset = mdio::Dataset::Open(dataset_path, mdio::constants::kOpen).result();
+    std::cout << new_dataset.status() << std::endl;
+    std::cout << new_dataset.value() << std::endl;
+}
+
+TEST(Dataset, Open) {
+    auto json_schema = GetToyExample();
+
+    auto validated_schema = Construct(json_schema, "zarrs/acceptance");
+
+    ASSERT_TRUE(validated_schema.ok());
+
+    auto [metadata, json_vars] = validated_schema.value();
+
+    std::cout << json_vars[0] << std::endl;
+
+    auto result = mdio::Dataset::Open(
+                      metadata, json_vars, mdio::constants::kCreateClean)
+                      .result();
+
+    ASSERT_TRUE(result.ok());
+
+    std::cout << result.value() << std::endl;
+}
+
+TEST(Dataset, OpenWithContext) {
+    // tests the struct array on creation
+    auto concurrency_json = ::nlohmann::json::parse(R"({"data_copy_concurrency": {"limit": 2}})");
+
+    auto spec = mdio::Context::Spec::FromJson(concurrency_json);
+    ASSERT_TRUE(spec.ok());
+
+    auto context = mdio::Context(spec.value());
+
+    auto json_schema = GetToyExample();
+
+    auto validated_schema = Construct(json_schema, "zarrs/acceptance");
+
+    ASSERT_TRUE(validated_schema.ok());
+
+    auto [metadata, json_vars] = validated_schema.value();
+
+    std::cout << json_vars[0] << std::endl;
+
+    auto result =
+        mdio::Dataset::Open(
+            metadata, json_vars, mdio::constants::kCreateClean, context)
+            .result();
+
+    ASSERT_TRUE(result.ok());
+
+    std::cout << result.value() << std::endl;
+}
+
+TEST(Dataset, FromJson) {
+    auto json_vars = GetToyExample();
+
+    auto dataset = mdio::Dataset::from_json(json_vars,
+                                            "zarrs/acceptance",
+                                            mdio::constants::kCreateClean)
+                       .result();
+
+    std::cout << dataset.status() << std::endl;
+}
+
+TEST(Dataset, MultiFuture) {
+    auto json_vars = make_vars();
+
+    std::vector<mdio::Future<mdio::Variable<>>> variables;
+    std::vector<tensorstore::Promise<void>> promises;
+    std::vector<tensorstore::AnyFuture> futures;
+
+    for (const auto& json : json_vars) {
+        auto pair = tensorstore::PromiseFuturePair<void>::Make();
+
+        auto var =
+            mdio::Variable<>::Open(json, mdio::constants::kCreateClean);
+
+        // Attach a continuation to the first future
+        var.ExecuteWhenReady([promise = std::move(pair.promise)](tensorstore::ReadyFuture<mdio::Variable<>> readyVar) {
+            // When firstFuture is ready, fulfill the second promise
+            promise.SetResult(absl::OkStatus()); // Set appropriate result or status
+        });
+
+        variables.push_back(std::move(var));
+        promises.push_back(std::move(pair.promise));
+        futures.push_back(std::move(pair.future));
+    }
+
+    auto all_done_future = tensorstore::WaitAllFuture(futures);
+
+    for (auto var : variables) {
+        std::cout << var.ready() << std::endl;
+    }
+
+    all_done_future.Wait();
+    std::cout << all_done_future.result().status() << std::endl;
+
+    for (auto var : variables) {
+        std::cout << var.ready() << std::endl;
+    }
+}
+
+TEST(Dataset, coordinates) {
+    auto json_vars = GetToyExample();
+
+    auto dataset = mdio::Dataset::from_json(json_vars,
+                                            "zarrs/acceptance",
+                                            mdio::constants::kCreateClean);
+
+
+    ASSERT_TRUE(dataset.status().ok()) << dataset.status();
+    EXPECT_TRUE(dataset.value().coordinates.size() > 0) << "Dataset expected to have coordinates but none were present!";
+    
+    
+    std::string path = "zarrs/acceptance";
+    auto dataset_open = mdio::Dataset::Open(path, mdio::constants::kOpen);
+    ASSERT_TRUE(dataset_open.status().ok()) << dataset_open.status();
+    EXPECT_TRUE(dataset_open.value().coordinates.size() > 0) << "Dataset expected to have coordinates but none were present!";
+}
+
+TEST(Dataset, create) {
+    std::filesystem::remove_all("zarrs/acceptance");
+
+    // Create with no pre-existing Dataset
+    auto json_vars = GetToyExample();
+    auto dataset = mdio::Dataset::from_json(json_vars,
+                                           "zarrs/acceptance",
+                                           mdio::constants::kCreate);
+    ASSERT_TRUE(dataset.status().ok()) << dataset.status();
+
+    // Create with pre-existing Dataset
+    dataset = mdio::Dataset::from_json(json_vars,
+                                            "zarrs/acceptance",
+                                            mdio::constants::kCreateClean);
+    ASSERT_TRUE(dataset.status().ok()) << dataset.status();
+
+    // Simulate trying to create the same dataset but with slightly different metadata
+    json_vars["variables"][0]["metadata"]["statsV1"]["count"] = 222;
+    json_vars["metadata"]["foo"] = "nobar";
+    auto dataset_overwrite = mdio::Dataset::from_json(json_vars,
+                                                      "zarrs/acceptance",
+                                                      mdio::constants::kCreate);
+
+    EXPECT_FALSE(dataset_overwrite.status().ok()) << "Dataset successfully overwrote an existing dataset!";
+}
+
+TEST(Dataset, CommitMetadata) {
+    std::cout << "NOTICE: After this test is run, please verify the contents of 'image' are still correct!\n";
+    std::filesystem::remove_all("zarrs/acceptance");
+    auto json_vars = GetToyExample();
+
+    auto datasetRes = mdio::Dataset::from_json(json_vars,"zarrs/acceptance",mdio::constants::kCreateClean);
+
+
+    ASSERT_TRUE(datasetRes.status().ok()) << datasetRes.status();
+    auto dataset = datasetRes.value();
+
+    auto imageRes = dataset.variables.at("image");
+    ASSERT_TRUE(imageRes.ok()) << imageRes.status();
+    auto image = imageRes.value();
+
+    auto attrs = image.GetAttributes();
+    attrs["statsV1"]["histogram"]["binCenters"] = {2, 4, 6};
+    attrs["statsV1"]["histogram"]["counts"] = {10, 15, 20};
+    auto attrsUpdateRes = image.UpdateAttributes<float>(attrs);
+    ASSERT_TRUE(attrsUpdateRes.status().ok()) << attrsUpdateRes.status();
+
+    auto commitRes = dataset.CommitMetadata();
+
+    EXPECT_TRUE(commitRes.status().ok()) << commitRes.status();
+}
+
+TEST(Dataset, CommitSlicedMetadata) {
+    std::filesystem::remove_all("zarrs/acceptance");
+    auto json_vars = GetToyExample();
+
+    auto datasetRes = mdio::Dataset::from_json(json_vars,
+                                            "zarrs/acceptance",
+                                            mdio::constants::kCreateClean);
+
+    ASSERT_TRUE(datasetRes.status().ok()) << datasetRes.status();
+    auto dataset = datasetRes.value();
+
+    mdio::SliceDescriptor desc1 = {"inline", 0, 5, 1};
+    mdio::SliceDescriptor desc2 = {"crossline", 0, 5, 1};
+
+    auto sliceRes = dataset.isel(desc1, desc2);
+
+    ASSERT_TRUE(sliceRes.status().ok()) << sliceRes.status();
+    auto slice = sliceRes.value();
+
+    auto imageRes = slice.variables.at("image");
+    ASSERT_TRUE(imageRes.ok()) << imageRes.status();
+    auto image = imageRes.value();
+
+    auto attrs = image.GetAttributes();
+    attrs["statsV1"]["histogram"]["binCenters"] = {2, 4, 6};
+    attrs["statsV1"]["histogram"]["counts"] = {10, 15, 20};
+
+    auto attrsUpdateRes = image.UpdateAttributes<float>(attrs);
+    ASSERT_TRUE(attrsUpdateRes.status().ok()) << attrsUpdateRes.status();
+
+    auto commitRes = dataset.CommitMetadata();
+
+    EXPECT_TRUE(commitRes.status().ok()) << commitRes.status();
+
+}
+} // namespace

@@ -1,0 +1,1 @@
+// Only needed for CMake functionality for building libraries
