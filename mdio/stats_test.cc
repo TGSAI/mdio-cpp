@@ -6,197 +6,192 @@
 namespace {
 
 auto getCenterHist() {
-    std::vector<float> binCenters = {1.0, 2.0, 3.0};
-    std::vector<int32_t> counts = {1, 2, 3};
-    return std::make_unique<mdio::internal::CenteredBinHistogram<float>>(binCenters, counts);
+  std::vector<float> binCenters = {1.0, 2.0, 3.0};
+  std::vector<int32_t> counts = {1, 2, 3};
+  return std::make_unique<mdio::internal::CenteredBinHistogram<float>>(
+      binCenters, counts);
 }
 
 auto getEdgeHist() {
-    std::vector<float> binEdges = {0.0, 1.0, 2.0, 3.0};
-    std::vector<float> binWidths = {1.0, 1.0, 1.0};
-    std::vector<int32_t> counts = {1, 2, 3};
-    return std::make_unique<mdio::internal::EdgeDefinedHistogram<float>>(binEdges, binWidths, counts);
+  std::vector<float> binEdges = {0.0, 1.0, 2.0, 3.0};
+  std::vector<float> binWidths = {1.0, 1.0, 1.0};
+  std::vector<int32_t> counts = {1, 2, 3};
+  return std::make_unique<mdio::internal::EdgeDefinedHistogram<float>>(
+      binEdges, binWidths, counts);
 }
 
 TEST(HistogramTest, ConstructCenterHist) {
-    auto histogram = getCenterHist();
-    nlohmann::json expected = {{"histogram", {{"binCenters", {1.0, 2.0, 3.0}}, {"counts", {1, 2, 3}}}}};
-    EXPECT_EQ(histogram->getHistogram(), expected);
+  auto histogram = getCenterHist();
+  nlohmann::json expected = {
+      {"histogram", {{"binCenters", {1.0, 2.0, 3.0}}, {"counts", {1, 2, 3}}}}};
+  EXPECT_EQ(histogram->getHistogram(), expected);
 }
 
 TEST(HistogramTest, ConstructEdgeHist) {
-    auto histogram = getEdgeHist();
-    nlohmann::json expected = {
-        {"histogram", {{"binEdges", {0.0, 1.0, 2.0, 3.0}}, {"binWidths", {1.0, 1.0, 1.0}}, {"counts", {1, 2, 3}}}}};
-    EXPECT_EQ(histogram->getHistogram(), expected);
+  auto histogram = getEdgeHist();
+  nlohmann::json expected = {{"histogram",
+                              {{"binEdges", {0.0, 1.0, 2.0, 3.0}},
+                               {"binWidths", {1.0, 1.0, 1.0}},
+                               {"counts", {1, 2, 3}}}}};
+  EXPECT_EQ(histogram->getHistogram(), expected);
 }
 
 TEST(HistogramTest, CenteredBinHistogramClone) {
-    auto histogram = getCenterHist();
-    auto clone = histogram->clone();
-    EXPECT_EQ(clone->getHistogram(), histogram->getHistogram());
+  auto histogram = getCenterHist();
+  auto clone = histogram->clone();
+  EXPECT_EQ(clone->getHistogram(), histogram->getHistogram());
 }
 
 TEST(HistogramTest, EdgeDefinedHistogramClone) {
-    auto histogram = getEdgeHist();
-    auto clone = histogram->clone();
-    EXPECT_EQ(clone->getHistogram(), histogram->getHistogram());
+  auto histogram = getEdgeHist();
+  auto clone = histogram->clone();
+  EXPECT_EQ(clone->getHistogram(), histogram->getHistogram());
 }
 
 TEST(HistogramTest, CenteredFromJSON) {
-    nlohmann::json expected = {{"histogram", {{"binCenters", {1.0, 2.0, 3.0}}, {"counts", {1, 2, 3}}}}};
-    auto inertHist = mdio::internal::CenteredBinHistogram<float>({}, {});
-    auto attrsRes = inertHist.FromJson(expected);
-    ASSERT_TRUE(attrsRes.status().ok()) << attrsRes.status();
-    auto histogram = std::move(attrsRes.value());
-    EXPECT_EQ(histogram->getHistogram(), expected);
+  nlohmann::json expected = {
+      {"histogram", {{"binCenters", {1.0, 2.0, 3.0}}, {"counts", {1, 2, 3}}}}};
+  auto inertHist = mdio::internal::CenteredBinHistogram<float>({}, {});
+  auto attrsRes = inertHist.FromJson(expected);
+  ASSERT_TRUE(attrsRes.status().ok()) << attrsRes.status();
+  auto histogram = std::move(attrsRes.value());
+  EXPECT_EQ(histogram->getHistogram(), expected);
 }
 
 TEST(HistogramTest, EdgeFromJSON) {
-    nlohmann::json expected = {
-        {"histogram", {{"binEdges", {0.0, 1.0, 2.0, 3.0}}, {"binWidths", {1.0, 1.0, 1.0}}, {"counts", {1, 2, 3}}}}};
-    auto inertHist = mdio::internal::EdgeDefinedHistogram<float>({}, {}, {});
-    auto attrsRes = inertHist.FromJson(expected);
-    ASSERT_TRUE(attrsRes.status().ok()) << attrsRes.status();
-    auto histogram = std::move(attrsRes.value());
-    EXPECT_EQ(histogram->getHistogram(), expected);
+  nlohmann::json expected = {{"histogram",
+                              {{"binEdges", {0.0, 1.0, 2.0, 3.0}},
+                               {"binWidths", {1.0, 1.0, 1.0}},
+                               {"counts", {1, 2, 3}}}}};
+  auto inertHist = mdio::internal::EdgeDefinedHistogram<float>({}, {}, {});
+  auto attrsRes = inertHist.FromJson(expected);
+  ASSERT_TRUE(attrsRes.status().ok()) << attrsRes.status();
+  auto histogram = std::move(attrsRes.value());
+  EXPECT_EQ(histogram->getHistogram(), expected);
 }
 
 TEST(SummaryStatsTest, FromJson) {
-    nlohmann::json expected = {
-        {"count", 100},
-        {"min", -1000.0},
-        {"max", 1000.0},
-        {"sum", 0.0},
-        {"sumSquares", 0.0},
-        {"histogram", {{"binCenters", {1.0, 2.0, 3.0}}, {"counts", {1, 2, 3}}}}};
-    auto statsRes = mdio::internal::SummaryStats::FromJson(expected);
-    ASSERT_TRUE(statsRes.status().ok()) << statsRes.status();
-    auto stats = statsRes.value();
-    EXPECT_EQ(stats.getBindable(), expected);
+  nlohmann::json expected = {
+      {"count", 100},
+      {"min", -1000.0},
+      {"max", 1000.0},
+      {"sum", 0.0},
+      {"sumSquares", 0.0},
+      {"histogram", {{"binCenters", {1.0, 2.0, 3.0}}, {"counts", {1, 2, 3}}}}};
+  auto statsRes = mdio::internal::SummaryStats::FromJson(expected);
+  ASSERT_TRUE(statsRes.status().ok()) << statsRes.status();
+  auto stats = statsRes.value();
+  EXPECT_EQ(stats.getBindable(), expected);
 }
 
 TEST(SummaryStatsTest, FromJsonInt) {
-    nlohmann::json expected = {
-        {"count", 100},
-        {"min", -1000},
-        {"max", 1000},
-        {"sum", 0},
-        {"sumSquares", 0},
-        {"histogram", {{"binCenters", {1.0, 2.0, 3.0}}, {"counts", {1, 2, 3}}}}};
-    auto statsRes = mdio::internal::SummaryStats::FromJson<int32_t>(expected);
-    ASSERT_TRUE(statsRes.status().ok()) << statsRes.status();
-    auto stats = statsRes.value();
-    EXPECT_EQ(stats.getBindable(), expected);
+  nlohmann::json expected = {
+      {"count", 100},
+      {"min", -1000},
+      {"max", 1000},
+      {"sum", 0},
+      {"sumSquares", 0},
+      {"histogram", {{"binCenters", {1.0, 2.0, 3.0}}, {"counts", {1, 2, 3}}}}};
+  auto statsRes = mdio::internal::SummaryStats::FromJson<int32_t>(expected);
+  ASSERT_TRUE(statsRes.status().ok()) << statsRes.status();
+  auto stats = statsRes.value();
+  EXPECT_EQ(stats.getBindable(), expected);
 }
 
 TEST(UserAttributesTest, FromJsonNoStats) {
-    nlohmann::json expected = {{"attributes", {{"foo", "bar"}, {"life", 42}, {"pi", 3.14159}, {"truth", true}, {"lies", false}, {"nothing", nullptr}}}};
-    auto attrsRes = mdio::UserAttributes::FromJson(expected);
-    ASSERT_TRUE(attrsRes.status().ok()) << attrsRes.status();
-    auto attrs = attrsRes.value();
-    EXPECT_EQ(attrs.ToJson(), expected);
+  nlohmann::json expected = {{"attributes",
+                              {{"foo", "bar"},
+                               {"life", 42},
+                               {"pi", 3.14159},
+                               {"truth", true},
+                               {"lies", false},
+                               {"nothing", nullptr}}}};
+  auto attrsRes = mdio::UserAttributes::FromJson(expected);
+  ASSERT_TRUE(attrsRes.status().ok()) << attrsRes.status();
+  auto attrs = attrsRes.value();
+  EXPECT_EQ(attrs.ToJson(), expected);
 }
 
 TEST(UserAttributesTest, FromJsonNoAttrs) {
-    nlohmann::json expected = {
-        {"statsV1",
-         {{"histogram", {{"binCenters", {1.0, 2.0, 3.0}}, {"counts", {1, 2, 3}}}},
-          {"count", 100},
-          {"min", -1000.0},
-          {"max", 1000.0},
-          {"sum", 0.0},
-          {"sumSquares", 0.0}
-         }
-        }
-    };
-    auto attrsRes = mdio::UserAttributes::FromJson(expected);
-    ASSERT_TRUE(attrsRes.status().ok()) << attrsRes.status();
-    auto attrs = attrsRes.value();
-    EXPECT_EQ(attrs.ToJson(), expected);
-}
-
-TEST(UserAttributesTest, Nothing) {
-    nlohmann::json expected = nlohmann::json::object();
-    auto attrs = mdio::UserAttributes::FromJson(expected);
-    EXPECT_EQ(attrs.value().ToJson(), expected);
-    auto none = mdio::UserAttributes::FromJson(expected);
-    ASSERT_TRUE(none.status().ok()) << none.status();
-    EXPECT_EQ(none.value().ToJson(), expected);
-}
-
-TEST(UserAttributesTest, FromJsonWithAttrs) {
-    nlohmann::json expected = {
-    {"statsV1", {
-        {"histogram", {
-            {"binCenters", {1.0, 2.0, 3.0}},
-            {"counts", {1, 2, 3}}
-        }},
+  nlohmann::json expected = {
+      {"statsV1",
+       {{"histogram", {{"binCenters", {1.0, 2.0, 3.0}}, {"counts", {1, 2, 3}}}},
         {"count", 100},
         {"min", -1000.0},
         {"max", 1000.0},
         {"sum", 0.0},
-        {"sumSquares", 0.0}
-    }},
-        {"attributes", {
-            {"foo", "bar"},
-            {"life", 42},
-            {"pi", 3.14159},
-            {"truth", true},
-            {"lies", false},
-            {"nothing", nullptr}
-        }}
-    };
-    auto attrsRes = mdio::UserAttributes::FromJson(expected);
-    ASSERT_TRUE(attrsRes.status().ok()) << attrsRes.status();
-    auto attrs = attrsRes.value();
-    EXPECT_EQ(attrs.ToJson(), expected);
+        {"sumSquares", 0.0}}}};
+  auto attrsRes = mdio::UserAttributes::FromJson(expected);
+  ASSERT_TRUE(attrsRes.status().ok()) << attrsRes.status();
+  auto attrs = attrsRes.value();
+  EXPECT_EQ(attrs.ToJson(), expected);
 }
 
-TEST(UserAttributesTest, FromJsonStatsList) {
-    nlohmann::json expected = {
-    {"statsV1", {
-        {
-            {"histogram", {
-                {"binCenters", {1.0, 2.0, 3.0}},
-                {"counts", {1, 2, 3}}
-            }},
-            {"count", 100},
-            {"min", -1000.0},
-            {"max", 1000.0},
-            {"sum", 2000.0},
-            {"sumSquares", 20000.0}
-        },
-        {
-            {"histogram", {
-                {"binEdges", {0.5, 1.5, 2.5, 3.5}},
-                {"binWidths", {1.5, 3.0, 9.0}},
-                {"counts", {3, 2, 1}}
-            }},
-            {"count", 789},
-            {"min", -500.0},
-            {"max", 500.0},
-            {"sum", 1000.0},
-            {"sumSquares", 15000.0}
-        }
-    }},
-    {"attributes", {
-        {"foo", "bar"},
+TEST(UserAttributesTest, Nothing) {
+  nlohmann::json expected = nlohmann::json::object();
+  auto attrs = mdio::UserAttributes::FromJson(expected);
+  EXPECT_EQ(attrs.value().ToJson(), expected);
+  auto none = mdio::UserAttributes::FromJson(expected);
+  ASSERT_TRUE(none.status().ok()) << none.status();
+  EXPECT_EQ(none.value().ToJson(), expected);
+}
+
+TEST(UserAttributesTest, FromJsonWithAttrs) {
+  nlohmann::json expected = {
+      {"statsV1",
+       {{"histogram", {{"binCenters", {1.0, 2.0, 3.0}}, {"counts", {1, 2, 3}}}},
+        {"count", 100},
+        {"min", -1000.0},
+        {"max", 1000.0},
+        {"sum", 0.0},
+        {"sumSquares", 0.0}}},
+      {"attributes",
+       {{"foo", "bar"},
         {"life", 42},
         {"pi", 3.14159},
         {"truth", true},
         {"lies", false},
-        {"nothing", nullptr}
-    }}
-    };
-    auto attrsRes = mdio::UserAttributes::FromJson(expected);
-    ASSERT_TRUE(attrsRes.status().ok()) << attrsRes.status();
-    auto attrs = attrsRes.value();
-    EXPECT_EQ(attrs.ToJson(), expected);
+        {"nothing", nullptr}}}};
+  auto attrsRes = mdio::UserAttributes::FromJson(expected);
+  ASSERT_TRUE(attrsRes.status().ok()) << attrsRes.status();
+  auto attrs = attrsRes.value();
+  EXPECT_EQ(attrs.ToJson(), expected);
+}
+
+TEST(UserAttributesTest, FromJsonStatsList) {
+  nlohmann::json expected = {
+      {"statsV1",
+       {{{"histogram",
+          {{"binCenters", {1.0, 2.0, 3.0}}, {"counts", {1, 2, 3}}}},
+         {"count", 100},
+         {"min", -1000.0},
+         {"max", 1000.0},
+         {"sum", 2000.0},
+         {"sumSquares", 20000.0}},
+        {{"histogram",
+          {{"binEdges", {0.5, 1.5, 2.5, 3.5}},
+           {"binWidths", {1.5, 3.0, 9.0}},
+           {"counts", {3, 2, 1}}}},
+         {"count", 789},
+         {"min", -500.0},
+         {"max", 500.0},
+         {"sum", 1000.0},
+         {"sumSquares", 15000.0}}}},
+      {"attributes",
+       {{"foo", "bar"},
+        {"life", 42},
+        {"pi", 3.14159},
+        {"truth", true},
+        {"lies", false},
+        {"nothing", nullptr}}}};
+  auto attrsRes = mdio::UserAttributes::FromJson(expected);
+  ASSERT_TRUE(attrsRes.status().ok()) << attrsRes.status();
+  auto attrs = attrsRes.value();
+  EXPECT_EQ(attrs.ToJson(), expected);
 }
 
 TEST(UserAttributesTest, FromDataset) {
-    std::string schema = R"(
+  std::string schema = R"(
         {
   "metadata": {
     "name": "campos_3d",
@@ -329,94 +324,103 @@ TEST(UserAttributesTest, FromDataset) {
   ]
 }
     )";
-    auto j = nlohmann::json::parse(schema);
+  auto j = nlohmann::json::parse(schema);
 
-    auto imgRes = mdio::UserAttributes::FromDatasetJson(j, "image");
-    ASSERT_TRUE(imgRes.status().ok()) << imgRes.status();
-    nlohmann::json expectedImage = nlohmann::json::object();
-    expectedImage["statsV1"] = j["variables"][0]["metadata"]["statsV1"];
-    expectedImage["attributes"] = j["variables"][0]["metadata"]["attributes"];
+  auto imgRes = mdio::UserAttributes::FromDatasetJson(j, "image");
+  ASSERT_TRUE(imgRes.status().ok()) << imgRes.status();
+  nlohmann::json expectedImage = nlohmann::json::object();
+  expectedImage["statsV1"] = j["variables"][0]["metadata"]["statsV1"];
+  expectedImage["attributes"] = j["variables"][0]["metadata"]["attributes"];
 
-    auto boundUserAttrs = imgRes.value().ToJson();
-    ASSERT_TRUE(boundUserAttrs.contains("statsV1"));
-    ASSERT_TRUE(boundUserAttrs.contains("attributes"));
+  auto boundUserAttrs = imgRes.value().ToJson();
+  ASSERT_TRUE(boundUserAttrs.contains("statsV1"));
+  ASSERT_TRUE(boundUserAttrs.contains("attributes"));
 
-    // Floating point error is expected but gross.
-    EXPECT_EQ(boundUserAttrs["attributes"], expectedImage["attributes"]);
-    EXPECT_NEAR(boundUserAttrs["statsV1"]["count"], expectedImage["statsV1"]["count"], 1e-4);
-    EXPECT_NEAR(boundUserAttrs["statsV1"]["min"], expectedImage["statsV1"]["min"], 1e-4);
-    EXPECT_NEAR(boundUserAttrs["statsV1"]["max"], expectedImage["statsV1"]["max"], 1e-4);
-    EXPECT_NEAR(boundUserAttrs["statsV1"]["sum"], expectedImage["statsV1"]["sum"], 1e-4);
-    EXPECT_NEAR(boundUserAttrs["statsV1"]["sumSquares"], expectedImage["statsV1"]["sumSquares"], 1e-4);
-    // These should be ints
-    EXPECT_EQ(boundUserAttrs["statsV1"]["histogram"]["binCenters"][0], expectedImage["statsV1"]["histogram"]["binCenters"][0]);
-    EXPECT_EQ(boundUserAttrs["statsV1"]["histogram"]["binCenters"][1], expectedImage["statsV1"]["histogram"]["binCenters"][1]);
-    EXPECT_EQ(boundUserAttrs["statsV1"]["histogram"]["counts"][0], expectedImage["statsV1"]["histogram"]["counts"][0]);
-    EXPECT_EQ(boundUserAttrs["statsV1"]["histogram"]["counts"][1], expectedImage["statsV1"]["histogram"]["counts"][1]);
+  // Floating point error is expected but gross.
+  EXPECT_EQ(boundUserAttrs["attributes"], expectedImage["attributes"]);
+  EXPECT_NEAR(boundUserAttrs["statsV1"]["count"],
+              expectedImage["statsV1"]["count"], 1e-4);
+  EXPECT_NEAR(boundUserAttrs["statsV1"]["min"], expectedImage["statsV1"]["min"],
+              1e-4);
+  EXPECT_NEAR(boundUserAttrs["statsV1"]["max"], expectedImage["statsV1"]["max"],
+              1e-4);
+  EXPECT_NEAR(boundUserAttrs["statsV1"]["sum"], expectedImage["statsV1"]["sum"],
+              1e-4);
+  EXPECT_NEAR(boundUserAttrs["statsV1"]["sumSquares"],
+              expectedImage["statsV1"]["sumSquares"], 1e-4);
+  // These should be ints
+  EXPECT_EQ(boundUserAttrs["statsV1"]["histogram"]["binCenters"][0],
+            expectedImage["statsV1"]["histogram"]["binCenters"][0]);
+  EXPECT_EQ(boundUserAttrs["statsV1"]["histogram"]["binCenters"][1],
+            expectedImage["statsV1"]["histogram"]["binCenters"][1]);
+  EXPECT_EQ(boundUserAttrs["statsV1"]["histogram"]["counts"][0],
+            expectedImage["statsV1"]["histogram"]["counts"][0]);
+  EXPECT_EQ(boundUserAttrs["statsV1"]["histogram"]["counts"][1],
+            expectedImage["statsV1"]["histogram"]["counts"][1]);
 
-    auto missingVar = mdio::UserAttributes::FromDatasetJson(j, "xline");
-    ASSERT_FALSE(missingVar.status().ok());
-    EXPECT_EQ(missingVar.status().message(), "Variable xline not found in Dataset");
+  auto missingVar = mdio::UserAttributes::FromDatasetJson(j, "xline");
+  ASSERT_FALSE(missingVar.status().ok());
+  EXPECT_EQ(missingVar.status().message(),
+            "Variable xline not found in Dataset");
 }
 
 TEST(UserAttributes, LocationAndReassignment) {
-    nlohmann::json expected = {
-    {"statsV1", {
-        {"histogram", {
-            {"binCenters", {1.0, 2.0, 3.0}},
-            {"counts", {1, 2, 3}}
-        }},
+  nlohmann::json expected = {
+      {"statsV1",
+       {{"histogram", {{"binCenters", {1.0, 2.0, 3.0}}, {"counts", {1, 2, 3}}}},
         {"count", 100},
         {"min", -1000.0},
         {"max", 1000.0},
         {"sum", 0.0},
-        {"sumSquares", 0.0}
-    }},
-        {"attributes", {
-            {"foo", "bar"},
-            {"life", 42},
-            {"pi", 3.14159},
-            {"truth", true},
-            {"lies", false},
-            {"nothing", nullptr}
-        }}
-    };
+        {"sumSquares", 0.0}}},
+      {"attributes",
+       {{"foo", "bar"},
+        {"life", 42},
+        {"pi", 3.14159},
+        {"truth", true},
+        {"lies", false},
+        {"nothing", nullptr}}}};
 
-    auto attrsRes = mdio::UserAttributes::FromJson(expected);
-    ASSERT_TRUE(attrsRes.status().ok()) << attrsRes.status();
+  auto attrsRes = mdio::UserAttributes::FromJson(expected);
+  ASSERT_TRUE(attrsRes.status().ok()) << attrsRes.status();
 
-    // This is the way I would like to do it. However, the copy constructor gets deleted by the compiler and
-    // pivoting to a unique_ptr should be safer from memory leaks and dangling pointers.
-    // auto attrs = attrsRes.value();
-    // ASSERT_EQ(attrs.ToJson(), expected);
-    // const void* attrsAddress = static_cast<const void*>(&attrs);
-    // auto dittoAttrsRes = mdio::UserAttributes::FromJson(attrs.ToJson());
-    // ASSERT_TRUE(dittoAttrsRes.status().ok()) << dittoAttrsRes.status();
-    // auto dittoAttrs = dittoAttrsRes.value();
-    // ASSERT_EQ(dittoAttrs.ToJson(), attrs.ToJson());
-    // const void* dittoAttrsAddress = static_cast<const void*>(&dittoAttrs);
-    // EXPECT_NE(attrsAddress, dittoAttrsAddress) << "Expected a different address but got the same one!";
+  // This is the way I would like to do it. However, the copy constructor gets
+  // deleted by the compiler and pivoting to a unique_ptr should be safer from
+  // memory leaks and dangling pointers. auto attrs = attrsRes.value();
+  // ASSERT_EQ(attrs.ToJson(), expected);
+  // const void* attrsAddress = static_cast<const void*>(&attrs);
+  // auto dittoAttrsRes = mdio::UserAttributes::FromJson(attrs.ToJson());
+  // ASSERT_TRUE(dittoAttrsRes.status().ok()) << dittoAttrsRes.status();
+  // auto dittoAttrs = dittoAttrsRes.value();
+  // ASSERT_EQ(dittoAttrs.ToJson(), attrs.ToJson());
+  // const void* dittoAttrsAddress = static_cast<const void*>(&dittoAttrs);
+  // EXPECT_NE(attrsAddress, dittoAttrsAddress) << "Expected a different address
+  // but got the same one!";
 
-    // expected["attributes"]["foo"] = "baz";
-    // dittoAttrs = mdio::UserAttributes::FromJson(expected).value();
-    // EXPECT_EQ(dittoAttrs.ToJson(), expected);
+  // expected["attributes"]["foo"] = "baz";
+  // dittoAttrs = mdio::UserAttributes::FromJson(expected).value();
+  // EXPECT_EQ(dittoAttrs.ToJson(), expected);
 
-    std::unique_ptr<mdio::UserAttributes> attrs = std::make_unique<mdio::UserAttributes>(attrsRes.value());
-    const void* attrsAddress = static_cast<const void*>(attrs.get());
-    auto dittoAttrsRes = mdio::UserAttributes::FromJson(attrs->ToJson());
-    ASSERT_TRUE(dittoAttrsRes.status().ok()) << dittoAttrsRes.status();
-    std::unique_ptr<mdio::UserAttributes> dittoAttrs = std::make_unique<mdio::UserAttributes>(dittoAttrsRes.value());
-    const void* dittoAttrsAddress = static_cast<const void*>(dittoAttrs.get());
-    EXPECT_NE(attrsAddress, dittoAttrsAddress) << "Expected a different address but got the same one!";
+  std::unique_ptr<mdio::UserAttributes> attrs =
+      std::make_unique<mdio::UserAttributes>(attrsRes.value());
+  const void* attrsAddress = static_cast<const void*>(attrs.get());
+  auto dittoAttrsRes = mdio::UserAttributes::FromJson(attrs->ToJson());
+  ASSERT_TRUE(dittoAttrsRes.status().ok()) << dittoAttrsRes.status();
+  std::unique_ptr<mdio::UserAttributes> dittoAttrs =
+      std::make_unique<mdio::UserAttributes>(dittoAttrsRes.value());
+  const void* dittoAttrsAddress = static_cast<const void*>(dittoAttrs.get());
+  EXPECT_NE(attrsAddress, dittoAttrsAddress)
+      << "Expected a different address but got the same one!";
 
-    expected["attributes"]["foo"] = "baz";
-    dittoAttrs = std::make_unique<mdio::UserAttributes>(mdio::UserAttributes::FromJson(expected).value());
-    EXPECT_EQ(dittoAttrs->ToJson(), expected);
-    const void* newDittoAttrsAddress = static_cast<const void*>(dittoAttrs.get());
-    EXPECT_NE(dittoAttrsAddress, newDittoAttrsAddress) << "Expected a different address but got the same one!";
+  expected["attributes"]["foo"] = "baz";
+  dittoAttrs = std::make_unique<mdio::UserAttributes>(
+      mdio::UserAttributes::FromJson(expected).value());
+  EXPECT_EQ(dittoAttrs->ToJson(), expected);
+  const void* newDittoAttrsAddress = static_cast<const void*>(dittoAttrs.get());
+  EXPECT_NE(dittoAttrsAddress, newDittoAttrsAddress)
+      << "Expected a different address but got the same one!";
 
-    // auto newAttrs = std::move(attr)
-
+  // auto newAttrs = std::move(attr)
 }
 
-} // namespace
+}  // namespace

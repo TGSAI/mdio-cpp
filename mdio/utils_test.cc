@@ -1,8 +1,9 @@
+#include "mdio/utils.h"
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include <nlohmann/json.hpp>
 
-#include "mdio/utils.h"
+#include <nlohmann/json.hpp>
 
 #define RUN_CLOUD false
 
@@ -15,9 +16,9 @@ const std::string kTestPath = "zarrs/testing/utils.mdio";
 
 /**
  * Sets up an inert dataset for testing destructive operations
-*/
+ */
 mdio::Future<mdio::Dataset> SETUP(const std::string& path) {
-    std::string datasetManifest = R"(
+  std::string datasetManifest = R"(
 {
   "metadata": {
     "name": "campos_3d",
@@ -151,94 +152,96 @@ mdio::Future<mdio::Dataset> SETUP(const std::string& path) {
 }
 )";
 
-    auto j = nlohmann::json::parse(datasetManifest);
-    auto dsRes = mdio::Dataset::from_json(j, path, mdio::constants::kCreateClean);
-    return dsRes;
+  auto j = nlohmann::json::parse(datasetManifest);
+  auto dsRes = mdio::Dataset::from_json(j, path, mdio::constants::kCreateClean);
+  return dsRes;
 }
 
 TEST(TrimDataset, noop) {
-    ASSERT_TRUE(SETUP(kTestPath).status().ok());
-    auto res = mdio::utils::TrimDataset(kTestPath);
-    EXPECT_TRUE(res.status().ok()) << res.status();
+  ASSERT_TRUE(SETUP(kTestPath).status().ok());
+  auto res = mdio::utils::TrimDataset(kTestPath);
+  EXPECT_TRUE(res.status().ok()) << res.status();
 }
 
 TEST(TrimDataset, oneSlice) {
-    ASSERT_TRUE(SETUP(kTestPath).status().ok());
-    mdio::SliceDescriptor slice = {"inline", 0, 128, 1};
-    auto res = mdio::utils::TrimDataset(kTestPath, slice);
-    ASSERT_TRUE(res.status().ok()) << res.status();
-    auto dsRes = mdio::Dataset::Open(kTestPath, mdio::constants::kOpen);
-    ASSERT_TRUE(dsRes.status().ok()) << dsRes.status();
-    auto ds = dsRes.value();
-    std::cout << ds << std::endl;
+  ASSERT_TRUE(SETUP(kTestPath).status().ok());
+  mdio::SliceDescriptor slice = {"inline", 0, 128, 1};
+  auto res = mdio::utils::TrimDataset(kTestPath, slice);
+  ASSERT_TRUE(res.status().ok()) << res.status();
+  auto dsRes = mdio::Dataset::Open(kTestPath, mdio::constants::kOpen);
+  ASSERT_TRUE(dsRes.status().ok()) << dsRes.status();
+  auto ds = dsRes.value();
+  std::cout << ds << std::endl;
 }
 
 TEST(TrimDataset, oneSliceData) {
-    // Set up the dataset
-    ASSERT_TRUE(SETUP(kTestPath).status().ok());
-    auto dsRes = mdio::Dataset::Open(kTestPath, mdio::constants::kOpen);
-    ASSERT_TRUE(dsRes.status().ok()) << dsRes.status();
-    auto ds = dsRes.value();
+  // Set up the dataset
+  ASSERT_TRUE(SETUP(kTestPath).status().ok());
+  auto dsRes = mdio::Dataset::Open(kTestPath, mdio::constants::kOpen);
+  ASSERT_TRUE(dsRes.status().ok()) << dsRes.status();
+  auto ds = dsRes.value();
 
-    // Write some data to the inline variable
-    auto inlineVarRes = ds.variables.get<mdio::dtypes::uint32_t>("inline");
-    ASSERT_TRUE(inlineVarRes.status().ok()) << inlineVarRes.status();
-    auto inlineVar = inlineVarRes.value();
+  // Write some data to the inline variable
+  auto inlineVarRes = ds.variables.get<mdio::dtypes::uint32_t>("inline");
+  ASSERT_TRUE(inlineVarRes.status().ok()) << inlineVarRes.status();
+  auto inlineVar = inlineVarRes.value();
 
-    auto inlineVarFuture = inlineVar.Read();
-    ASSERT_TRUE(inlineVarFuture.status().ok()) << inlineVarFuture.status();
-    auto inlineVarData = inlineVarFuture.value();
+  auto inlineVarFuture = inlineVar.Read();
+  ASSERT_TRUE(inlineVarFuture.status().ok()) << inlineVarFuture.status();
+  auto inlineVarData = inlineVarFuture.value();
 
-    auto inlineDataAccessor = inlineVarData.get_data_accessor();
+  auto inlineDataAccessor = inlineVarData.get_data_accessor();
 
-    for (int i=0; i<256; ++i) {
-        inlineDataAccessor({i}) = i+256;
-    }
+  for (int i = 0; i < 256; ++i) {
+    inlineDataAccessor({i}) = i + 256;
+  }
 
-    auto writeFuture = inlineVar.Write(inlineVarData);
-    ASSERT_TRUE(writeFuture.status().ok()) << writeFuture.status();
+  auto writeFuture = inlineVar.Write(inlineVarData);
+  ASSERT_TRUE(writeFuture.status().ok()) << writeFuture.status();
 
-    // Trim outside of a chunk boundry
-    mdio::SliceDescriptor slice = {"inline", 0, 128, 1};
-    auto res = mdio::utils::TrimDataset(kTestPath, slice);
-    ASSERT_TRUE(res.status().ok()) << res.status();
+  // Trim outside of a chunk boundry
+  mdio::SliceDescriptor slice = {"inline", 0, 128, 1};
+  auto res = mdio::utils::TrimDataset(kTestPath, slice);
+  ASSERT_TRUE(res.status().ok()) << res.status();
 
-    auto newDsRes = mdio::Dataset::Open(kTestPath, mdio::constants::kOpen);
-    ASSERT_TRUE(newDsRes.status().ok()) << newDsRes.status();
-    auto newDs = newDsRes.value();
+  auto newDsRes = mdio::Dataset::Open(kTestPath, mdio::constants::kOpen);
+  ASSERT_TRUE(newDsRes.status().ok()) << newDsRes.status();
+  auto newDs = newDsRes.value();
 
-    std::string name = "inline";
-    auto varRes = newDs.get_variable(name);
-    ASSERT_TRUE(varRes.status().ok()) << varRes.status();
-    auto var = varRes.value();
-    auto varFuture = var.Read();
-    ASSERT_TRUE(varFuture.status().ok()) << varFuture.status();
-    auto varData = varFuture.value();
+  std::string name = "inline";
+  auto varRes = newDs.get_variable(name);
+  ASSERT_TRUE(varRes.status().ok()) << varRes.status();
+  auto var = varRes.value();
+  auto varFuture = var.Read();
+  ASSERT_TRUE(varFuture.status().ok()) << varFuture.status();
+  auto varData = varFuture.value();
 
-    auto varDataAccessor = reinterpret_cast<mdio::dtypes::uint32_t*>(varData.get_data_accessor().data());
-    for (int i=0; i<128; ++i) {
-        EXPECT_EQ(varDataAccessor[i], i+256) << "i: " << i;
-    }
+  auto varDataAccessor = reinterpret_cast<mdio::dtypes::uint32_t*>(
+      varData.get_data_accessor().data());
+  for (int i = 0; i < 128; ++i) {
+    EXPECT_EQ(varDataAccessor[i], i + 256) << "i: " << i;
+  }
 }
 
 TEST(DeleteDataset, delLocal) {
-    ASSERT_TRUE(SETUP(kTestPath).status().ok());
-    auto res = mdio::utils::DeleteDataset(kTestPath);
-    ASSERT_TRUE(res.status().ok()) << res.status();
-    auto dsRes = mdio::Dataset::Open(kTestPath, mdio::constants::kOpen);
-    EXPECT_FALSE(dsRes.status().ok()) << dsRes.status();
+  ASSERT_TRUE(SETUP(kTestPath).status().ok());
+  auto res = mdio::utils::DeleteDataset(kTestPath);
+  ASSERT_TRUE(res.status().ok()) << res.status();
+  auto dsRes = mdio::Dataset::Open(kTestPath, mdio::constants::kOpen);
+  EXPECT_FALSE(dsRes.status().ok()) << dsRes.status();
 }
 
 TEST(DeleteDataset, delGCS) {
-    if (GCS_PATH == "gs://USER_BUCKET") {
-        GTEST_SKIP() << "Skipping GCS deletion test.\nTo enable, please update the GCS_PATH variable in the utils_test.cc file.";
-    }
-    auto setupStatus = SETUP(GCS_PATH);
-    ASSERT_TRUE(setupStatus.status().ok()) << setupStatus.status();
-    auto res = mdio::utils::DeleteDataset(GCS_PATH);
-    ASSERT_TRUE(res.status().ok()) << res.status();
-    auto dsRes = mdio::Dataset::Open(GCS_PATH, mdio::constants::kOpen);
-    EXPECT_FALSE(dsRes.status().ok()) << dsRes.status();
+  if (GCS_PATH == "gs://USER_BUCKET") {
+    GTEST_SKIP() << "Skipping GCS deletion test.\nTo enable, please update the "
+                    "GCS_PATH variable in the utils_test.cc file.";
+  }
+  auto setupStatus = SETUP(GCS_PATH);
+  ASSERT_TRUE(setupStatus.status().ok()) << setupStatus.status();
+  auto res = mdio::utils::DeleteDataset(GCS_PATH);
+  ASSERT_TRUE(res.status().ok()) << res.status();
+  auto dsRes = mdio::Dataset::Open(GCS_PATH, mdio::constants::kOpen);
+  EXPECT_FALSE(dsRes.status().ok()) << dsRes.status();
 }
 
-} // namespace
+}  // namespace

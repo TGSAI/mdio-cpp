@@ -1,11 +1,12 @@
 #include "dataset_validator.h"
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 namespace {
 
 TEST(schema, minimal) {
-    std::string schema = R"(
+  std::string schema = R"(
         {
   "metadata": {
     "name": "campos_3d",
@@ -51,13 +52,13 @@ TEST(schema, minimal) {
     }]}
 )";
 
-    nlohmann::json j = nlohmann::json::parse(schema);
-    auto status = validate_schema(j);
-    EXPECT_TRUE(status.ok()) << status;
+  nlohmann::json j = nlohmann::json::parse(schema);
+  auto status = validate_schema(j);
+  EXPECT_TRUE(status.ok()) << status;
 }
 
 TEST(schema, valid) {
-    std::string schema = R"(
+  std::string schema = R"(
         {
   "metadata": {
     "name": "campos_3d",
@@ -191,13 +192,13 @@ TEST(schema, valid) {
 }
 
     )";
-    nlohmann::json j = nlohmann::json::parse(schema);
-    auto status = validate_schema(j);
-    EXPECT_TRUE(status.ok()) << status;
+  nlohmann::json j = nlohmann::json::parse(schema);
+  auto status = validate_schema(j);
+  EXPECT_TRUE(status.ok()) << status;
 }
 
 TEST(schema, invalid) {
-    std::string schema = R"(
+  std::string schema = R"(
         {
   "metadata": {
     "name": "campos_3d",
@@ -331,13 +332,13 @@ TEST(schema, invalid) {
 }
 
     )";
-    nlohmann::json j = nlohmann::json::parse(schema);
-    auto status = validate_schema(j);
-    EXPECT_FALSE(status.ok()) << status;
+  nlohmann::json j = nlohmann::json::parse(schema);
+  auto status = validate_schema(j);
+  EXPECT_FALSE(status.ok()) << status;
 }
 
 TEST(validateCoords, valid) {
-    std::string schema = R"(
+  std::string schema = R"(
         {
   "metadata": {
     "name": "campos_3d",
@@ -471,13 +472,13 @@ TEST(validateCoords, valid) {
 }
 
     )";
-    nlohmann::json j = nlohmann::json::parse(schema);
-    auto status = validate_coordinates_present(j);
-    EXPECT_TRUE(status.ok()) << status;
+  nlohmann::json j = nlohmann::json::parse(schema);
+  auto status = validate_coordinates_present(j);
+  EXPECT_TRUE(status.ok()) << status;
 }
 
 TEST(validateCoords, invalid) {
-    std::string schema = R"(
+  std::string schema = R"(
         {
   "metadata": {
     "name": "campos_3d",
@@ -606,13 +607,13 @@ TEST(validateCoords, invalid) {
 }
 
     )";
-    nlohmann::json j = nlohmann::json::parse(schema);
-    auto status = validate_coordinates_present(j);
-    EXPECT_FALSE(status.ok()) << status;
+  nlohmann::json j = nlohmann::json::parse(schema);
+  auto status = validate_coordinates_present(j);
+  EXPECT_FALSE(status.ok()) << status;
 }
 
 TEST(validateCoords, invalid2) {
-    std::string schema = R"(
+  std::string schema = R"(
         {
   "metadata": {
     "name": "campos_3d",
@@ -735,13 +736,13 @@ TEST(validateCoords, invalid2) {
 }
 
     )";
-    nlohmann::json j = nlohmann::json::parse(schema);
-    auto status = validate_coordinates_present(j);
-    EXPECT_FALSE(status.ok()) << status;
+  nlohmann::json j = nlohmann::json::parse(schema);
+  auto status = validate_coordinates_present(j);
+  EXPECT_FALSE(status.ok()) << status;
 }
 
 TEST(validate, valid) {
-    std::string schema = R"(
+  std::string schema = R"(
         {
   "metadata": {
     "name": "campos_3d",
@@ -875,24 +876,22 @@ TEST(validate, valid) {
 }
 
     )";
-    nlohmann::json j = nlohmann::json::parse(schema);
-    auto status = validate_dataset(j);
-    EXPECT_TRUE(status.ok()) << status;
+  nlohmann::json j = nlohmann::json::parse(schema);
+  auto status = validate_dataset(j);
+  EXPECT_TRUE(status.ok()) << status;
 }
 
-TEST(validate, invalid) {
-    EXPECT_TRUE(true);
-}
+TEST(validate, invalid) { EXPECT_TRUE(true); }
 
 TEST(datetime, valid) {
-    EXPECT_TRUE(isISO8601DateTime("2023-12-12T15:02:06.413469-06:00"));
+  EXPECT_TRUE(isISO8601DateTime("2023-12-12T15:02:06.413469-06:00"));
 }
 
 TEST(datetime, invalid) {
-    EXPECT_FALSE(isISO8601DateTime("2023-12-12T15:02:06.413469-06:"));
+  EXPECT_FALSE(isISO8601DateTime("2023-12-12T15:02:06.413469-06:"));
 }
 
 // TODO: Validate that the shapes are all valid
 // TODO: Return a list of Variable specs + metadata
 
-} // namespace
+}  // namespace
