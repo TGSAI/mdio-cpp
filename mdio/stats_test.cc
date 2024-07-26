@@ -12,10 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "stats.h"
+#include "mdio/stats.h"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace {
 

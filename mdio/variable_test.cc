@@ -17,11 +17,11 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include <chrono>
 #include <filesystem>
 #include <fstream>
-#include <nlohmann/json.hpp>
 #include <sstream>
+#include <string>
+#include <utility>
 
 #include "tensorstore/driver/zarr/compressor.h"
 #include "tensorstore/driver/zarr/driver_impl.h"
@@ -29,6 +29,10 @@
 #include "tensorstore/driver/zarr/metadata.h"
 #include "tensorstore/util/result.h"
 #include "tensorstore/util/status_testutil.h"
+
+// clang-format off
+#include <nlohmann/json.hpp>  // NOLINT
+// clang-format on
 
 // clang-format off
 ::nlohmann::json json_good = ::nlohmann::json::object({
@@ -39,18 +43,18 @@
             {"path", "name"}
         }
     },
-    {"attributes", 
+    {"attributes",
         {{"metadata",
             {{"attributes",  // optional misc attributes.
                 {
-                    {"job status", "win"}, // can be anything
+                    {"job status", "win"},  // can be anything
                     {"project code", "fail"}
                 }
             }}
         },
-        {"long_name", "foooooo ....."}, // required
-        {"dimension_names", {"x", "y"} }, // required
-        {"dimension_units", {"m", "ft"} }, // optional (if coord).
+        {"long_name", "foooooo ....."},  // required
+        {"dimension_names", {"x", "y"} },  // required
+        {"dimension_units", {"m", "ft"} },  // optional (if coord).
     }},
     {"metadata",
         {
@@ -72,8 +76,8 @@
             {"path", "name"}
         }
     },
-    {"attributes", 
-        {{"dimension_units", {"m", "ft"} }, // optional (if coord).
+    {"attributes",
+        {{"dimension_units", {"m", "ft"} },  // optional (if coord).
             {"metadata",
                 {{"attributes",  // optional misc attributes.
                     {
@@ -278,7 +282,7 @@ TEST(VARIABLE, STRUCTARRAY) {
   ASSERT_TRUE(variable.ok());
 
   auto domain = variable->dimensions();
-  // TODO - we might assign a "byte" label
+  // TODO(BrianMichell) - we might assign a "byte" label
   EXPECT_THAT(domain.labels(), ::testing::ElementsAre("x", "y", ""));
 
   auto bytes = mdio::constants::kByte;
@@ -328,7 +332,7 @@ TEST(VARIABLE, STRUCTARRAYOPEN) {
   ASSERT_TRUE(variable.ok());
 
   auto domain = variable->dimensions();
-  // TODO - we might assign a "byte" label
+  // TODO(BrianMichell) - we might assign a "byte" label
   EXPECT_THAT(domain.labels(), ::testing::ElementsAre("x", "y", ""));
 
   auto bytes = mdio::constants::kByte;

@@ -12,17 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef MDIO_DATASET_VALIDATOR_H
-#define MDIO_DATASET_VALIDATOR_H
-
-#include <tensorstore/tensorstore.h>
+#ifndef MDIO_DATASET_VALIDATOR_H_
+#define MDIO_DATASET_VALIDATOR_H_
 
 #include <fstream>
-#include <nlohmann/json-schema.hpp>
-#include <regex>
+#include <regex>  // NOLINT
+#include <string>
 #include <unordered_set>
 
-#include "dataset_schema.h"
+#include "mdio/dataset_schema.h"
+#include "tensorstore/tensorstore.h"
+
+// clang-format off
+#include <nlohmann/json-schema.hpp>  // NOLINT
+// clang-format on
 
 /**
  * @brief Checks if a string is a valid ISO8601 datetime
@@ -39,7 +42,8 @@ bool isISO8601DateTime(const std::string& dateTimeStr) {
  * @brief Checks if a key exists in a map
  * Specific for our case of {coordinate: index} mapping
  */
-bool contains(std::unordered_set<std::string>& set, std::string key) {
+bool contains(const std::unordered_set<std::string>& set,
+              const std::string key) {
   return set.count(key);
 }
 
@@ -50,7 +54,7 @@ bool contains(std::unordered_set<std::string>& set, std::string key) {
  * @return OkStatus if valid, NotFoundError if schema file load fails,
  * InvalidArgumentError if validation fails for any reason
  */
-absl::Status validate_schema(nlohmann::json& spec) {
+absl::Status validate_schema(const nlohmann::json& spec) {
   // This is a hack to fix the date-time format not working as intended with the
   // json-schema-validator
 
@@ -95,7 +99,7 @@ absl::Status validate_schema(nlohmann::json& spec) {
  * @return OkStatus if valid, InvalidArgumentError if a coordinate does not have
  * a matching Variable.
  */
-absl::Status validate_coordinates_present(nlohmann::json& spec) {
+absl::Status validate_coordinates_present(const nlohmann::json& spec) {
   // Build a mapping of all the dimension coordinates
   std::unordered_set<std::string>
       dimension;  //  name of all 1-d Variables who's name matches the dimension
@@ -143,7 +147,7 @@ absl::Status validate_coordinates_present(nlohmann::json& spec) {
       }
     }
 
-    // TODO: Implement support for list[Coordinate] later on
+    // TODO(BrianMichell): Implement support for list[Coordinate] later on
     if (variable.contains("coordinates")) {
       for (auto& coordinate : variable["coordinates"]) {
         if (!contains(variables, coordinate.dump())) {
@@ -168,7 +172,7 @@ absl::Status validate_coordinates_present(nlohmann::json& spec) {
  * reason
 
 */
-absl::Status validate_dataset(nlohmann::json& spec) {
+absl::Status validate_dataset(const nlohmann::json& spec) {
   absl::Status schemaStatus = validate_schema(spec);
   if (!schemaStatus.ok()) {
     return schemaStatus;
@@ -182,4 +186,4 @@ absl::Status validate_dataset(nlohmann::json& spec) {
   return absl::OkStatus();
 }
 
-#endif  // MDIO_DATASET_VALIDATOR_H
+#endif  // MDIO_DATASET_VALIDATOR_H_

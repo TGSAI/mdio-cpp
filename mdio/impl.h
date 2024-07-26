@@ -38,7 +38,7 @@ using ArrayOriginKind = tensorstore::ArrayOriginKind;
 template <typename T>
 using Future = tensorstore::Future<T>;
 using WriteFutures = tensorstore::WriteFutures;
-template <long int Rank>
+template <long int Rank>  // NOLINT: This is a Tensorstore convention
 using IndexDomainView = tensorstore::IndexDomainView<Rank>;
 using DataType = tensorstore::DataType;
 template <typename T>

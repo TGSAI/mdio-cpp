@@ -12,10 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <nlohmann/json.hpp>
+#ifndef MDIO_STATS_H_
+#define MDIO_STATS_H_
+
+#include <algorithm>
+#include <memory>
 #include <optional>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "tensorstore/tensorstore.h"
+
+// clang-format off
+#include <nlohmann/json.hpp>  // NOLINT
+// clang-format on
 
 /**
  * The intention of this extensible data class is to provide a representation of
@@ -180,7 +191,7 @@ class EdgeDefinedHistogram : public Histogram {
         return tensorstore::Result<std::unique_ptr<const Histogram>>(
             std::move(hist));
       }
-      // TODO: Provide better descriptive error message here.
+      // TODO(BrianMichell): Provide better descriptive error message here.
       return absl::InvalidArgumentError(
           "Error parsing histogram:\n\tType detected: "
           "EdgeDefinedHistogram\n\tMissing child key: 'binEdges', "
@@ -464,7 +475,8 @@ class UserAttributes {
    * @note This constructor is intended for internal use only. Please use the
    * static member function `FromJson(nlohmann::json)`
    */
-  UserAttributes(const nlohmann::json& attrs) : attrs(attrs), stats({}) {}
+  explicit UserAttributes(const nlohmann::json& attrs)
+      : attrs(attrs), stats({}) {}
 
   /**
    * @brief A case where there are statsV1 objects but no attributes
@@ -537,3 +549,4 @@ class UserAttributes {
 };
 
 }  // namespace mdio
+#endif  // MDIO_STATS_H_

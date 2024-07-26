@@ -17,13 +17,22 @@
 #define MDIO_API_VERSION "1.0.0"
 
 #include <fstream>
-#include <nlohmann/json-schema.hpp>
+#include <map>
+#include <string>
+#include <tuple>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
-#include "dataset_factory.h"
+#include "mdio/dataset_factory.h"
+#include "mdio/variable.h"
+#include "mdio/variable_collection.h"
 #include "tensorstore/driver/zarr/metadata.h"
 #include "tensorstore/util/future.h"
-#include "variable.h"
-#include "variable_collection.h"
+
+// clang-format off
+#include <nlohmann/json-schema.hpp>  // NOLINT
+// clang-format on
 
 namespace mdio {
 namespace internal {
@@ -76,8 +85,7 @@ Result<nlohmann::json> get_zarray(const ::nlohmann::json metadata) {
       json["metadata"].contains("shape")) {
     zarray["chunks"] = json["metadata"]["shape"];
   } else {
-    zarray["chunks"] =
-        json["metadata"]["chunks"];  // TODO: Can this have more states?
+    zarray["chunks"] = json["metadata"]["chunks"];
   }
 
   if (!json["metadata"].contains("compressor")) {
@@ -314,8 +322,8 @@ from_zmetadata(const std::string& dataset_path) {
   auto dataset_metadata = zmetadata["metadata"][".zattrs"];
 
   std::string driver = "file";
-  // TODO: Make this more robust. May be invalid if the stored path gets mangled
-  // somehow. Infer the driver
+  // TODO(BrianMichell): Make this more robust. May be invalid if the stored
+  // path gets mangled somehow. Infer the driver
   if (dataset_path.length() > 5) {
     if (dataset_path.substr(0, 5) == "gs://") {
       driver = "gcs";
@@ -421,7 +429,7 @@ class Dataset {
    */
   template <typename T = void, DimensionIndex R = dynamic_rank,
             ReadWriteMode M = ReadWriteMode::dynamic>
-  Result<Variable<T, R, M>> get_variable(std::string& variable_name) {
+  Result<Variable<T, R, M>> get_variable(const std::string& variable_name) {
     // return a variable from within the dataset.
     return variables.get<T, R, M>(variable_name);
   }
@@ -445,7 +453,7 @@ class Dataset {
    * if the schema is invalid.
    */
   template <typename... Option>
-  static Future<Dataset> from_json(::nlohmann::json& json_schema,
+  static Future<Dataset> from_json(const ::nlohmann::json& json_schema,
                                    const std::string& path,
                                    Option&&... options) {
     // json describing the vars ...

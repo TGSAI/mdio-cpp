@@ -18,4 +18,9 @@
  * a single header.
  */
 
-#include "dataset.h"
+#ifndef MDIO_MDIO_H_
+#define MDIO_MDIO_H_
+
+#include "mdio/dataset.h"
+
+#endif  // MDIO_MDIO_H_

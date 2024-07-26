@@ -17,16 +17,20 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include <nlohmann/json.hpp>
+#include <string>
+
+// clang-format off
+#include <nlohmann/json.hpp>  // NOLINT
+// clang-format on
 
 #define RUN_CLOUD false
 
 namespace {
 
-// TODO: User should point to their own GCS bucket here.
-const std::string GCS_PATH = "gs://USER_BUCKET";
+// TODO(End user): User should point to their own GCS bucket here.
+/*NOLINT*/ const std::string GCS_PATH = "gs://USER_BUCKET";
 
-const std::string kTestPath = "zarrs/testing/utils.mdio";
+/*NOLINT*/ const std::string kTestPath = "zarrs/testing/utils.mdio";
 
 /**
  * Sets up an inert dataset for testing destructive operations

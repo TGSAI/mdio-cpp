@@ -12,7 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#ifndef MDIO_UTILS_H_
+#define MDIO_UTILS_H_
+
 #include <filesystem>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 #include "mdio/dataset.h"
 
@@ -127,7 +133,7 @@ Result<void> DeleteDataset(std::string dataset_path) {
 
   // Delete the dataset
   try {
-    // TODO: This is all probably a security risk...
+    // TODO(BrianMichell): This is all probably a security risk...
     if (dataset_path.rfind("gs://", 0) == 0) {
       // Google Cloud Storage
       std::system(("gsutil rm -r " + dataset_path).c_str());
@@ -148,3 +154,5 @@ Result<void> DeleteDataset(std::string dataset_path) {
 
 }  // namespace utils
 }  // namespace mdio
+
+#endif  // MDIO_UTILS_H_

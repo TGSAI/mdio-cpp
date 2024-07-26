@@ -18,4 +18,4 @@
  * library.
  */
 
-#include "mdio.h"
+#include "mdio/mdio.h"

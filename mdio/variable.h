@@ -16,15 +16,20 @@
 #define MDIO_VARIABLE_H_
 
 #include <filesystem>
-#include <nlohmann/json.hpp>
+#include <memory>
 #include <queue>
+#include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
 
 #include "absl/strings/str_split.h"
 #include "mdio/impl.h"
-#include "stats.h"
+#include "mdio/stats.h"
 #include "tensorstore/array.h"
 #include "tensorstore/driver/driver.h"
 #include "tensorstore/driver/registry.h"
+#include "tensorstore/driver/zarr/dtype.h"
 #include "tensorstore/index_space/dim_expression.h"
 #include "tensorstore/index_space/index_domain_builder.h"
 #include "tensorstore/kvstore/kvstore.h"
@@ -33,8 +38,9 @@
 #include "tensorstore/tensorstore.h"
 #include "tensorstore/util/future.h"
 
-// TODO: we need to modify the zarr driver, variable should be agnostic.
-#include "tensorstore/driver/zarr/dtype.h"
+// clang-format off
+#include <nlohmann/json.hpp>  // NOLINT
+// clang-format on
 
 namespace mdio {
 
@@ -458,8 +464,6 @@ Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
       // We need to remove them. This could cause confusion. If the user
       // specifies a different chunkGrid, it will not be used and should
       // actually fail here.
-      // TODO: Figure out if we can acquire the chunking information. I don't
-      // believe we can without making this serial.
       nlohmann::json correctedSuppliedAttrs = suppliedAttributes;
       if (correctedSuppliedAttrs["attributes"].contains("metadata")) {
         correctedSuppliedAttrs["attributes"]["metadata"].erase("chunkGrid");
@@ -578,7 +582,7 @@ class Variable {
         store(store),
         attributes(attributes) {
     attributesAddress = reinterpret_cast<std::uintptr_t>((*attributes).get());
-  };
+  }
 
   // Allows for conversion to compatible types (SourceElement), which should
   // always be possible to void.
@@ -590,13 +594,13 @@ class Variable {
         metadata(other.getReducedMetadata()),
         store(other.get_store()),
         attributes(other.attributes),
-        attributesAddress(attributesAddress){};
+        attributesAddress(attributesAddress) {}
 
   friend std::ostream& operator<<(std::ostream& os, const Variable& obj) {
     os << obj.variableName << "\t" << obj.dimensions() << "\n";
     os << obj.store.dtype() << "\t" << obj.store.rank();
     return os;
-  };
+  }
 
   /**
    * @brief Opens a variable with the specified options.
@@ -870,7 +874,7 @@ class Variable {
       // the slice didn't change anything in the variables dimensions.
       return *this;
     }
-  };
+  }
 
   Result<nlohmann::json> get_spec() const {
     auto spec_res = spec();
@@ -899,8 +903,8 @@ class Variable {
    * otherwise a vector of the chunk shape.
    */
   Result<std::vector<DimensionIndex>> get_chunk_shape() const {
-    // TODO: Depricate this method name to reduce confusion between it and
-    // get_store_shape
+    // TODO(BrianMichell): Depricate this method name
+    // Reasoning: To reduce confusion between it and get_store_shape
     auto spec_res = get_spec();
     if (!spec_res.status().ok()) {
       return spec_res;
@@ -917,7 +921,8 @@ class Variable {
     if (!json["metadata"]["chunks"].is_array()) {
       return absl::InvalidArgumentError("Metadata['chunks'] is not an array.");
     }
-    return json["metadata"]["chunks"].get<std::vector<long int>>();
+    return json["metadata"]["chunks"]
+        .get<std::vector<long int>>();  // NOLINT: Tensorstore convention
   }
 
   /**
@@ -942,7 +947,8 @@ class Variable {
     if (!json["metadata"]["shape"].is_array()) {
       return absl::InvalidArgumentError("Metadata['shape'] is not an array.");
     }
-    return json["metadata"]["shape"].get<std::vector<long int>>();
+    return json["metadata"]["shape"]
+        .get<std::vector<long int>>();  // NOLINT: Tensorstore convention
   }
 
   /**
@@ -973,7 +979,7 @@ class Variable {
     };
 
     bool isCloudStore = false;
-    // TODO: Make more error tolerant
+    // TODO(BrianMichell): Make more error tolerant
     auto json_spec = store.spec().value().ToJson(IncludeDefaults{}).value();
     auto driver = json_spec["kvstore"]["driver"];
     if (driver == "gcs" || driver == "s3") {
@@ -1087,7 +1093,7 @@ class Variable {
     return attributesAddress != currentAddress;
   }
 
-  //============================Member data getters============================
+  // ===========================Member data getters===========================
   const std::string& get_variable_name() const { return variableName; }
 
   const std::string& get_long_name() const { return longName; }
@@ -1111,8 +1117,9 @@ class Variable {
     if (attributes.get() != nullptr && attributes->get() != nullptr) {
       std::uintptr_t newAddress =
           reinterpret_cast<std::uintptr_t>(&(**attributes));
-      // TODO: Leaving this as active is causing segfaults. The features
-      // requiring it are low priority. attributesAddress = newAddress;
+      // TODO(BrianMichell): Leaving this as active is causing segfaults.
+      //   The features requiring it are low priority.
+      // attributesAddress = newAddress;
     }
     // It is fine that this will only change in the "collection" instance of the
     // Variable, because that is the only one that will be operated on by the
@@ -1143,7 +1150,7 @@ struct LabeledArray {
   using const_shared_array = SharedArray<const T, R, OriginKind>;
 
   LabeledArray(const tensorstore::IndexDomain<R>& dom, const shared_array& arr)
-      : domain(dom), data(arr) {};
+      : domain(dom), data(arr) {}
 
   /**
    * @brief Slices the tensor along the specified dimensions and returns the
@@ -1206,13 +1213,13 @@ struct LabeledArray {
     /// could be we can't slice a dimension
     if (!overall_status.ok()) {
       return overall_status;
-    };
+    }
 
     return data |
            tensorstore::Dims(dims).TranslateHalfOpenInterval(start, stop,
                                                              step) |
            tensorstore::Materialize(alloc);
-  };
+  }
 
   SharedArray<T, R, OriginKind> get_data() { return data; }
 
@@ -1238,7 +1245,7 @@ struct VariableData {
       : variableName(variableName),
         longName(longName),
         metadata(metdata),
-        data(data) {};
+        data(data) {}
 
   // Allows for conversion to compatible types (SourceElement), which should
   // always be possible to void.
@@ -1249,13 +1256,13 @@ struct VariableData {
       : variableName(other.variableName),
         longName(other.longName),
         metadata(other.metadata),
-        data(other.data){};
+        data(other.data) {}
 
   friend std::ostream& operator<<(std::ostream& os, const VariableData& obj) {
     os << obj.variableName << "\t" << obj.data.domain << "\n";
     os << obj.dtype() << "\t" << obj.data.data.rank();
     return os;
-  };
+  }
 
   using const_shared_array = SharedArray<const T, R, OriginKind>;
 
@@ -1338,7 +1345,7 @@ struct VariableData {
    * @endcode
    */
   ptrdiff_t get_flattened_offset() {
-    // TODO: Implement unit test
+    // TODO(BrianMichell): Implement unit test
     auto accessor = get_data_accessor();
     auto origin_ptr =
         accessor.data();  // The raw pointer to the data. May not start at 0.
@@ -1392,4 +1399,4 @@ Result<VariableData<T, R, OriginKind>> from_variable(
       variable.getReducedMetadata(), std::move(labeled_array)};
 }
 };  // namespace mdio
-#endif
+#endif  // MDIO_VARIABLE_H_

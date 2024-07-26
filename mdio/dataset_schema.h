@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#ifndef MDIO_DATASET_SCHEMA_H_
+#define MDIO_DATASET_SCHEMA_H_
+
 #include <string>
 
 /*! \mainpage The MDIO C++ Library
@@ -164,7 +167,8 @@ buckets.
  *
 */
 
-static const std::string kDatasetSchema = R"(
+// TODO(BrianMichell): Cleanup NOLINT
+/*NOLINT*/ static const std::string kDatasetSchema = R"( 
 {
    "title": "Dataset",
    "description": "Represents an MDIO v1 dataset.\n\nA dataset consists of variables and metadata.",
@@ -1306,3 +1310,5 @@ static const std::string kDatasetSchema = R"(
    ]
 }
 )";
+
+#endif  // MDIO_DATASET_SCHEMA_H_

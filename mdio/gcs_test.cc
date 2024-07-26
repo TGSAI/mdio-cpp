@@ -19,12 +19,12 @@
 
 namespace {
 
-// TODO: User should point to their own GCS bucket here.
+// TODO(End user): User should point to their own GCS bucket here.
 // You may find the test dataset at: TODO: Upload the test dataset to a public
 // object store
-std::string const GCS_PATH = "gs://USER_BUCKET";
+/*NOLINT*/ std::string const GCS_PATH = "gs://USER_BUCKET";
 
-std::string const fullToyManifest = R"(
+/*NOLINT*/ std::string const fullToyManifest = R"(
 {
     "metadata": {
         "name": "campos_3d",
@@ -176,9 +176,9 @@ TEST(GCS, open) {
   nlohmann::json j = nlohmann::json::parse(fullToyManifest);
   auto dataset = mdio::Dataset::Open(GCS_PATH, mdio::constants::kOpen);
   EXPECT_TRUE(dataset.status().ok())
-      << dataset.status();  // TODO: How will timeouts work with this? Can we
-                            // simulate it or make it excessively short to force
-                            // one?
+      << dataset.status();  // TODO(BrianMichell): How will timeouts work with
+                            // this? Can we simulate it or make it excessively
+                            // short to force one?
 }
 
 TEST(GCS, write) {

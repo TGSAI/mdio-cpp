@@ -12,12 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "dataset_factory.h"
+#include "mdio/dataset_factory.h"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "variable.h"
+#include <string>
+#include <vector>
+
+#include "mdio/variable.h"
 
 namespace {
 
@@ -562,7 +565,7 @@ TEST(Variable, createTeapot) {
   }
 }
 
-std::string manifest = R"(
+/*NOLINT*/ std::string manifest = R"(
 {
     "metadata": {
         "name": "simple",

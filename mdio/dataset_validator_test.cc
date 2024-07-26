@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "dataset_validator.h"
+#include "mdio/dataset_validator.h"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+
+#include <string>
 
 namespace {
 
@@ -905,7 +907,7 @@ TEST(datetime, invalid) {
   EXPECT_FALSE(isISO8601DateTime("2023-12-12T15:02:06.413469-06:"));
 }
 
-// TODO: Validate that the shapes are all valid
-// TODO: Return a list of Variable specs + metadata
+// TODO(BrianMichell): Validate that the shapes are all valid
+// TODO(BrianMichell): Return a list of Variable specs + metadata
 
 }  // namespace

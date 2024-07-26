@@ -17,10 +17,10 @@
 
 #include <cstdlib>
 #include <filesystem>
-#include <nlohmann/json.hpp>
+#include <nlohmann/json.hpp>  // NOLINT
 
-#include "dataset_factory.h"
 #include "mdio/dataset.h"
+#include "mdio/dataset_factory.h"
 
 namespace {
 
@@ -28,7 +28,7 @@ namespace VariableTesting {
 
 using float16_t = mdio::dtypes::float_16_t;
 
-// TODO: Extend test coverage to include uint
+// TODO(BrianMichell): Extend test coverage to include uint
 nlohmann::json i2Base = R"(
     {
         "driver": "zarr",
@@ -1027,7 +1027,7 @@ TEST(VariableData, TEARDOWN) {
 namespace DatasetTest {
 
 // clang-format off
-std::string datasetManifest = R"(
+/*NOLINT*/  std::string datasetManifest = R"(
 {
   "metadata": {
     "name": "campos_3d",

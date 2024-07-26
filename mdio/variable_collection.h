@@ -12,7 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "variable.h"
+#ifndef MDIO_VARIABLE_COLLECTION_H_
+#define MDIO_VARIABLE_COLLECTION_H_
+
+#include <algorithm>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+#include "mdio/variable.h"
 
 namespace mdio {
 /**
@@ -122,7 +131,6 @@ class VariableCollection {
    */
   std::vector<std::string> get_keys() const {
     std::vector<std::string> keys;
-    // TODO: Is this the most efficient method?
     for (auto& [key, _] : variables) {
       keys.emplace_back(key);
     }
@@ -160,3 +168,5 @@ class VariableCollection {
   std::unordered_map<std::string, Variable<>> variables;
 };
 }  // namespace mdio
+
+#endif  // MDIO_VARIABLE_COLLECTION_H_

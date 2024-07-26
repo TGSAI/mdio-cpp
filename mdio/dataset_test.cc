@@ -16,17 +16,19 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include <tensorstore/index_space/index_domain_builder.h>
 
 #include <filesystem>
 #include <fstream>
-#include <nlohmann/json.hpp>
 #include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "mdio/dataset_factory.h"
 #include "tensorstore/driver/driver.h"
 #include "tensorstore/driver/registry.h"
 #include "tensorstore/index_space/dim_expression.h"
+#include "tensorstore/index_space/index_domain_builder.h"
 #include "tensorstore/kvstore/kvstore.h"
 #include "tensorstore/kvstore/operations.h"
 #include "tensorstore/open.h"
@@ -34,6 +36,9 @@
 #include "tensorstore/util/future.h"
 #include "tensorstore/util/status_testutil.h"
 
+// clang-format off
+#include <nlohmann/json.hpp>  // NOLINT
+// clang-format on
 namespace {
 ::nlohmann::json GetToyExample() {
   std::string schema = R"(
@@ -170,7 +175,7 @@ namespace {
 }
     )";
   return ::nlohmann::json::parse(schema);
-};
+}
 
 ::nlohmann::json base_variable = {
     {"driver", "zarr"},
