@@ -1,11 +1,11 @@
 // Copyright 2024 TGS
- 
+
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
- 
+
 //    http://www.apache.org/licenses/LICENSE-2.0
- 
+
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -13,14 +13,16 @@
 // limitations under the License.
 
 #include "dataset_factory.h"
-#include "variable.h"
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+
+#include "variable.h"
 
 namespace {
 
 TEST(Toy, create) {
-    std::string schema = R"(
+  std::string schema = R"(
         {
   "metadata": {
     "name": "campos_3d",
@@ -154,24 +156,24 @@ TEST(Toy, create) {
 }
 
     )";
-    nlohmann::json j = nlohmann::json::parse(schema);
-    auto res = Construct(j, "zarrs/toy_dataset");
-    ASSERT_FALSE(res.status().ok()) << res.status();
+  nlohmann::json j = nlohmann::json::parse(schema);
+  auto res = Construct(j, "zarrs/toy_dataset");
+  ASSERT_FALSE(res.status().ok()) << res.status();
 
-    j["variables"][2].erase("compressor");
-    res = Construct(j, "zarrs/toy_dataset");
+  j["variables"][2].erase("compressor");
+  res = Construct(j, "zarrs/toy_dataset");
 
-    ASSERT_TRUE(res.status().ok()) << res.status();
+  ASSERT_TRUE(res.status().ok()) << res.status();
 
-    nlohmann::json metadata = std::get<0>(res.value());
-    std::vector<nlohmann::json> variables = std::get<1>(res.value());
-    for (auto& variable : variables) {
-        std::cout << variable.dump() << "\n\n";
-    }
+  nlohmann::json metadata = std::get<0>(res.value());
+  std::vector<nlohmann::json> variables = std::get<1>(res.value());
+  for (auto& variable : variables) {
+    std::cout << variable.dump() << "\n\n";
+  }
 }
 
 TEST(Teapot, create) {
-    std::string teapotSchema = R"(
+  std::string teapotSchema = R"(
         {
   "metadata": {
     "name": "teapot_dome_3d",
@@ -353,19 +355,19 @@ TEST(Teapot, create) {
 }
 )";
 
-    nlohmann::json j = nlohmann::json::parse(teapotSchema);
-    auto res = Construct(j, "zarrs/teapot_dome_3d");
-    ASSERT_TRUE(res.status().ok()) << res.status();
+  nlohmann::json j = nlohmann::json::parse(teapotSchema);
+  auto res = Construct(j, "zarrs/teapot_dome_3d");
+  ASSERT_TRUE(res.status().ok()) << res.status();
 
-    nlohmann::json metadata = std::get<0>(res.value());
-    std::vector<nlohmann::json> variables = std::get<1>(res.value());
-    for (auto& variable : variables) {
-        std::cout << variable.dump() << "\n\n";
-    }
+  nlohmann::json metadata = std::get<0>(res.value());
+  std::vector<nlohmann::json> variables = std::get<1>(res.value());
+  for (auto& variable : variables) {
+    std::cout << variable.dump() << "\n\n";
+  }
 }
 
 TEST(Variable, createTeapot) {
-    std::string teapotSchema = R"(
+  std::string teapotSchema = R"(
         {
   "metadata": {
     "name": "teapot_dome_3d",
@@ -547,17 +549,17 @@ TEST(Variable, createTeapot) {
 }
 )";
 
-    nlohmann::json j = nlohmann::json::parse(teapotSchema);
-    auto res = Construct(j, "zarrs/teapot_dome_3d");
-    ASSERT_TRUE(res.status().ok()) << res.status();
+  nlohmann::json j = nlohmann::json::parse(teapotSchema);
+  auto res = Construct(j, "zarrs/teapot_dome_3d");
+  ASSERT_TRUE(res.status().ok()) << res.status();
 
-    nlohmann::json metadata = std::get<0>(res.value());
-    std::vector<nlohmann::json> variables = std::get<1>(res.value());
-    for (auto& variable : variables) {
-        auto varStatus =
-            mdio::Variable<>::Open(variable, mdio::constants::kCreateClean);
-        EXPECT_TRUE(varStatus.status().ok()) << varStatus.status();
-    }
+  nlohmann::json metadata = std::get<0>(res.value());
+  std::vector<nlohmann::json> variables = std::get<1>(res.value());
+  for (auto& variable : variables) {
+    auto varStatus =
+        mdio::Variable<>::Open(variable, mdio::constants::kCreateClean);
+    EXPECT_TRUE(varStatus.status().ok()) << varStatus.status();
+  }
 }
 
 std::string manifest = R"(
@@ -601,31 +603,31 @@ std::string manifest = R"(
     )";
 
 TEST(Variable, simple) {
-    nlohmann::json j = nlohmann::json::parse(manifest);
-    auto res = Construct(j, "zarrs/simple_dataset");
-    ASSERT_TRUE(res.status().ok()) << res.status();
+  nlohmann::json j = nlohmann::json::parse(manifest);
+  auto res = Construct(j, "zarrs/simple_dataset");
+  ASSERT_TRUE(res.status().ok()) << res.status();
 
-    nlohmann::json metadata = std::get<0>(res.value());
-    std::vector<nlohmann::json> variables = std::get<1>(res.value());
-    for (auto& variable : variables) {
-        auto varStatus =
-            mdio::Variable<>::Open(variable, mdio::constants::kCreateClean);
-        EXPECT_TRUE(varStatus.status().ok()) << varStatus.status();
-    }
+  nlohmann::json metadata = std::get<0>(res.value());
+  std::vector<nlohmann::json> variables = std::get<1>(res.value());
+  for (auto& variable : variables) {
+    auto varStatus =
+        mdio::Variable<>::Open(variable, mdio::constants::kCreateClean);
+    EXPECT_TRUE(varStatus.status().ok()) << varStatus.status();
+  }
 }
 
 TEST(xarray, open) {
-    nlohmann::json j = nlohmann::json::parse(manifest);
-    auto res = Construct(j, "zarrs/simple_dataset");
-    ASSERT_TRUE(res.status().ok()) << res.status();
+  nlohmann::json j = nlohmann::json::parse(manifest);
+  auto res = Construct(j, "zarrs/simple_dataset");
+  ASSERT_TRUE(res.status().ok()) << res.status();
 
-    nlohmann::json metadata = std::get<0>(res.value());
-    std::vector<nlohmann::json> variables = std::get<1>(res.value());
-    for (auto& variable : variables) {
-        variable.erase("attributes");
-        auto varStatus = mdio::Variable<>::Open(variable, mdio::constants::kOpen);
-        EXPECT_TRUE(varStatus.status().ok()) << varStatus.status();
-    }
+  nlohmann::json metadata = std::get<0>(res.value());
+  std::vector<nlohmann::json> variables = std::get<1>(res.value());
+  for (auto& variable : variables) {
+    variable.erase("attributes");
+    auto varStatus = mdio::Variable<>::Open(variable, mdio::constants::kOpen);
+    EXPECT_TRUE(varStatus.status().ok()) << varStatus.status();
+  }
 }
 
-} // namespace
+}  // namespace

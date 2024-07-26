@@ -1,24 +1,29 @@
 // Copyright 2024 TGS
- 
+
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
- 
+
 //    http://www.apache.org/licenses/LICENSE-2.0
- 
+
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <filesystem>
-#include <fstream>
+#include "mdio/dataset.h"
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <tensorstore/index_space/index_domain_builder.h>
+
+#include <filesystem>
+#include <fstream>
 #include <nlohmann/json.hpp>
 #include <sstream>
 
+#include "mdio/dataset_factory.h"
 #include "tensorstore/driver/driver.h"
 #include "tensorstore/driver/registry.h"
 #include "tensorstore/index_space/dim_expression.h"
@@ -28,14 +33,10 @@
 #include "tensorstore/tensorstore.h"
 #include "tensorstore/util/future.h"
 #include "tensorstore/util/status_testutil.h"
-#include <tensorstore/index_space/index_domain_builder.h>
-
-#include "mdio/dataset.h"
-#include "mdio/dataset_factory.h"
 
 namespace {
 ::nlohmann::json GetToyExample() {
-    std::string schema = R"(
+  std::string schema = R"(
         {
   "metadata": {
     "name": "campos_3d",
@@ -168,338 +169,342 @@ namespace {
   ]
 }
     )";
-    return ::nlohmann::json::parse(schema);
+  return ::nlohmann::json::parse(schema);
 };
 
-::nlohmann::json base_variable = {{"driver", "zarr"},
-                                  {"kvstore", {{"driver", "file"}, {"path", "name"}}},
-                                  {"attributes",
-                                   {
-                                       {"long_name", "foooooo ....."},  // required
-                                       {"dimension_names", {"x", "y"}}, // required
-                                   }},
-                                  {"metadata",
-                                   {
-                                       {"compressor", {{"id", "blosc"}}},
-                                       {"dtype", "<i2"},
-                                       {"shape", {500, 500}},
-                                       {"dimension_separator", "/"},
-                                   }}};
+::nlohmann::json base_variable = {
+    {"driver", "zarr"},
+    {"kvstore", {{"driver", "file"}, {"path", "name"}}},
+    {"attributes",
+     {
+         {"long_name", "foooooo ....."},   // required
+         {"dimension_names", {"x", "y"}},  // required
+     }},
+    {"metadata",
+     {
+         {"compressor", {{"id", "blosc"}}},
+         {"dtype", "<i2"},
+         {"shape", {500, 500}},
+         {"dimension_separator", "/"},
+     }}};
 
 std::vector<::nlohmann::json> make_vars() {
-    auto jvar1 = base_variable;
-    jvar1["kvstore"]["path"] = "dataset/var1";
-    jvar1["attributes"]["long_name"] = "variable_1";
-    jvar1["metadata"]["shape"] = {100, 200, 300};
-    jvar1["attributes"]["dimension_names"] = {"inline", "crossline", "sample"};
-    jvar1["attributes"]["coordinates"] = {"var2"};
+  auto jvar1 = base_variable;
+  jvar1["kvstore"]["path"] = "dataset/var1";
+  jvar1["attributes"]["long_name"] = "variable_1";
+  jvar1["metadata"]["shape"] = {100, 200, 300};
+  jvar1["attributes"]["dimension_names"] = {"inline", "crossline", "sample"};
+  jvar1["attributes"]["coordinates"] = {"var2"};
 
-    auto jvar2 = base_variable;
-    jvar2["kvstore"]["path"] = "dataset/var2";
-    jvar2["attributes"]["long_name"] = "variable_2";
-    jvar2["metadata"]["shape"] = {100, 200};
-    jvar2["metadata"]["chunks"] = {20, 20};
-    jvar2["attributes"]["dimension_names"] = {"inline", "crossline"};
+  auto jvar2 = base_variable;
+  jvar2["kvstore"]["path"] = "dataset/var2";
+  jvar2["attributes"]["long_name"] = "variable_2";
+  jvar2["metadata"]["shape"] = {100, 200};
+  jvar2["metadata"]["chunks"] = {20, 20};
+  jvar2["attributes"]["dimension_names"] = {"inline", "crossline"};
 
-    return {jvar1, jvar2};
+  return {jvar1, jvar2};
 }
 
 mdio::Dataset make() {
-    auto json_vars = make_vars();
+  auto json_vars = make_vars();
 
-    auto var1 =
-        mdio::Variable<>::Open(json_vars[0], mdio::constants::kCreateClean)
-            .value();
+  auto var1 =
+      mdio::Variable<>::Open(json_vars[0], mdio::constants::kCreateClean)
+          .value();
 
-    auto var2 =
-        mdio::Variable<>::Open(json_vars[1], mdio::constants::kCreateClean)
-            .value();
+  auto var2 =
+      mdio::Variable<>::Open(json_vars[1], mdio::constants::kCreateClean)
+          .value();
 
-    ::nlohmann::json metadata = {{"name", "my dataset"}};
+  ::nlohmann::json metadata = {{"name", "my dataset"}};
 
-    mdio::VariableCollection variables;
-    variables.add("var1", var1);
-    variables.add("var2", var2);
+  mdio::VariableCollection variables;
+  variables.add("var1", var1);
+  variables.add("var2", var2);
 
-    mdio::coordinate_map coords = {
-        {"var1", {"inline", "crossline", "sample"}},
-        {"var2", {"inline", "crossline"}},
-    };
+  mdio::coordinate_map coords = {
+      {"var1", {"inline", "crossline", "sample"}},
+      {"var2", {"inline", "crossline"}},
+  };
 
-    // there is an implied sorting for dimensions here.
-    auto domain_result = tensorstore::IndexDomainBuilder<>(3)
-                             .origin({0, 0, 0})
-                             .shape({100, 200, 300})
-                             .labels({"inline", "crossline", "sample"})
-                             .Finalize();
+  // there is an implied sorting for dimensions here.
+  auto domain_result = tensorstore::IndexDomainBuilder<>(3)
+                           .origin({0, 0, 0})
+                           .shape({100, 200, 300})
+                           .labels({"inline", "crossline", "sample"})
+                           .Finalize();
 
-    return {metadata, variables, coords, domain_result.value()};
+  return {metadata, variables, coords, domain_result.value()};
 }
 
 TEST(DatasetSpec, valid) {
-    auto dataset = make();
+  auto dataset = make();
 
-    for (const auto& i : dataset.variables.get_keys()) {
-        std::cout << i << std::endl;
-    }
-    auto result = dataset.variables.get("var1");
-    std::cout << result.status() << std::endl;
+  for (const auto& i : dataset.variables.get_keys()) {
+    std::cout << i << std::endl;
+  }
+  auto result = dataset.variables.get("var1");
+  std::cout << result.status() << std::endl;
 }
 
 TEST(Dataset, isel) {
-    auto json_vars = GetToyExample();
+  auto json_vars = GetToyExample();
 
-    auto dataset = mdio::Dataset::from_json(json_vars,
-                                            "zarrs/acceptance",
-                                            mdio::constants::kCreateClean)
-                       .result();
+  auto dataset = mdio::Dataset::from_json(json_vars, "zarrs/acceptance",
+                                          mdio::constants::kCreateClean)
+                     .result();
 
-    ASSERT_TRUE(dataset.ok());
+  ASSERT_TRUE(dataset.ok());
 
-    mdio::SliceDescriptor desc1 = {"inline", 0, 5, 1};
+  mdio::SliceDescriptor desc1 = {"inline", 0, 5, 1};
 
-    auto slice = dataset->isel(desc1);
+  auto slice = dataset->isel(desc1);
 
-    ASSERT_TRUE(slice.ok());
+  ASSERT_TRUE(slice.ok());
 
-    auto domain = slice->domain;
+  auto domain = slice->domain;
 
-    ASSERT_EQ(domain.rank(), 3) << "Tensorstore should have 3 dimensions";
+  ASSERT_EQ(domain.rank(), 3) << "Tensorstore should have 3 dimensions";
 
-    // Check depth range
-    auto depthRange = domain[1];
-    EXPECT_EQ(depthRange.interval().inclusive_min(), 0) << "Depth range should start at 0";
-    EXPECT_EQ(depthRange.interval().exclusive_max(), 384) << "Depth range should end at 384";
+  // Check depth range
+  auto depthRange = domain[1];
+  EXPECT_EQ(depthRange.interval().inclusive_min(), 0)
+      << "Depth range should start at 0";
+  EXPECT_EQ(depthRange.interval().exclusive_max(), 384)
+      << "Depth range should end at 384";
 
-    // Check crossline range
-    auto crosslineRange = domain[0];
-    EXPECT_EQ(crosslineRange.interval().inclusive_min(), 0) << "Crossline range should start at 0";
-    EXPECT_EQ(crosslineRange.interval().exclusive_max(), 512) << "Crossline range should end at 512";
+  // Check crossline range
+  auto crosslineRange = domain[0];
+  EXPECT_EQ(crosslineRange.interval().inclusive_min(), 0)
+      << "Crossline range should start at 0";
+  EXPECT_EQ(crosslineRange.interval().exclusive_max(), 512)
+      << "Crossline range should end at 512";
 
-    // Check inline range
-    auto inlineRange = domain[2];
-    EXPECT_EQ(inlineRange.interval().inclusive_min(), 0) << "Inline range should start at 0";
-    EXPECT_EQ(inlineRange.interval().exclusive_max(), 5) << "Inline range should end at 5";
+  // Check inline range
+  auto inlineRange = domain[2];
+  EXPECT_EQ(inlineRange.interval().inclusive_min(), 0)
+      << "Inline range should start at 0";
+  EXPECT_EQ(inlineRange.interval().exclusive_max(), 5)
+      << "Inline range should end at 5";
 }
 
 TEST(Dataset, FromConsolidatedMeta) {
-    auto json_vars = GetToyExample();
+  auto json_vars = GetToyExample();
 
-    auto dataset = mdio::Dataset::from_json(json_vars,
-                                            "zarrs/acceptance",
-                                            mdio::constants::kCreateClean)
-                       .result();
+  auto dataset = mdio::Dataset::from_json(json_vars, "zarrs/acceptance",
+                                          mdio::constants::kCreateClean)
+                     .result();
 
-    ASSERT_TRUE(dataset.ok());
+  ASSERT_TRUE(dataset.ok());
 
-    std::string dataset_path = "zarrs/acceptance/";
+  std::string dataset_path = "zarrs/acceptance/";
 
-    auto new_dataset = mdio::Dataset::Open(dataset_path, mdio::constants::kOpen).result();
-    std::cout << new_dataset.status() << std::endl;
-    std::cout << new_dataset.value() << std::endl;
+  auto new_dataset =
+      mdio::Dataset::Open(dataset_path, mdio::constants::kOpen).result();
+  std::cout << new_dataset.status() << std::endl;
+  std::cout << new_dataset.value() << std::endl;
 }
 
 TEST(Dataset, Open) {
-    auto json_schema = GetToyExample();
+  auto json_schema = GetToyExample();
 
-    auto validated_schema = Construct(json_schema, "zarrs/acceptance");
+  auto validated_schema = Construct(json_schema, "zarrs/acceptance");
 
-    ASSERT_TRUE(validated_schema.ok());
+  ASSERT_TRUE(validated_schema.ok());
 
-    auto [metadata, json_vars] = validated_schema.value();
+  auto [metadata, json_vars] = validated_schema.value();
 
-    std::cout << json_vars[0] << std::endl;
+  std::cout << json_vars[0] << std::endl;
 
-    auto result = mdio::Dataset::Open(
-                      metadata, json_vars, mdio::constants::kCreateClean)
-                      .result();
+  auto result =
+      mdio::Dataset::Open(metadata, json_vars, mdio::constants::kCreateClean)
+          .result();
 
-    ASSERT_TRUE(result.ok());
+  ASSERT_TRUE(result.ok());
 
-    std::cout << result.value() << std::endl;
+  std::cout << result.value() << std::endl;
 }
 
 TEST(Dataset, OpenWithContext) {
-    // tests the struct array on creation
-    auto concurrency_json = ::nlohmann::json::parse(R"({"data_copy_concurrency": {"limit": 2}})");
+  // tests the struct array on creation
+  auto concurrency_json =
+      ::nlohmann::json::parse(R"({"data_copy_concurrency": {"limit": 2}})");
 
-    auto spec = mdio::Context::Spec::FromJson(concurrency_json);
-    ASSERT_TRUE(spec.ok());
+  auto spec = mdio::Context::Spec::FromJson(concurrency_json);
+  ASSERT_TRUE(spec.ok());
 
-    auto context = mdio::Context(spec.value());
+  auto context = mdio::Context(spec.value());
 
-    auto json_schema = GetToyExample();
+  auto json_schema = GetToyExample();
 
-    auto validated_schema = Construct(json_schema, "zarrs/acceptance");
+  auto validated_schema = Construct(json_schema, "zarrs/acceptance");
 
-    ASSERT_TRUE(validated_schema.ok());
+  ASSERT_TRUE(validated_schema.ok());
 
-    auto [metadata, json_vars] = validated_schema.value();
+  auto [metadata, json_vars] = validated_schema.value();
 
-    std::cout << json_vars[0] << std::endl;
+  std::cout << json_vars[0] << std::endl;
 
-    auto result =
-        mdio::Dataset::Open(
-            metadata, json_vars, mdio::constants::kCreateClean, context)
-            .result();
+  auto result = mdio::Dataset::Open(metadata, json_vars,
+                                    mdio::constants::kCreateClean, context)
+                    .result();
 
-    ASSERT_TRUE(result.ok());
+  ASSERT_TRUE(result.ok());
 
-    std::cout << result.value() << std::endl;
+  std::cout << result.value() << std::endl;
 }
 
 TEST(Dataset, FromJson) {
-    auto json_vars = GetToyExample();
+  auto json_vars = GetToyExample();
 
-    auto dataset = mdio::Dataset::from_json(json_vars,
-                                            "zarrs/acceptance",
-                                            mdio::constants::kCreateClean)
-                       .result();
+  auto dataset = mdio::Dataset::from_json(json_vars, "zarrs/acceptance",
+                                          mdio::constants::kCreateClean)
+                     .result();
 
-    std::cout << dataset.status() << std::endl;
+  std::cout << dataset.status() << std::endl;
 }
 
 TEST(Dataset, MultiFuture) {
-    auto json_vars = make_vars();
+  auto json_vars = make_vars();
 
-    std::vector<mdio::Future<mdio::Variable<>>> variables;
-    std::vector<tensorstore::Promise<void>> promises;
-    std::vector<tensorstore::AnyFuture> futures;
+  std::vector<mdio::Future<mdio::Variable<>>> variables;
+  std::vector<tensorstore::Promise<void>> promises;
+  std::vector<tensorstore::AnyFuture> futures;
 
-    for (const auto& json : json_vars) {
-        auto pair = tensorstore::PromiseFuturePair<void>::Make();
+  for (const auto& json : json_vars) {
+    auto pair = tensorstore::PromiseFuturePair<void>::Make();
 
-        auto var =
-            mdio::Variable<>::Open(json, mdio::constants::kCreateClean);
+    auto var = mdio::Variable<>::Open(json, mdio::constants::kCreateClean);
 
-        // Attach a continuation to the first future
-        var.ExecuteWhenReady([promise = std::move(pair.promise)](tensorstore::ReadyFuture<mdio::Variable<>> readyVar) {
-            // When firstFuture is ready, fulfill the second promise
-            promise.SetResult(absl::OkStatus()); // Set appropriate result or status
+    // Attach a continuation to the first future
+    var.ExecuteWhenReady(
+        [promise = std::move(pair.promise)](
+            tensorstore::ReadyFuture<mdio::Variable<>> readyVar) {
+          // When firstFuture is ready, fulfill the second promise
+          promise.SetResult(
+              absl::OkStatus());  // Set appropriate result or status
         });
 
-        variables.push_back(std::move(var));
-        promises.push_back(std::move(pair.promise));
-        futures.push_back(std::move(pair.future));
-    }
+    variables.push_back(std::move(var));
+    promises.push_back(std::move(pair.promise));
+    futures.push_back(std::move(pair.future));
+  }
 
-    auto all_done_future = tensorstore::WaitAllFuture(futures);
+  auto all_done_future = tensorstore::WaitAllFuture(futures);
 
-    for (auto var : variables) {
-        std::cout << var.ready() << std::endl;
-    }
+  for (auto var : variables) {
+    std::cout << var.ready() << std::endl;
+  }
 
-    all_done_future.Wait();
-    std::cout << all_done_future.result().status() << std::endl;
+  all_done_future.Wait();
+  std::cout << all_done_future.result().status() << std::endl;
 
-    for (auto var : variables) {
-        std::cout << var.ready() << std::endl;
-    }
+  for (auto var : variables) {
+    std::cout << var.ready() << std::endl;
+  }
 }
 
 TEST(Dataset, coordinates) {
-    auto json_vars = GetToyExample();
+  auto json_vars = GetToyExample();
 
-    auto dataset = mdio::Dataset::from_json(json_vars,
-                                            "zarrs/acceptance",
-                                            mdio::constants::kCreateClean);
+  auto dataset = mdio::Dataset::from_json(json_vars, "zarrs/acceptance",
+                                          mdio::constants::kCreateClean);
 
+  ASSERT_TRUE(dataset.status().ok()) << dataset.status();
+  EXPECT_TRUE(dataset.value().coordinates.size() > 0)
+      << "Dataset expected to have coordinates but none were present!";
 
-    ASSERT_TRUE(dataset.status().ok()) << dataset.status();
-    EXPECT_TRUE(dataset.value().coordinates.size() > 0) << "Dataset expected to have coordinates but none were present!";
-    
-    
-    std::string path = "zarrs/acceptance";
-    auto dataset_open = mdio::Dataset::Open(path, mdio::constants::kOpen);
-    ASSERT_TRUE(dataset_open.status().ok()) << dataset_open.status();
-    EXPECT_TRUE(dataset_open.value().coordinates.size() > 0) << "Dataset expected to have coordinates but none were present!";
+  std::string path = "zarrs/acceptance";
+  auto dataset_open = mdio::Dataset::Open(path, mdio::constants::kOpen);
+  ASSERT_TRUE(dataset_open.status().ok()) << dataset_open.status();
+  EXPECT_TRUE(dataset_open.value().coordinates.size() > 0)
+      << "Dataset expected to have coordinates but none were present!";
 }
 
 TEST(Dataset, create) {
-    std::filesystem::remove_all("zarrs/acceptance");
+  std::filesystem::remove_all("zarrs/acceptance");
 
-    // Create with no pre-existing Dataset
-    auto json_vars = GetToyExample();
-    auto dataset = mdio::Dataset::from_json(json_vars,
-                                           "zarrs/acceptance",
-                                           mdio::constants::kCreate);
-    ASSERT_TRUE(dataset.status().ok()) << dataset.status();
+  // Create with no pre-existing Dataset
+  auto json_vars = GetToyExample();
+  auto dataset = mdio::Dataset::from_json(json_vars, "zarrs/acceptance",
+                                          mdio::constants::kCreate);
+  ASSERT_TRUE(dataset.status().ok()) << dataset.status();
 
-    // Create with pre-existing Dataset
-    dataset = mdio::Dataset::from_json(json_vars,
-                                            "zarrs/acceptance",
-                                            mdio::constants::kCreateClean);
-    ASSERT_TRUE(dataset.status().ok()) << dataset.status();
+  // Create with pre-existing Dataset
+  dataset = mdio::Dataset::from_json(json_vars, "zarrs/acceptance",
+                                     mdio::constants::kCreateClean);
+  ASSERT_TRUE(dataset.status().ok()) << dataset.status();
 
-    // Simulate trying to create the same dataset but with slightly different metadata
-    json_vars["variables"][0]["metadata"]["statsV1"]["count"] = 222;
-    json_vars["metadata"]["foo"] = "nobar";
-    auto dataset_overwrite = mdio::Dataset::from_json(json_vars,
-                                                      "zarrs/acceptance",
-                                                      mdio::constants::kCreate);
+  // Simulate trying to create the same dataset but with slightly different
+  // metadata
+  json_vars["variables"][0]["metadata"]["statsV1"]["count"] = 222;
+  json_vars["metadata"]["foo"] = "nobar";
+  auto dataset_overwrite = mdio::Dataset::from_json(
+      json_vars, "zarrs/acceptance", mdio::constants::kCreate);
 
-    EXPECT_FALSE(dataset_overwrite.status().ok()) << "Dataset successfully overwrote an existing dataset!";
+  EXPECT_FALSE(dataset_overwrite.status().ok())
+      << "Dataset successfully overwrote an existing dataset!";
 }
 
 TEST(Dataset, CommitMetadata) {
-    std::cout << "NOTICE: After this test is run, please verify the contents of 'image' are still correct!\n";
-    std::filesystem::remove_all("zarrs/acceptance");
-    auto json_vars = GetToyExample();
+  std::cout << "NOTICE: After this test is run, please verify the contents of "
+               "'image' are still correct!\n";
+  std::filesystem::remove_all("zarrs/acceptance");
+  auto json_vars = GetToyExample();
 
-    auto datasetRes = mdio::Dataset::from_json(json_vars,"zarrs/acceptance",mdio::constants::kCreateClean);
+  auto datasetRes = mdio::Dataset::from_json(json_vars, "zarrs/acceptance",
+                                             mdio::constants::kCreateClean);
 
+  ASSERT_TRUE(datasetRes.status().ok()) << datasetRes.status();
+  auto dataset = datasetRes.value();
 
-    ASSERT_TRUE(datasetRes.status().ok()) << datasetRes.status();
-    auto dataset = datasetRes.value();
+  auto imageRes = dataset.variables.at("image");
+  ASSERT_TRUE(imageRes.ok()) << imageRes.status();
+  auto image = imageRes.value();
 
-    auto imageRes = dataset.variables.at("image");
-    ASSERT_TRUE(imageRes.ok()) << imageRes.status();
-    auto image = imageRes.value();
+  auto attrs = image.GetAttributes();
+  attrs["statsV1"]["histogram"]["binCenters"] = {2, 4, 6};
+  attrs["statsV1"]["histogram"]["counts"] = {10, 15, 20};
+  auto attrsUpdateRes = image.UpdateAttributes<float>(attrs);
+  ASSERT_TRUE(attrsUpdateRes.status().ok()) << attrsUpdateRes.status();
 
-    auto attrs = image.GetAttributes();
-    attrs["statsV1"]["histogram"]["binCenters"] = {2, 4, 6};
-    attrs["statsV1"]["histogram"]["counts"] = {10, 15, 20};
-    auto attrsUpdateRes = image.UpdateAttributes<float>(attrs);
-    ASSERT_TRUE(attrsUpdateRes.status().ok()) << attrsUpdateRes.status();
+  auto commitRes = dataset.CommitMetadata();
 
-    auto commitRes = dataset.CommitMetadata();
-
-    EXPECT_TRUE(commitRes.status().ok()) << commitRes.status();
+  EXPECT_TRUE(commitRes.status().ok()) << commitRes.status();
 }
 
 TEST(Dataset, CommitSlicedMetadata) {
-    std::filesystem::remove_all("zarrs/acceptance");
-    auto json_vars = GetToyExample();
+  std::filesystem::remove_all("zarrs/acceptance");
+  auto json_vars = GetToyExample();
 
-    auto datasetRes = mdio::Dataset::from_json(json_vars,
-                                            "zarrs/acceptance",
-                                            mdio::constants::kCreateClean);
+  auto datasetRes = mdio::Dataset::from_json(json_vars, "zarrs/acceptance",
+                                             mdio::constants::kCreateClean);
 
-    ASSERT_TRUE(datasetRes.status().ok()) << datasetRes.status();
-    auto dataset = datasetRes.value();
+  ASSERT_TRUE(datasetRes.status().ok()) << datasetRes.status();
+  auto dataset = datasetRes.value();
 
-    mdio::SliceDescriptor desc1 = {"inline", 0, 5, 1};
-    mdio::SliceDescriptor desc2 = {"crossline", 0, 5, 1};
+  mdio::SliceDescriptor desc1 = {"inline", 0, 5, 1};
+  mdio::SliceDescriptor desc2 = {"crossline", 0, 5, 1};
 
-    auto sliceRes = dataset.isel(desc1, desc2);
+  auto sliceRes = dataset.isel(desc1, desc2);
 
-    ASSERT_TRUE(sliceRes.status().ok()) << sliceRes.status();
-    auto slice = sliceRes.value();
+  ASSERT_TRUE(sliceRes.status().ok()) << sliceRes.status();
+  auto slice = sliceRes.value();
 
-    auto imageRes = slice.variables.at("image");
-    ASSERT_TRUE(imageRes.ok()) << imageRes.status();
-    auto image = imageRes.value();
+  auto imageRes = slice.variables.at("image");
+  ASSERT_TRUE(imageRes.ok()) << imageRes.status();
+  auto image = imageRes.value();
 
-    auto attrs = image.GetAttributes();
-    attrs["statsV1"]["histogram"]["binCenters"] = {2, 4, 6};
-    attrs["statsV1"]["histogram"]["counts"] = {10, 15, 20};
+  auto attrs = image.GetAttributes();
+  attrs["statsV1"]["histogram"]["binCenters"] = {2, 4, 6};
+  attrs["statsV1"]["histogram"]["counts"] = {10, 15, 20};
 
-    auto attrsUpdateRes = image.UpdateAttributes<float>(attrs);
-    ASSERT_TRUE(attrsUpdateRes.status().ok()) << attrsUpdateRes.status();
+  auto attrsUpdateRes = image.UpdateAttributes<float>(attrs);
+  ASSERT_TRUE(attrsUpdateRes.status().ok()) << attrsUpdateRes.status();
 
-    auto commitRes = dataset.CommitMetadata();
+  auto commitRes = dataset.CommitMetadata();
 
-    EXPECT_TRUE(commitRes.status().ok()) << commitRes.status();
-
+  EXPECT_TRUE(commitRes.status().ok()) << commitRes.status();
 }
-} // namespace
+}  // namespace
