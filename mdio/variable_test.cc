@@ -225,9 +225,10 @@ TEST(VariableData, fromVariable) {
   ASSERT_TRUE(variable_data->longName == variable->get_long_name());
 
   auto data = variable_data->get_data_accessor();
-  // FIXME = complete test case.
+
   data({0, 0}) = 100;
-  std::cout << data({0, 0}) << "\t" << data({1, 0}) << std::endl;
+  EXPECT_EQ(data({0, 0}), 100);
+  EXPECT_EQ(data({1, 0}), 0);
 
   auto _variable_data = mdio::from_variable(variable.value());
 
@@ -252,9 +253,10 @@ TEST(VariableData, fromVariable2) {
   ASSERT_TRUE(variable_data->longName == variable->get_long_name());
 
   auto data = variable_data->get_data_accessor();
-  // FIXME = complete test case.
+
   data({0, 0}) = 100;
-  std::cout << data({0, 0}) << "\t" << data({1, 0}) << std::endl;
+  EXPECT_EQ(data({0, 0}), 100) << "Data at 0,0 should be 100 but was " << data({0, 0});
+  EXPECT_EQ(data({1, 0}), 0) << "Data at 1,0 should be 0 but was " << data({1, 0});
 }
 
 TEST(Variable, context) {
@@ -420,17 +422,27 @@ TEST(Variable, openMetadata) {
 
   auto zarr_metadata = tensorstore::internal_zarr::ZarrMetadata::FromJson(json);
 
-  std::cout << ::nlohmann::json(*zarr_metadata) << std::endl;
-
-  /*
-  partial_metadata.fill_value = std::nullptr_t;
-
-  std::cout << metadata << std::endl;
-
-  auto x = ZarrMetadata::FromJson(metadata);
-  std::cout << "HERE\n";
-  std::cout << ::nlohmann::json(x.value()) << std::endl;
-  */
+  std::string expectedString = R"(
+  {
+    "chunks":[100,50],
+    "compressor": {
+      "blocksize":0,
+      "clevel":5,
+      "cname":"lz4",
+      "id":"blosc",
+      "shuffle":-1
+      },
+    "dimension_separator":"/",
+    "dtype":"<i2",
+    "fill_value":null,
+    "filters":null,
+    "order":"C",
+    "shape":[500,500],
+    "zarr_format":2
+  })";
+  nlohmann::json expected = nlohmann::json::parse(expectedString);
+  nlohmann::json actual = nlohmann::json(*zarr_metadata);
+  EXPECT_EQ(actual, expected) << "Metadata did not match expected";
 }
 
 TEST(Variable, openExisting) {
