@@ -294,7 +294,7 @@ TEST(Dataset, isel) {
       << "Inline range should end at 5";
 }
 
-TEST(Dataset, FromConsolidatedMeta) {
+TEST(Dataset, fromConsolidatedMeta) {
   auto json_vars = GetToyExample();
 
   auto dataset = mdio::Dataset::from_json(json_vars, "zarrs/acceptance",
@@ -311,7 +311,7 @@ TEST(Dataset, FromConsolidatedMeta) {
   std::cout << new_dataset.value() << std::endl;
 }
 
-TEST(Dataset, Open) {
+TEST(Dataset, open) {
   auto json_schema = GetToyExample();
 
   auto validated_schema = Construct(json_schema, "zarrs/acceptance");
@@ -331,7 +331,7 @@ TEST(Dataset, Open) {
   std::cout << result.value() << std::endl;
 }
 
-TEST(Dataset, OpenWithContext) {
+TEST(Dataset, openWithContext) {
   // tests the struct array on creation
   auto concurrency_json =
       ::nlohmann::json::parse(R"({"data_copy_concurrency": {"limit": 2}})");
@@ -360,7 +360,7 @@ TEST(Dataset, OpenWithContext) {
   std::cout << result.value() << std::endl;
 }
 
-TEST(Dataset, FromJson) {
+TEST(Dataset, fromJson) {
   auto json_vars = GetToyExample();
 
   auto dataset = mdio::Dataset::from_json(json_vars, "zarrs/acceptance",
@@ -370,7 +370,7 @@ TEST(Dataset, FromJson) {
   std::cout << dataset.status() << std::endl;
 }
 
-TEST(Dataset, MultiFuture) {
+TEST(Dataset, multiFuture) {
   auto json_vars = make_vars();
 
   std::vector<mdio::Future<mdio::Variable<>>> variables;
@@ -452,7 +452,7 @@ TEST(Dataset, create) {
       << "Dataset successfully overwrote an existing dataset!";
 }
 
-TEST(Dataset, CommitMetadata) {
+TEST(Dataset, commitMetadata) {
   std::cout << "NOTICE: After this test is run, please verify the contents of "
                "'image' are still correct!\n";
   std::filesystem::remove_all("zarrs/acceptance");
@@ -479,7 +479,7 @@ TEST(Dataset, CommitMetadata) {
   EXPECT_TRUE(commitRes.status().ok()) << commitRes.status();
 }
 
-TEST(Dataset, CommitSlicedMetadata) {
+TEST(Dataset, commitSlicedMetadata) {
   std::filesystem::remove_all("zarrs/acceptance");
   auto json_vars = GetToyExample();
 

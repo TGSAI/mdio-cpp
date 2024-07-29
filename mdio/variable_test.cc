@@ -176,7 +176,7 @@ mdio::Result<::nlohmann::json> PopulateStore(const nlohmann::json& json_good) {
   return output_json;
 }
 
-TEST(VARIABLEDATA, CONVERSION) {
+TEST(VariableData, conversion) {
   using int16_t = mdio::dtypes::int16_t;
 
   auto variable =
@@ -197,7 +197,7 @@ TEST(VARIABLEDATA, CONVERSION) {
   EXPECT_EQ("name", variable_c.variableName);
 }
 
-TEST(VARIABLE, CONVERSION) {
+TEST(Variable, conversion) {
   // we need to be able to cast to void
   using int16_t = mdio::dtypes::int16_t;
   // Can convert this
@@ -209,7 +209,7 @@ TEST(VARIABLE, CONVERSION) {
   // mdio::Variable<int16_t> variable_d(variable_c);
 }
 
-TEST(VARIABLEDATA, FROMVARIABLE) {
+TEST(VariableData, fromVariable) {
   using int16_t = mdio::dtypes::int16_t;
 
   auto variable =
@@ -235,7 +235,7 @@ TEST(VARIABLEDATA, FROMVARIABLE) {
   // you can't do this data({0, 0}) because it's void, you would need to memcpy
 }
 
-TEST(VARIABLEDATA, FROMVARIABLE2) {
+TEST(VariableData, fromVariable2) {
   using int16_t = mdio::dtypes::int16_t;
 
   auto variable =
@@ -257,7 +257,7 @@ TEST(VARIABLEDATA, FROMVARIABLE2) {
   std::cout << data({0, 0}) << "\t" << data({1, 0}) << std::endl;
 }
 
-TEST(VARIABLE, CONTEXT) {
+TEST(Variable, context) {
   // tests the struct array on creation
   auto concurrency_json =
       ::nlohmann::json::parse(R"({"data_copy_concurrency": {"limit": 2}})");
@@ -272,7 +272,7 @@ TEST(VARIABLE, CONTEXT) {
           .result();
 }
 
-TEST(VARIABLE, STRUCTARRAY) {
+TEST(Variable, structArray) {
   // tests the struct array on creation
   auto json_spec = GetJsonSpecStruct();
 
@@ -293,7 +293,7 @@ TEST(VARIABLE, STRUCTARRAY) {
   std::filesystem::remove_all("test.zarr");
 }
 
-TEST(VARIABLE, STRUCTARRAYFIELD) {
+TEST(Variable, structArrayField) {
   auto json_spec = GetJsonSpecStruct();
   json_spec["field"] = "a";
 
@@ -312,7 +312,7 @@ TEST(VARIABLE, STRUCTARRAYFIELD) {
   std::filesystem::remove_all("test.zarr");
 }
 
-TEST(VARIABLE, STRUCTARRAYOPEN) {
+TEST(Variable, structArrayOpen) {
   // tests the struct array on open
   auto json_spec = GetJsonSpecStruct();
 
@@ -343,7 +343,7 @@ TEST(VARIABLE, STRUCTARRAYOPEN) {
   std::filesystem::remove_all("test.zarr");
 }
 
-TEST(VARIABLE, OPEN) {
+TEST(Variable, open) {
   auto variable =
       mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean).value();
 
@@ -365,7 +365,7 @@ TEST(VARIABLE, OPEN) {
   std::filesystem::remove_all("name");
 }
 
-TEST(VARIABLE, OPENMETADATA) {
+TEST(Variable, openMetadata) {
   auto json = json_good["metadata"];
 
   /*
@@ -433,7 +433,7 @@ TEST(VARIABLE, OPENMETADATA) {
   */
 }
 
-TEST(VARIABLE, OPENEXISTING) {
+TEST(Variable, openExisting) {
   auto _variable =
       mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean).value();
 
@@ -456,7 +456,7 @@ TEST(VARIABLE, OPENEXISTING) {
   std::filesystem::remove_all("name");
 }
 
-TEST(VARIABLE, MISMATCHATTRS) {
+TEST(Variable, mismatchAttrs) {
   nlohmann::json json = GetJsonSpecStruct();
   auto variable = mdio::Variable<>::Open(json, mdio::constants::kCreateClean);
   ASSERT_TRUE(variable.status().ok()) << variable.status();
@@ -475,7 +475,7 @@ TEST(VARIABLE, MISMATCHATTRS) {
   std::filesystem::remove_all("test.zarr");
 }
 
-TEST(VARIABLE, SLICE) {
+TEST(Variable, slice) {
   auto variable =
       mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean).value();
 
@@ -497,7 +497,7 @@ TEST(VARIABLE, SLICE) {
   std::filesystem::remove_all("name");
 }
 
-TEST(VARIABLE, LABELEDARRAY) {
+TEST(Variable, labeledArray) {
   auto dimensions = tensorstore::Box({0, 0, 0}, {100, 200, 300});
 
   auto array = tensorstore::AllocateArray<mdio::dtypes::float32_t>(
@@ -537,7 +537,7 @@ TEST(VARIABLE, LABELEDARRAY) {
   // std::cout << array({0, 6, 0}) << std::endl;
 }
 
-TEST(VARIABLE, UserAttributes) {
+TEST(Variable, userAttributes) {
   auto var1Res = mdio::Variable<>::Open(GetJsonSpecStruct(),
                                         mdio::constants::kCreateClean);
   ASSERT_TRUE(var1Res.status().ok()) << var1Res.status();
@@ -577,7 +577,7 @@ TEST(VARIABLE, UserAttributes) {
 
 // If a slice is "out of bounds" it should automatically get resized to the
 // proper bounds.
-TEST(VARIABLE, OB_SLICE) {
+TEST(Variable, outOfBoundsSlice) {
   auto var =
       mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean).result();
 
@@ -629,7 +629,7 @@ TEST(VARIABLE, OB_SLICE) {
   EXPECT_TRUE(legal.status().ok()) << legal.status();
 }
 
-TEST(VARIABLEDATA, OB_SLICE) {
+TEST(VariableData, outOfBoundsSlice) {
   auto varRes =
       mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean).result();
 
@@ -657,7 +657,7 @@ TEST(VARIABLEDATA, OB_SLICE) {
       << "Step precondition was violated but still sliced";
 }
 
-TEST(VARIABLESPEC, OPEN) {
+TEST(VariableSpec, open) {
   // this is the whole thing
   auto creation =
       mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean).result();
@@ -706,7 +706,7 @@ TEST(VARIABLESPEC, OPEN) {
   std::filesystem::remove_all("name");
 }
 
-TEST(VARIABLESPEC, CREATEVARIABLE) {
+TEST(VariableSpec, createVariable) {
   mdio::TransactionalOpenOptions options;
   auto opt = options.Set(std::move(mdio::constants::kCreateClean));
 
@@ -723,7 +723,7 @@ TEST(VARIABLESPEC, CREATEVARIABLE) {
   std::filesystem::remove_all("name");
 }
 
-TEST(VARIABLESPEC, OPENVARIABLE) {
+TEST(VariableSpec, openVariable) {
   auto json_schema = mdio::internal::ValidateAndProcessJson(json_good).value();
   auto [json_store, metadata] = json_schema;
 
@@ -750,7 +750,7 @@ TEST(VARIABLESPEC, OPENVARIABLE) {
   std::filesystem::remove_all("name");
 }
 
-TEST(VARIABLESPEC, SLICEVARIABLE) {
+TEST(VariableSpec, sliceVariable) {
   mdio::TransactionalOpenOptions options;
   auto opt = options.Set(std::move(mdio::constants::kCreateClean));
 
@@ -792,7 +792,7 @@ TEST(VARIABLESPEC, SLICEVARIABLE) {
   std::filesystem::remove_all("name");
 }
 
-TEST(VARIABLEDATA, TESTCONSTRUCTION) {
+TEST(VariableData, testConstruction) {
   auto variableFuture =
       mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean);
 
@@ -815,7 +815,7 @@ TEST(VARIABLEDATA, TESTCONSTRUCTION) {
   std::filesystem::remove_all("name");
 }
 
-TEST(VARIABLEDATA, WRITECHUNKEDDATA) {
+TEST(VariableData, writeChunkedData) {
   auto result =
       mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean).result();
 
@@ -841,7 +841,7 @@ TEST(VARIABLEDATA, WRITECHUNKEDDATA) {
   std::filesystem::remove_all("name");
 }
 
-TEST(VARIABLEDATA, INMEMORYEDITS) {
+TEST(VariableData, inMemoryEdits) {
   auto json = PopulateStore(json_good).value();
   auto variableObject = mdio::Variable<>::Open(json).result();
   EXPECT_TRUE(variableObject.ok());
@@ -884,7 +884,7 @@ TEST(VARIABLEDATA, INMEMORYEDITS) {
   EXPECT_TRUE(slicedVariableDataObject.status().ok());
 }
 
-TEST(VARIABLEDATA, CHECKINMEMEDIT) {
+TEST(VariableData, checkInMemoryEdits) {
   auto json = PopulateStore(json_good).value();
   auto variableObject = mdio::Variable<>::Open(json).result();
   EXPECT_TRUE(variableObject.ok());
@@ -921,7 +921,7 @@ TEST(VARIABLEDATA, CHECKINMEMEDIT) {
   // EXPECT_EQ(uncastedData[0][99], 99);
 }
 
-TEST(VARIABLEDATA, NOORIGINSLICE) {
+TEST(VariableData, nonOriginSlice) {
   auto json = PopulateStore(json_good).value();
   auto variableObject = mdio::Variable<>::Open(json).result();
   EXPECT_TRUE(variableObject.ok());
@@ -944,7 +944,7 @@ TEST(VARIABLEDATA, NOORIGINSLICE) {
   EXPECT_EQ(data[1111], -14935);
 }
 
-TEST(VARIABLEDATA, WRITETEST) {
+TEST(VariableData, writeTest) {
   auto json = PopulateStore(json_good).value();
   auto variableObject = mdio::Variable<>::Open(json).result();
   EXPECT_TRUE(variableObject.ok());

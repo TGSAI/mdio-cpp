@@ -619,7 +619,7 @@ TEST(Variable, simple) {
   }
 }
 
-TEST(xarray, open) {
+TEST(Xarray, open) {
   nlohmann::json j = nlohmann::json::parse(manifest);
   auto res = Construct(j, "zarrs/simple_dataset");
   ASSERT_TRUE(res.status().ok()) << res.status();

@@ -1693,7 +1693,7 @@ TEST(Dataset, listVars) {
   }
 }
 
-TEST(Dataset, SelectField) {
+TEST(Dataset, selectField) {
   std::string path = "zarrs/acceptance";
   auto dataset = mdio::Dataset::Open(path, mdio::constants::kOpen);
   std::string name = "image_headers";
