@@ -255,8 +255,10 @@ TEST(VariableData, fromVariable2) {
   auto data = variable_data->get_data_accessor();
 
   data({0, 0}) = 100;
-  EXPECT_EQ(data({0, 0}), 100) << "Data at 0,0 should be 100 but was " << data({0, 0});
-  EXPECT_EQ(data({1, 0}), 0) << "Data at 1,0 should be 0 but was " << data({1, 0});
+  EXPECT_EQ(data({0, 0}), 100)
+      << "Data at 0,0 should be 100 but was " << data({0, 0});
+  EXPECT_EQ(data({1, 0}), 0)
+      << "Data at 1,0 should be 0 but was " << data({1, 0});
 }
 
 TEST(Variable, context) {
