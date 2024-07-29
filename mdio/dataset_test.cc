@@ -246,11 +246,14 @@ mdio::Dataset make() {
 TEST(DatasetSpec, valid) {
   auto dataset = make();
 
-  for (const auto& i : dataset.variables.get_keys()) {
-    std::cout << i << std::endl;
-  }
+  // Use the iterable accessor to get sorted keys
+  auto keys = dataset.variables.get_iterable_accessor();
+  ASSERT_TRUE(keys.size() == 2) << "Expected 2 variables in the dataset";
+  EXPECT_TRUE(keys[0] == "var1") << "Expected first variable to be var1";
+  EXPECT_TRUE(keys[1] == "var2") << "Expected second variable to be var2";
+
   auto result = dataset.variables.get("var1");
-  std::cout << result.status() << std::endl;
+  ASSERT_TRUE(result.status().ok()) << result.status();
 }
 
 TEST(Dataset, isel) {
@@ -307,8 +310,7 @@ TEST(Dataset, fromConsolidatedMeta) {
 
   auto new_dataset =
       mdio::Dataset::Open(dataset_path, mdio::constants::kOpen).result();
-  std::cout << new_dataset.status() << std::endl;
-  std::cout << new_dataset.value() << std::endl;
+  ASSERT_TRUE(new_dataset.status().ok()) << new_dataset.status();
 }
 
 TEST(Dataset, open) {
@@ -320,15 +322,11 @@ TEST(Dataset, open) {
 
   auto [metadata, json_vars] = validated_schema.value();
 
-  std::cout << json_vars[0] << std::endl;
-
   auto result =
       mdio::Dataset::Open(metadata, json_vars, mdio::constants::kCreateClean)
           .result();
 
   ASSERT_TRUE(result.ok());
-
-  std::cout << result.value() << std::endl;
 }
 
 TEST(Dataset, openWithContext) {
@@ -349,15 +347,11 @@ TEST(Dataset, openWithContext) {
 
   auto [metadata, json_vars] = validated_schema.value();
 
-  std::cout << json_vars[0] << std::endl;
-
   auto result = mdio::Dataset::Open(metadata, json_vars,
                                     mdio::constants::kCreateClean, context)
                     .result();
 
   ASSERT_TRUE(result.ok());
-
-  std::cout << result.value() << std::endl;
 }
 
 TEST(Dataset, fromJson) {
@@ -367,7 +361,7 @@ TEST(Dataset, fromJson) {
                                           mdio::constants::kCreateClean)
                      .result();
 
-  std::cout << dataset.status() << std::endl;
+  ASSERT_TRUE(dataset.status().ok()) << dataset.status();
 }
 
 TEST(Dataset, multiFuture) {
@@ -398,15 +392,17 @@ TEST(Dataset, multiFuture) {
 
   auto all_done_future = tensorstore::WaitAllFuture(futures);
 
-  for (auto var : variables) {
-    std::cout << var.ready() << std::endl;
-  }
+  // It may be the case that some futures become ready before this.
+  // for (auto var : variables) {
+  //   EXPECT_FALSE(var.ready());
+  // }
 
   all_done_future.Wait();
-  std::cout << all_done_future.result().status() << std::endl;
+  ASSERT_TRUE(all_done_future.result().status().ok())
+      << all_done_future.result().status();
 
   for (auto var : variables) {
-    std::cout << var.ready() << std::endl;
+    ASSERT_TRUE(var.result().status().ok()) << var.result().status();
   }
 }
 
@@ -453,8 +449,7 @@ TEST(Dataset, create) {
 }
 
 TEST(Dataset, commitMetadata) {
-  std::cout << "NOTICE: After this test is run, please verify the contents of "
-               "'image' are still correct!\n";
+  const std::string path = "zarrs/acceptance";
   std::filesystem::remove_all("zarrs/acceptance");
   auto json_vars = GetToyExample();
 
@@ -476,7 +471,29 @@ TEST(Dataset, commitMetadata) {
 
   auto commitRes = dataset.CommitMetadata();
 
-  EXPECT_TRUE(commitRes.status().ok()) << commitRes.status();
+  ASSERT_TRUE(commitRes.status().ok()) << commitRes.status();
+
+  auto newDataset = mdio::Dataset::Open(path, mdio::constants::kOpen);
+  ASSERT_TRUE(newDataset.status().ok()) << newDataset.status();
+
+  auto newImageRes = newDataset.value().variables.at("image");
+  ASSERT_TRUE(newImageRes.ok()) << newImageRes.status();
+
+  nlohmann::json metadata = newImageRes.value().getMetadata();
+  ASSERT_TRUE(metadata.contains("statsV1"))
+      << "Did not find statsV1 in metadata";
+  ASSERT_TRUE(metadata["statsV1"].contains("histogram"))
+      << "Did not find histogram in statsV1";
+  ASSERT_TRUE(metadata["statsV1"]["histogram"].contains("binCenters"))
+      << "Did not find binCenters in histogram";
+  EXPECT_TRUE(metadata["statsV1"]["histogram"]["binCenters"] ==
+              std::vector<float>({2, 4, 6}))
+      << "Expected binCenters to be [2, 4, 6] but got "
+      << metadata["statsV1"]["histogram"]["binCenters"];
+  EXPECT_TRUE(metadata["statsV1"]["histogram"]["counts"] ==
+              std::vector<float>({10, 15, 20}))
+      << "Expected counts to be [10, 15, 20] but got "
+      << metadata["statsV1"]["histogram"]["counts"];
 }
 
 TEST(Dataset, commitSlicedMetadata) {
