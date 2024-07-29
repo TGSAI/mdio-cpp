@@ -142,7 +142,14 @@ Result<void> DeleteDataset(std::string dataset_path) {
       std::system(("aws s3 rm --recursive " + dataset_path).c_str());
     } else {
       // Local filesystem
-      std::filesystem::remove_all(dataset_path);
+      if (!std::filesystem::is_directory(dataset_path)) {
+        return absl::InvalidArgumentError(
+            "Dataset path is not a directory\n\t" + dataset_path);
+      }
+      std::uintmax_t removed = std::filesystem::remove_all(dataset_path);
+      if (removed < 4) {  // Expected 3 .z* files and at least one Variable.
+        return absl::InternalError("Failed to delete dataset");
+      }
     }
   } catch (const std::exception& e) {
     return absl::InternalError("Failed to delete dataset: " +
