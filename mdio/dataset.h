@@ -1,15 +1,38 @@
+// Copyright 2024 TGS
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+
+//    http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #pragma once
 
 #define MDIO_API_VERSION "1.0.0"
 
 #include <fstream>
-#include <nlohmann/json-schema.hpp>
+#include <map>
+#include <string>
+#include <tuple>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
-#include "dataset_factory.h"
+#include "mdio/dataset_factory.h"
+#include "mdio/variable.h"
+#include "mdio/variable_collection.h"
 #include "tensorstore/driver/zarr/metadata.h"
 #include "tensorstore/util/future.h"
-#include "variable.h"
-#include "variable_collection.h"
+
+// clang-format off
+#include <nlohmann/json-schema.hpp>  // NOLINT
+// clang-format on
 
 namespace mdio {
 namespace internal {
@@ -62,8 +85,7 @@ Result<nlohmann::json> get_zarray(const ::nlohmann::json metadata) {
       json["metadata"].contains("shape")) {
     zarray["chunks"] = json["metadata"]["shape"];
   } else {
-    zarray["chunks"] =
-        json["metadata"]["chunks"];  // TODO: Can this have more states?
+    zarray["chunks"] = json["metadata"]["chunks"];
   }
 
   if (!json["metadata"].contains("compressor")) {
@@ -300,8 +322,8 @@ from_zmetadata(const std::string& dataset_path) {
   auto dataset_metadata = zmetadata["metadata"][".zattrs"];
 
   std::string driver = "file";
-  // TODO: Make this more robust. May be invalid if the stored path gets mangled
-  // somehow. Infer the driver
+  // TODO(BrianMichell): Make this more robust. May be invalid if the stored
+  // path gets mangled somehow. Infer the driver
   if (dataset_path.length() > 5) {
     if (dataset_path.substr(0, 5) == "gs://") {
       driver = "gcs";
@@ -407,7 +429,7 @@ class Dataset {
    */
   template <typename T = void, DimensionIndex R = dynamic_rank,
             ReadWriteMode M = ReadWriteMode::dynamic>
-  Result<Variable<T, R, M>> get_variable(std::string& variable_name) {
+  Result<Variable<T, R, M>> get_variable(const std::string& variable_name) {
     // return a variable from within the dataset.
     return variables.get<T, R, M>(variable_name);
   }
@@ -431,7 +453,7 @@ class Dataset {
    * if the schema is invalid.
    */
   template <typename... Option>
-  static Future<Dataset> from_json(::nlohmann::json& json_schema,
+  static Future<Dataset> from_json(const ::nlohmann::json& json_schema,
                                    const std::string& path,
                                    Option&&... options) {
     // json describing the vars ...
@@ -632,66 +654,69 @@ class Dataset {
     auto all_done_future = tensorstore::WaitAllFuture(futures);
 
     auto pair = tensorstore::PromiseFuturePair<Dataset>::Make();
-    all_done_future.ExecuteWhenReady([promise = std::move(pair.promise),
-                                      variables = std::move(variables),
-                                      metadata](tensorstore::ReadyFuture<void>
-                                                    readyFut) {
-      mdio::VariableCollection collection;
-      mdio::coordinate_map coords;
-      std::unordered_map<std::string, Index> shape_size;
+    all_done_future.ExecuteWhenReady(
+        [promise = std::move(pair.promise), variables = std::move(variables),
+         metadata](tensorstore::ReadyFuture<void> readyFut) {
+          mdio::VariableCollection collection;
+          mdio::coordinate_map coords;
+          std::unordered_map<std::string, Index> shape_size;
 
-      for (const auto& fvar : variables) {
-        // we should have waited for this to be ready so it's not blocking ...
-        auto _var = fvar.result();
-        if (!_var.ok()) {
-          promise.SetResult(_var.status());
-          continue;
-        }
-        auto var = _var.value();
+          for (const auto& fvar : variables) {
+            // we should have waited for this to be ready so it's not blocking
+            // ...
+            auto _var = fvar.result();
+            if (!_var.ok()) {
+              promise.SetResult(_var.status());
+              continue;
+            }
+            auto var = _var.value();
 
-        collection.add(var.get_variable_name(), std::move(var));
-        // update coordinates if any:
-        auto meta = var.getMetadata();
-        if (meta.contains("coordinates")) {
-          // Because of how Variable is set up, we need to break down a space
-          // delimited string to the vector
-          std::string coords_str = meta["coordinates"].get<std::string>();
-          std::vector<std::string> coords_vec = absl::StrSplit(coords_str, ' ');
-          coords[var.get_variable_name()] = coords_vec;
-        }
+            collection.add(var.get_variable_name(), std::move(var));
+            // update coordinates if any:
+            auto meta = var.getMetadata();
+            if (meta.contains("coordinates")) {
+              // Because of how Variable is set up, we need to break down a
+              // space delimited string to the vector
+              std::string coords_str = meta["coordinates"].get<std::string>();
+              std::vector<std::string> coords_vec =
+                  absl::StrSplit(coords_str, ' ');
+              coords[var.get_variable_name()] = coords_vec;
+            }
 
-        auto domain = var.dimensions();
-        auto shape = domain.shape().cbegin();
-        for (const auto& label : domain.labels()) {
-          // FIXME check that if exists shape is the same ...
-          shape_size[label] = *shape;
-          ++shape;
-        }
-      }
+            auto domain = var.dimensions();
+            auto shape = domain.shape().cbegin();
+            for (const auto& label : domain.labels()) {
+              // FIXME check that if exists shape is the same ...
+              shape_size[label] = *shape;
+              ++shape;
+            }
+          }
 
-      std::vector<std::string> keys;
-      std::vector<Index> values;
+          std::vector<std::string> keys;
+          std::vector<Index> values;
 
-      keys.reserve(shape_size.size());
-      values.reserve(shape_size.size());
-      for (const auto& pair : shape_size) {
-        keys.push_back(std::move(pair.first));
-        values.push_back(pair.second);
-      }
+          keys.reserve(shape_size.size());
+          values.reserve(shape_size.size());
+          for (const auto& pair : shape_size) {
+            keys.push_back(std::move(pair.first));
+            values.push_back(pair.second);
+          }
 
-      auto dataset_domain = tensorstore::IndexDomainBuilder<>(shape_size.size())
-                                .shape(values)
-                                .labels(keys)
-                                .Finalize();
+          auto dataset_domain =
+              tensorstore::IndexDomainBuilder<>(shape_size.size())
+                  .shape(values)
+                  .labels(keys)
+                  .Finalize();
 
-      if (!dataset_domain.ok()) {
-        promise.SetResult(dataset_domain.status());
-        return;
-      }
+          if (!dataset_domain.ok()) {
+            promise.SetResult(dataset_domain.status());
+            return;
+          }
 
-      Dataset new_dataset{metadata, collection, coords, dataset_domain.value()};
-      promise.SetResult(std::move(new_dataset));
-    });
+          Dataset new_dataset{metadata, collection, coords,
+                              dataset_domain.value()};
+          promise.SetResult(std::move(new_dataset));
+        });
     return pair.future;
   }
 

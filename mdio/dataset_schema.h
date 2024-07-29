@@ -1,3 +1,20 @@
+// Copyright 2024 TGS
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+
+//    http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#ifndef MDIO_DATASET_SCHEMA_H_
+#define MDIO_DATASET_SCHEMA_H_
+
 #include <string>
 
 /*! \mainpage The MDIO C++ Library
@@ -150,7 +167,8 @@ buckets.
  *
 */
 
-static const std::string kDatasetSchema = R"(
+// TODO(BrianMichell): Cleanup NOLINT
+/*NOLINT*/ static const std::string kDatasetSchema = R"( 
 {
    "title": "Dataset",
    "description": "Represents an MDIO v1 dataset.\n\nA dataset consists of variables and metadata.",
@@ -1292,3 +1310,5 @@ static const std::string kDatasetSchema = R"(
    ]
 }
 )";
+
+#endif  // MDIO_DATASET_SCHEMA_H_

@@ -1,12 +1,26 @@
+// Copyright 2024 TGS
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+
+//    http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <cstdlib>
 #include <filesystem>
-#include <nlohmann/json.hpp>
+#include <nlohmann/json.hpp>  // NOLINT
 
-#include "dataset_factory.h"
 #include "mdio/dataset.h"
+#include "mdio/dataset_factory.h"
 
 namespace {
 
@@ -14,7 +28,7 @@ namespace VariableTesting {
 
 using float16_t = mdio::dtypes::float_16_t;
 
-// TODO: Extend test coverage to include uint
+// TODO(BrianMichell): Extend test coverage to include uint
 nlohmann::json i2Base = R"(
     {
         "driver": "zarr",
@@ -1013,7 +1027,7 @@ TEST(VariableData, TEARDOWN) {
 namespace DatasetTest {
 
 // clang-format off
-std::string datasetManifest = R"(
+/*NOLINT*/  std::string datasetManifest = R"(
 {
   "metadata": {
     "name": "campos_3d",

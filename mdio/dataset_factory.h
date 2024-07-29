@@ -1,7 +1,27 @@
-#ifndef DATASET_CONSTRUCTOR_H
-#define DATASET_CONSTRUCTOR_H
+// Copyright 2024 TGS
 
-#include "dataset_validator.h"
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+
+//    http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#ifndef MDIO_DATASET_FACTORY_H_
+#define MDIO_DATASET_FACTORY_H_
+
+#include <set>
+#include <string>
+#include <tuple>
+#include <unordered_map>
+#include <vector>
+
+#include "mdio/dataset_validator.h"
 // #include "tensorstore/tensorstore.h"
 
 #include "absl/strings/escaping.h"
@@ -15,7 +35,7 @@
  * @param raw A string to be encoded
  * @return A string encoded in base64
  */
-std::string encode_base64(std::string raw) {
+std::string encode_base64(const std::string raw) {
   std::string encoded = absl::Base64Escape(raw);
   return encoded;
 }
@@ -29,7 +49,7 @@ std::string encode_base64(std::string raw) {
  * @return A string representing the dtype in numpy format limited to the dtypes
  * supported by MDIO Dataset
  */
-tensorstore::Result<std::string> to_zarr_dtype(std::string dtype) {
+tensorstore::Result<std::string> to_zarr_dtype(const std::string dtype) {
   // Convert the input dtype to Zarr dtype
   if (dtype == "int8") {
     return "<i1";
@@ -72,7 +92,8 @@ tensorstore::Result<std::string> to_zarr_dtype(std::string dtype) {
  * @return OkStatus if successful, InvalidArgumentError if dtype is not
  * supported
  */
-absl::Status transform_dtype(nlohmann::json& input, nlohmann::json& variable) {
+absl::Status transform_dtype(nlohmann::json& input /*NOLINT*/,
+                             nlohmann::json& variable /*NOLINT*/) {
   if (input["dataType"].contains("fields")) {
     nlohmann::json dtypeFields = nlohmann::json::array();
     for (const auto& field : input["dataType"]["fields"]) {
@@ -102,8 +123,8 @@ absl::Status transform_dtype(nlohmann::json& input, nlohmann::json& variable) {
  * @return OkStatus if successful, InvalidArgumentError if compressor is invalid
  * for MDIO
  */
-absl::Status transform_compressor(nlohmann::json& input,
-                                  nlohmann::json& variable) {
+absl::Status transform_compressor(nlohmann::json& input /*NOLINT*/,
+                                  nlohmann::json& variable /*NOLINT*/) {
   if (input.contains("compressor")) {
     if (input["compressor"].contains("name")) {
       if (input["compressor"]["name"] != "blosc") {
@@ -121,7 +142,6 @@ absl::Status transform_compressor(nlohmann::json& input,
       variable["metadata"]["compressor"]["cname"] = "lz4";
     }
     if (input["compressor"].contains("level")) {
-      // TODO: Is this done by the schema?
       if (input["compressor"]["level"] > 9 ||
           input["compressor"]["level"] < 0) {
         return absl::InvalidArgumentError(
@@ -161,8 +181,9 @@ absl::Status transform_compressor(nlohmann::json& input,
  * before this step This presumes that the user does not attempt to use these
  * functions directly
  */
-void transform_shape(nlohmann::json& input, nlohmann::json& variable,
-                     std::unordered_map<std::string, int>& dimensionMap) {
+void transform_shape(
+    nlohmann::json& input /*NOLINT*/, nlohmann::json& variable /*NOLINT*/,
+    std::unordered_map<std::string, int>& dimensionMap /*NOLINT*/) {
   if (input["dimensions"][0].is_object()) {
     nlohmann::json shape = nlohmann::json::array();
     for (auto& dimension : input["dimensions"]) {
@@ -187,7 +208,7 @@ void transform_shape(nlohmann::json& input, nlohmann::json& variable,
  * @return OkStatus if successful, InvalidArgumentError if the path is invalid
  */
 absl::Status transform_metadata(const std::string& path,
-                                nlohmann::json& variable) {
+                                nlohmann::json& /*NOLINT*/) {
   std::string bucket =
       "NULL";  // Default value, if is NULL don't add a bucket field
   std::string driver = "file";
@@ -240,7 +261,8 @@ absl::Status transform_metadata(const std::string& path,
  * @return A Variable spec or an error if the Variable spec is invalid
  */
 tensorstore::Result<nlohmann::json> from_json_to_spec(
-    nlohmann::json& json, std::unordered_map<std::string, int>& dimensionMap,
+    nlohmann::json& json /*NOLINT*/,
+    std::unordered_map<std::string, int>& dimensionMap /*NOLINT*/,
     const std::string& path) {
   nlohmann::json variableStub = R"(
         {
@@ -382,7 +404,7 @@ tensorstore::Result<nlohmann::json> from_json_to_spec(
  * consistently sized
  */
 tensorstore::Result<std::unordered_map<std::string, int>> get_dimensions(
-    nlohmann::json& spec) {
+    nlohmann::json& spec /*NOLINT*/) {
   std::unordered_map<std::string, int> dimensions;
   for (auto& variable : spec["variables"]) {
     if (variable["dimensions"][0].is_object()) {
@@ -410,7 +432,7 @@ tensorstore::Result<std::unordered_map<std::string, int>> get_dimensions(
  * @return A vector of Variable specs or an error if the Dataset spec is invalid
  */
 tensorstore::Result<std::tuple<nlohmann::json, std::vector<nlohmann::json>>>
-Construct(nlohmann::json& spec, const std::string& path) {
+Construct(nlohmann::json& spec /*NOLINT*/, const std::string& path) {
   // Validation should only return status codes. If it returns data then it
   // should be a "constructor"
   auto status = validate_dataset(spec);
@@ -441,4 +463,4 @@ Construct(nlohmann::json& spec, const std::string& path) {
   return std::make_tuple(spec["metadata"], datasetSpec);
 }
 
-#endif  // DATASET_CONSTRUCTOR_H
+#endif  // MDIO_DATASET_FACTORY_H_

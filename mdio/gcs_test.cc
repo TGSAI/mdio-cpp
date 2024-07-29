@@ -1,3 +1,17 @@
+// Copyright 2024 TGS
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+
+//    http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -5,12 +19,12 @@
 
 namespace {
 
-// TODO: User should point to their own GCS bucket here.
+// TODO(End user): User should point to their own GCS bucket here.
 // You may find the test dataset at: TODO: Upload the test dataset to a public
 // object store
-std::string const GCS_PATH = "gs://USER_BUCKET";
+/*NOLINT*/ std::string const GCS_PATH = "gs://USER_BUCKET";
 
-std::string const fullToyManifest = R"(
+/*NOLINT*/ std::string const fullToyManifest = R"(
 {
     "metadata": {
         "name": "campos_3d",
@@ -162,9 +176,9 @@ TEST(GCS, open) {
   nlohmann::json j = nlohmann::json::parse(fullToyManifest);
   auto dataset = mdio::Dataset::Open(GCS_PATH, mdio::constants::kOpen);
   EXPECT_TRUE(dataset.status().ok())
-      << dataset.status();  // TODO: How will timeouts work with this? Can we
-                            // simulate it or make it excessively short to force
-                            // one?
+      << dataset.status();  // TODO(BrianMichell): How will timeouts work with
+                            // this? Can we simulate it or make it excessively
+                            // short to force one?
 }
 
 TEST(GCS, write) {
