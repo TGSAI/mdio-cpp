@@ -285,6 +285,7 @@ TEST(Variable, structArray) {
 
   auto domain = variable->dimensions();
   // TODO(BrianMichell) - we might assign a "byte" label
+  // This is a feature of Tensorstore
   EXPECT_THAT(domain.labels(), ::testing::ElementsAre("x", "y", ""));
 
   auto bytes = mdio::constants::kByte;
@@ -335,6 +336,7 @@ TEST(Variable, structArrayOpen) {
 
   auto domain = variable->dimensions();
   // TODO(BrianMichell) - we might assign a "byte" label
+  // This is a feature of Tensorstore
   EXPECT_THAT(domain.labels(), ::testing::ElementsAre("x", "y", ""));
 
   auto bytes = mdio::constants::kByte;
