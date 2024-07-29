@@ -122,7 +122,7 @@ Future<void> TrimDataset(std::string dataset_path,
  * @return OK result if the dataset was valid and deleted successfully,
  * otherwise an error result
  */
-Result<void> DeleteDataset(std::string dataset_path) {
+Result<void> DeleteDataset(const std::string dataset_path) {
   // Open the dataset
   // This is to ensure that what is getting deleted by MDIO is a valid MDIO
   // dataset itself.
@@ -131,15 +131,33 @@ Result<void> DeleteDataset(std::string dataset_path) {
     return dsRes.status();
   }
 
+  // As we cannot get to this point without a valid dataset, the input should be
+  // able to be considered safe.
+  // Failed sanitization is assumed to be caught by lower levels of Tensorstore.
+
+  // TODO(BrianMichell): This still isn't the safest assumption.
+
   // Delete the dataset
   try {
-    // TODO(BrianMichell): This is all probably a security risk...
     if (dataset_path.rfind("gs://", 0) == 0) {
       // Google Cloud Storage
-      std::system(("gsutil rm -r " + dataset_path).c_str());
+      int result = std::system(("gsutil rm -r " + dataset_path).c_str());
+      if (result != 0) {
+        return absl::InternalError(
+            "Failed to delete dataset on GCS with "
+            "exit code: " +
+            std::to_string(result));
+      }
     } else if (dataset_path.rfind("s3://", 0) == 0) {
       // Amazon S3
-      std::system(("aws s3 rm --recursive " + dataset_path).c_str());
+      int result =
+          std::system(("aws s3 rm --recursive " + dataset_path).c_str());
+      if (result != 0) {
+        return absl::InternalError(
+            "Failed to delete dataset on S3 with "
+            "exit code: " +
+            std::to_string(result));
+      }
     } else {
       // Local filesystem
       if (!std::filesystem::is_directory(dataset_path)) {
