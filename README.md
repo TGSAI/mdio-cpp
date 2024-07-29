@@ -149,7 +149,7 @@ which can be use to link against mdio in a large project.
 
 ## Authors
 - **Ben Lasscock** - *Initial Work* - [blasscoc](https://github.com/blasscoc)
-- **Brian Michell** - *Initial Work* - 
+- **Brian Michell** - *Initial Work* - [BrianMichell](https://github.com/BrianMichell)
 
 
 
