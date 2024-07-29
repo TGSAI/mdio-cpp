@@ -15,6 +15,7 @@
 #ifndef MDIO_IMPL_H_
 #define MDIO_IMPL_H_
 #include "tensorstore/tensorstore.h"
+#include "tensorstore/index_space/dimension_identifier.h"
 
 /**
  * MDIO makes extensive use of the Tensorstore library.
