@@ -1688,9 +1688,7 @@ TEST(Dataset, listVars) {
   ASSERT_TRUE(dataset.status().ok()) << dataset.status();
 
   std::vector<std::string> varList = dataset.value().variables.get_keys();
-  for (auto& name : varList) {
-    std::cout << "Variable name: " << name << "\n";
-  }
+  EXPECT_TRUE(varList.size() == 9) << "No variables found in dataset";
 }
 
 TEST(Dataset, selectField) {
@@ -1700,24 +1698,27 @@ TEST(Dataset, selectField) {
 
   ASSERT_TRUE(dataset.status().ok()) << dataset.status();
   auto ds = dataset.value();
-  std::cout << ds.get_variable(name).value() << std::endl;
-  EXPECT_TRUE(ds.SelectField("image_headers", "cdp-x").status().ok())
-      << "Failed to pull cdp-x from image_headers";
-  std::cout << ds.get_variable(name).value() << std::endl;
-  EXPECT_TRUE(ds.SelectField("image_headers", "elevation").status().ok())
-      << "Failed to pull elevation from image_headers";
-  std::cout << ds.get_variable(name).value() << std::endl;
-  EXPECT_TRUE(ds.SelectField("image_headers", "").status().ok())
-      << "Failed to set to byte array";
-  std::cout << ds.get_variable(name).value() << std::endl;
-  EXPECT_FALSE(ds.SelectField("image", "NotAField").status().ok())
-      << "Somehow pulled NotAField from image";
-  EXPECT_FALSE(ds.SelectField("NotAVariable", "NotAField").status().ok())
-      << "Somehow pulled NotAField from "
-         "NotAVariable";
-  EXPECT_FALSE(ds.SelectField("image_headers", "NotAField").status().ok())
-      << "Somehow pulled NotAField from "
-         "image_headers";
+
+  EXPECT_TRUE(ds.get_variable(name).value().dtype() == mdio::constants::kByte) << "Failed to pull byte array from image_headers";
+  EXPECT_EQ(ds.get_variable(name).value().get_store().rank(), 3) << "Expected structarray to be of rank 3";
+
+  EXPECT_TRUE(ds.SelectField("image_headers", "cdp-x").status().ok()) << "Failed to pull cdp-x from image_headers";
+  EXPECT_TRUE(ds.get_variable(name).value().dtype() == mdio::constants::kInt32) << "Failed to pull int32 from image_headers";
+  EXPECT_EQ(ds.get_variable(name).value().get_store().rank(), 2) << "Expected cdp-x to be of rank 2";
+
+  EXPECT_TRUE(ds.SelectField("image_headers", "elevation").status().ok()) << "Failed to pull elevation from image_headers";
+  EXPECT_TRUE(ds.get_variable(name).value().dtype() == mdio::constants::kFloat16) << "Failed to pull float16 from image_headers";
+  EXPECT_EQ(ds.get_variable(name).value().get_store().rank(), 2) << "Expected elevation to be of rank 2";
+
+  EXPECT_TRUE(ds.SelectField("image_headers", "").status().ok()) << "Failed to set to byte array";
+  EXPECT_TRUE(ds.get_variable(name).value().dtype() == mdio::constants::kByte) << "Failed to pull byte array from image_headers";
+  EXPECT_EQ(ds.get_variable(name).value().get_store().rank(), 3) << "Expected structarray to be of rank 3";
+
+  EXPECT_FALSE(ds.SelectField("image", "NotAField").status().ok()) << "Somehow pulled NotAField from image";
+
+  EXPECT_FALSE(ds.SelectField("NotAVariable", "NotAField").status().ok()) << "Somehow pulled NotAField from NotAVariable";
+
+  EXPECT_FALSE(ds.SelectField("image_headers", "NotAField").status().ok()) << "Somehow pulled NotAField from image_headers";
 }
 
 TEST(Dataset, TEARDOWN) {
