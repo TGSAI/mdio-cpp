@@ -54,7 +54,7 @@ bool contains(const std::unordered_set<std::string>& set,
  * @return OkStatus if valid, NotFoundError if schema file load fails,
  * InvalidArgumentError if validation fails for any reason
  */
-absl::Status validate_schema(const nlohmann::json& spec) {
+absl::Status validate_schema(nlohmann::json& spec /*NOLINT*/) {
   // This is a hack to fix the date-time format not working as intended with the
   // json-schema-validator
 
@@ -172,7 +172,7 @@ absl::Status validate_coordinates_present(const nlohmann::json& spec) {
  * reason
 
 */
-absl::Status validate_dataset(const nlohmann::json& spec) {
+absl::Status validate_dataset(nlohmann::json& spec /*NOLINT*/) {
   absl::Status schemaStatus = validate_schema(spec);
   if (!schemaStatus.ok()) {
     return schemaStatus;
