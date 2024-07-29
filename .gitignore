@@ -1,2 +1,19 @@
 # Build files
 build/
+
+# Editor files
+.vscode/
+.idea/
+.eclipse/
+.settings/
+.vs/
+.xcodeproj/
+.xcworkspace/
+*~
+.*.swp
+#filename#
+nano.save
+
+# Python
+*.pyc
+__pycache__/
