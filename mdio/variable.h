@@ -843,16 +843,15 @@ class Variable {
       mdio::SliceDescriptor err;
       std::apply(
           [&](const auto&... desc) {
-            size_t idx = 0;
-            ((
-                 [&] {
-                   if (idx == preconditionStatus) {
-                     err = desc;
-                   }
-                   idx++;
-                 }(),
-                 idx),
-             ...);
+              size_t idx = 0;
+              ((
+                  [&] {
+                      if (idx == preconditionStatus) {
+                          err = desc;
+                      }
+                      idx++;
+                  }()
+              ), ...);
           },
           tuple_descs);
       return absl::InvalidArgumentError(
@@ -1040,7 +1039,7 @@ class Variable {
    */
   template <typename T_attrs = float>
   Result<void> UpdateAttributes(const nlohmann::json& newAttrs) {
-    auto res = (*attributes)->FromJson<T_attrs>(newAttrs);
+    auto res = (*attributes)->template FromJson<T_attrs>(newAttrs);
     if (res.status().ok()) {
       // Create a new UserAttributes object and update the inner std::shared_ptr
       *attributes = std::make_shared<UserAttributes>(res.value());
