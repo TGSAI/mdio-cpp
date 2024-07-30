@@ -15,7 +15,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4.1.7
       - name: Configure and Build Project
-        uses: ilammy/setup-nasm@v1
         uses: threeal/cmake-action@main
         with:
           cxx-compiler: ${{ matrix.compiler }}
