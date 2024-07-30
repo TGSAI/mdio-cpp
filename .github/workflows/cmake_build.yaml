@@ -1,0 +1,20 @@
+name: C/C++ build
+
+on: [push, pull_request]
+
+jobs:
+  ubuntu-build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        compiler: [g++, clang++]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2.0.0
+      - name: Build project
+        uses: nicledomaS/cmake_build_action@v1.4
+        with:
+          cmake_args: -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
+          # run_tests: ON
+          # unit_test_build: -Dtest=ON
