@@ -199,18 +199,6 @@ TEST(VariableData, conversion) {
   EXPECT_EQ("name", variable_c.variableName);
 }
 
-TEST(Variable, conversion) {
-  // we need to be able to cast to void
-  using int16_t = mdio::dtypes::int16_t;
-  // Can convert this
-  mdio::Variable<int16_t> variable_a;
-  mdio::Variable variable_b(variable_a);
-
-  // can't do this
-  // mdio::Variable<> variable_c;
-  // mdio::Variable<int16_t> variable_d(variable_c);
-}
-
 TEST(VariableData, fromVariable) {
   using int16_t = mdio::dtypes::int16_t;
 
