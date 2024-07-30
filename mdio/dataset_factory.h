@@ -208,7 +208,7 @@ void transform_shape(
  * @return OkStatus if successful, InvalidArgumentError if the path is invalid
  */
 absl::Status transform_metadata(const std::string& path,
-                                nlohmann::json& /*NOLINT*/) {
+                                nlohmann::json& variable /*NOLINT*/) {
   std::string bucket =
       "NULL";  // Default value, if is NULL don't add a bucket field
   std::string driver = "file";
