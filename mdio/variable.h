@@ -973,6 +973,13 @@ class Variable {
       if (isCloudStore) {
         outpath = ".zattrs";
       }
+
+      if (output_json["attributes"].contains("metadata")) {
+        auto metadata = output_json["attributes"]["metadata"];
+        output_json["attributes"].erase("metadata");
+        output_json["attributes"].merge_patch(metadata);
+      }
+
       return tensorstore::kvstore::Write(
           store.kvstore(), outpath,
           absl::Cord(output_json["attributes"].dump()));
