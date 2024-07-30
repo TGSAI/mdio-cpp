@@ -1,6 +1,23 @@
-#include "variable_collection.h"
+// Copyright 2024 TGS
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+
+//    http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "mdio/variable_collection.h"
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+
+#include <string>
 
 namespace {
 
@@ -13,14 +30,14 @@ namespace {
             {"path", "collectionVariable"}
         }
     },
-    {"attributes", 
+    {"attributes",
         {
-            {"long_name", "foooooo ....."}, // required
-            {"dimension_names", {"x", "y"} }, // required
-            {"dimension_units", {"m", "ft"} }, // optional (if coord).
+            {"long_name", "foooooo ....."},  // required
+            {"dimension_names", {"x", "y"} },  // required
+            {"dimension_units", {"m", "ft"} },  // optional (if coord).
             {"extra_attributes",  // optional misc attributes.
                 {
-                    {"job status", "win"}, // can be anything
+                    {"job status", "win"},  // can be anything
                     {"project code", "fail"}
                 }
             },
@@ -38,7 +55,8 @@ namespace {
 };
 
 TEST(VariableCollectionTest, add) {
-    auto variable = mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean);
+    auto variable = mdio::Variable<>::Open(json_good,
+                                           mdio::constants::kCreateClean);
     ASSERT_TRUE(variable.status().ok()) << variable.status();
 
     std::string name = "collectionVariable";
@@ -48,7 +66,8 @@ TEST(VariableCollectionTest, add) {
 }
 
 TEST(VariableCollectionTest, get) {
-    auto variable = mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean);
+    auto variable = mdio::Variable<>::Open(json_good,
+                                           mdio::constants::kCreateClean);
     ASSERT_TRUE(variable.status().ok()) << variable.status();
 
     mdio::VariableCollection vc;
@@ -66,11 +85,11 @@ TEST(VariableCollectionTest, get) {
 
     auto badCast = vc.get<float>(name);
     EXPECT_FALSE(badCast.status().ok()) << badCast.status();
-    
 }
 
 TEST(VariableCollectionTest, containsKey) {
-    auto variable = mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean);
+    auto variable = mdio::Variable<>::Open(json_good,
+                                           mdio::constants::kCreateClean);
     ASSERT_TRUE(variable.status().ok()) << variable.status();
 
     mdio::VariableCollection vc;
@@ -84,7 +103,8 @@ TEST(VariableCollectionTest, containsKey) {
 }
 
 TEST(VariableCollectionTest, getKeys) {
-    auto variable = mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean);
+    auto variable = mdio::Variable<>::Open(json_good,
+                                           mdio::constants::kCreateClean);
     ASSERT_TRUE(variable.status().ok()) << variable.status();
 
     mdio::VariableCollection vc;
@@ -99,4 +119,4 @@ TEST(VariableCollectionTest, getKeys) {
     EXPECT_EQ(keys[0], name);
 }
 
-} // namespace
+}  // namespace
