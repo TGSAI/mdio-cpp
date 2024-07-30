@@ -12,9 +12,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2.0.0
-      - name: Build project
-        uses: nicledomaS/cmake_build_action@v1.4
+      - name: Configure and Build Project
+        uses: threeal/cmake-action@main
         with:
-          cmake_args: -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
-          # run_tests: ON
-          # unit_test_build: -Dtest=ON
+          cxx-compiler: ${{ matrix.compiler }}
