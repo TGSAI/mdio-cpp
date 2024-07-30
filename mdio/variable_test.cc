@@ -181,8 +181,10 @@ TEST(VariableData, conversion) {
 
   auto variable =
       mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean).result();
+  ASSERT_TRUE(variable.ok()) << variable.status();
 
   auto variable_a = mdio::from_variable<int16_t>(variable.value());
+  ASSERT_TRUE(variable_a.ok()) << variable_a.status();
   // we cant convert from dtype to a void though
 
   // we need to be able to cast to void
