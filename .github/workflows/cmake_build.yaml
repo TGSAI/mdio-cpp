@@ -3,7 +3,7 @@ name: C/C++ build
 on: [push, pull_request]
 
 jobs:
-  ubuntu-build:
+  cmake_build:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
