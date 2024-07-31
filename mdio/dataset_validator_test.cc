@@ -897,8 +897,6 @@ TEST(validate, valid) {
   EXPECT_TRUE(status.ok()) << status;
 }
 
-TEST(validate, invalid) { EXPECT_TRUE(true); }
-
 // TODO(BrianMichell): Validate that the shapes are all valid
 // TODO(BrianMichell): Return a list of Variable specs + metadata
 
