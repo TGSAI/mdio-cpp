@@ -21,7 +21,7 @@
 
 namespace {
 
-TEST(schema, minimal) {
+TEST(Schema, minimal) {
   std::string schema = R"(
         {
   "metadata": {
@@ -73,7 +73,7 @@ TEST(schema, minimal) {
   EXPECT_TRUE(status.ok()) << status;
 }
 
-TEST(schema, valid) {
+TEST(Schema, valid) {
   std::string schema = R"(
         {
   "metadata": {
@@ -213,7 +213,7 @@ TEST(schema, valid) {
   EXPECT_TRUE(status.ok()) << status;
 }
 
-TEST(schema, invalid) {
+TEST(Schema, invalid) {
   std::string schema = R"(
         {
   "metadata": {
@@ -353,7 +353,7 @@ TEST(schema, invalid) {
   EXPECT_FALSE(status.ok()) << status;
 }
 
-TEST(validateCoords, valid) {
+TEST(ValidateCoords, valid) {
   std::string schema = R"(
         {
   "metadata": {
@@ -493,7 +493,7 @@ TEST(validateCoords, valid) {
   EXPECT_TRUE(status.ok()) << status;
 }
 
-TEST(validateCoords, invalid) {
+TEST(ValidateCoords, invalid) {
   std::string schema = R"(
         {
   "metadata": {
@@ -628,7 +628,7 @@ TEST(validateCoords, invalid) {
   EXPECT_FALSE(status.ok()) << status;
 }
 
-TEST(validateCoords, invalid2) {
+TEST(ValidateCoords, invalid2) {
   std::string schema = R"(
         {
   "metadata": {
@@ -757,7 +757,7 @@ TEST(validateCoords, invalid2) {
   EXPECT_FALSE(status.ok()) << status;
 }
 
-TEST(validate, valid) {
+TEST(Validate, valid) {
   std::string schema = R"(
         {
   "metadata": {
@@ -897,13 +897,13 @@ TEST(validate, valid) {
   EXPECT_TRUE(status.ok()) << status;
 }
 
-TEST(validate, invalid) { EXPECT_TRUE(true); }
+TEST(Validate, invalid) { EXPECT_TRUE(true); }
 
-TEST(datetime, valid) {
+TEST(Datetime, valid) {
   EXPECT_TRUE(isISO8601DateTime("2023-12-12T15:02:06.413469-06:00"));
 }
 
-TEST(datetime, invalid) {
+TEST(Datetime, invalid) {
   EXPECT_FALSE(isISO8601DateTime("2023-12-12T15:02:06.413469-06:"));
 }
 

@@ -39,14 +39,14 @@ auto getEdgeHist() {
       binEdges, binWidths, counts);
 }
 
-TEST(HistogramTest, ConstructCenterHist) {
+TEST(HistogramTest, constructCenterHist) {
   auto histogram = getCenterHist();
   nlohmann::json expected = {
       {"histogram", {{"binCenters", {1.0, 2.0, 3.0}}, {"counts", {1, 2, 3}}}}};
   EXPECT_EQ(histogram->getHistogram(), expected);
 }
 
-TEST(HistogramTest, ConstructEdgeHist) {
+TEST(HistogramTest, constructEdgeHist) {
   auto histogram = getEdgeHist();
   nlohmann::json expected = {{"histogram",
                               {{"binEdges", {0.0, 1.0, 2.0, 3.0}},
@@ -55,19 +55,19 @@ TEST(HistogramTest, ConstructEdgeHist) {
   EXPECT_EQ(histogram->getHistogram(), expected);
 }
 
-TEST(HistogramTest, CenteredBinHistogramClone) {
+TEST(HistogramTest, centeredBinHistogramClone) {
   auto histogram = getCenterHist();
   auto clone = histogram->clone();
   EXPECT_EQ(clone->getHistogram(), histogram->getHistogram());
 }
 
-TEST(HistogramTest, EdgeDefinedHistogramClone) {
+TEST(HistogramTest, edgeDefinedHistogramClone) {
   auto histogram = getEdgeHist();
   auto clone = histogram->clone();
   EXPECT_EQ(clone->getHistogram(), histogram->getHistogram());
 }
 
-TEST(HistogramTest, CenteredFromJSON) {
+TEST(HistogramTest, centeredFromJSON) {
   nlohmann::json expected = {
       {"histogram", {{"binCenters", {1.0, 2.0, 3.0}}, {"counts", {1, 2, 3}}}}};
   auto inertHist = mdio::internal::CenteredBinHistogram<float>({}, {});
@@ -77,7 +77,7 @@ TEST(HistogramTest, CenteredFromJSON) {
   EXPECT_EQ(histogram->getHistogram(), expected);
 }
 
-TEST(HistogramTest, EdgeFromJSON) {
+TEST(HistogramTest, edgeFromJSON) {
   nlohmann::json expected = {{"histogram",
                               {{"binEdges", {0.0, 1.0, 2.0, 3.0}},
                                {"binWidths", {1.0, 1.0, 1.0}},
@@ -89,7 +89,7 @@ TEST(HistogramTest, EdgeFromJSON) {
   EXPECT_EQ(histogram->getHistogram(), expected);
 }
 
-TEST(SummaryStatsTest, FromJson) {
+TEST(SummaryStatsTest, fromJson) {
   nlohmann::json expected = {
       {"count", 100},
       {"min", -1000.0},
@@ -103,7 +103,7 @@ TEST(SummaryStatsTest, FromJson) {
   EXPECT_EQ(stats.getBindable(), expected);
 }
 
-TEST(SummaryStatsTest, FromJsonInt) {
+TEST(SummaryStatsTest, fromJsonInt) {
   nlohmann::json expected = {
       {"count", 100},
       {"min", -1000},
@@ -117,7 +117,7 @@ TEST(SummaryStatsTest, FromJsonInt) {
   EXPECT_EQ(stats.getBindable(), expected);
 }
 
-TEST(UserAttributesTest, FromJsonNoStats) {
+TEST(UserAttributesTest, fromJsonNoStats) {
   nlohmann::json expected = {{"attributes",
                               {{"foo", "bar"},
                                {"life", 42},
@@ -131,7 +131,7 @@ TEST(UserAttributesTest, FromJsonNoStats) {
   EXPECT_EQ(attrs.ToJson(), expected);
 }
 
-TEST(UserAttributesTest, FromJsonNoAttrs) {
+TEST(UserAttributesTest, fromJsonNoAttrs) {
   nlohmann::json expected = {
       {"statsV1",
        {{"histogram", {{"binCenters", {1.0, 2.0, 3.0}}, {"counts", {1, 2, 3}}}},
@@ -146,7 +146,7 @@ TEST(UserAttributesTest, FromJsonNoAttrs) {
   EXPECT_EQ(attrs.ToJson(), expected);
 }
 
-TEST(UserAttributesTest, Nothing) {
+TEST(UserAttributesTest, nothing) {
   nlohmann::json expected = nlohmann::json::object();
   auto attrs = mdio::UserAttributes::FromJson(expected);
   EXPECT_EQ(attrs.value().ToJson(), expected);
@@ -155,7 +155,7 @@ TEST(UserAttributesTest, Nothing) {
   EXPECT_EQ(none.value().ToJson(), expected);
 }
 
-TEST(UserAttributesTest, FromJsonWithAttrs) {
+TEST(UserAttributesTest, fromJsonWithAttrs) {
   nlohmann::json expected = {
       {"statsV1",
        {{"histogram", {{"binCenters", {1.0, 2.0, 3.0}}, {"counts", {1, 2, 3}}}},
@@ -177,7 +177,7 @@ TEST(UserAttributesTest, FromJsonWithAttrs) {
   EXPECT_EQ(attrs.ToJson(), expected);
 }
 
-TEST(UserAttributesTest, FromJsonStatsList) {
+TEST(UserAttributesTest, fromJsonStatsList) {
   nlohmann::json expected = {
       {"statsV1",
        {{{"histogram",
@@ -209,7 +209,7 @@ TEST(UserAttributesTest, FromJsonStatsList) {
   EXPECT_EQ(attrs.ToJson(), expected);
 }
 
-TEST(UserAttributesTest, FromDataset) {
+TEST(UserAttributesTest, fromDataset) {
   std::string schema = R"(
         {
   "metadata": {
@@ -383,7 +383,7 @@ TEST(UserAttributesTest, FromDataset) {
             "Variable xline not found in Dataset");
 }
 
-TEST(UserAttributes, LocationAndReassignment) {
+TEST(UserAttributes, locationAndReassignment) {
   nlohmann::json expected = {
       {"statsV1",
        {{"histogram", {{"binCenters", {1.0, 2.0, 3.0}}, {"counts", {1, 2, 3}}}},
