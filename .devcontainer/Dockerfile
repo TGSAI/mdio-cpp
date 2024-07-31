@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/cpp:dev-ubuntu22.04
+FROM mcr.microsoft.com/devcontainers/cpp:dev-ubuntu24.04
 
 
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
