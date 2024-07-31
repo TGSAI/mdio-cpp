@@ -1,24 +1,39 @@
-# MDIO v1.1
+# MDIO v1.0
 
 Welcome to the MDIO - a descriptive format for energy data that is intended to reduce storage costs,  improve the efficiency of I/O and make energy data and workflows understandable and reproducible.
 
 MDIO schema definitions [here.](https://mdio-python.readthedocs.io/en/v1-new-schema/data_models/version_1.html)
 
+# Requied tools
+- CMake 3.24 or better
+- A C++17 compiler
+  - GCC 11 or better
+  - Clang 14 or better
+- ASM_NASM compiler
+  - NASM version 2.15.05
+- Python 3.9 or better
+
+## Optional tools (Code quality control)
+- clang-format version 18
+- cpplint version 1.6.1
+
+## Optional tools (Integration)
+- Python module xarray version 2024.6.0 or better
+
 # Getting Started
 
-First clone the MDIO v1.1 library:
+First clone the MDIO v1.0 library:
 
-This project uses CMake for the build and requires CMake 3.24 or better to build. The project build is configured to use the fetch and install it 3rd party dependencies. To build the mdio, clone the repos and create a build directory:
+This project uses CMake for the build and requires CMake 3.24 or better to build. The project build is configured to use the fetch and install it 3rd party dependencies. To build MDIO, clone the repos and create a build directory:
 ```
 mkdir build
 cd build
+# NOTE: "CMake Deprecation Warning at build/_deps/nlohmann_json_schema_validator-src/CMakeLists.txt:1" can safely be ignored
 cmake ..
 ```
-Each mdio target has the preffix "mdio" in its name, to build the tests run the following commands from the build directory (compile twice to handle CMAKE issue with validator dependency):
+Each MDIO target has the prefix "mdio" in its name, to build the tests run the following commands from the build directory:
 ```
 make -j32 mdio_acceptance_test
-# FIXME - ::nlohmann::json::validator CMAKE issue, re-run build
-make -j32 mdio_acceptance_test 
 ```
 The acceptance test will validate that the MDIO/C++ data can be read by Python's Xarray. To ensure that the test passes, make sure your Python environment has Xarray install, and run the acceptance test:
 ```
@@ -43,9 +58,9 @@ open mdio/docs/html/index.html
 
 - **Standardized Schema Compliance**: MDIO enforces a strict adherence to a standardized schema for all data inputs, ensuring consistency, reliability, and ease of data interoperability.
 
-- **Cloud and On-Premise Storage**: MDIO is intended to efficiently support energy datasets for local filesystems and HPC, and cloud object stores. Currenlty MDIO supports gcs and s3.
+- **Cloud and On-Premise Storage**: MDIO is intended to efficiently support energy datasets for local filesystems and HPC, and cloud object stores. Currently MDIO supports cloud storage with GCS and S3.
 
-- **Xarray and Python mdio Compatibility**: We prioritize compatibility with popular data analysis tools like Xarray and Python mdio, allowing for straightforward integration with your existing workflows.
+- **Xarray and Python mdio Compatibility**: We prioritize compatibility with popular data analysis tools like Xarray and Python MDIO, allowing for straightforward integration with your existing workflows.
 
 - **High Scalability and Performance**: Scalable asynchronous and concurrent I/O and tensor operations to handle complex and large energy datasets with ease, ensuring that your data processing remains fast and efficient, even as your data grows.
 
@@ -70,8 +85,7 @@ MDIO is built for a wide range of users, including:
 #### Phase 2: I/O Performance Optimization
 - **Goal**: Enhance the efficiency and performance of the tool.
 - **Milestones**:
-  - <span style="color:green">✔</span> Implement benchmarking to identify performance bottlenecks.
-  - Optimize high-impact areas identified through benchmarking.
+  - Optimize high-impact areas identified through benchmarking and real world usage.
 
 #### Phase 3: Cost Reduction and Efficiency
 - **Goal**: Reduce operational costs and improve efficiency.
@@ -96,13 +110,13 @@ We use the [tensorstore](https://google.github.io/tensorstore/) library to provi
 ZArr. If you're familiar with the Python DASK library, tensorstore has very similar semantics when it 
 comes to manipulating data and creating asynchronous execution.
 
-tensorstore is used under an Apache 2.0 license.
+Tensorstore is used under an Apache 2.0 license.
 
 Relevant features of the tensorstore library are:
 
 1. Read/write ZArr data in memory, from disk, with GCFS buckets (Google file system).
 2. Encode/decode data with some basic data compression BLOCS, zlib, lz4, zstd and jpeg.
-3. Concurrency; concurrent (multi-threaded) reads/writes.
+3. Concurrency; multi-threaded ACID reads/writes.
 4. Objects designed with async futures/promises architecture.
 4. Logical array slicing operations.
 5. Basic iterators.
@@ -117,39 +131,16 @@ Nice to have features of tensorstore:
 4. Progress monitoring.
 5. Abstraction over the tensorstore "driver", read generic array data from buckets.  
 
-# Getting Started
+## (dependency) Patrick Boettcher's JSON schema validator
 
-This project uses CMake for the build and requires CMake 3.24 or better to build. 
-The project CMakeLists.txt is configured to use the FetchContent to install the Tensorstore dependencies
-automatically.
+We use the [json-schema-validator](https://github.com/pboettch/json-schema-validator) library to validate MDIO schemas against the [schema definitions](https://mdio-python.readthedocs.io/en/v1-new-schema/data_models/version_1.html).
 
-To build the mdio tests clone the repos and create a build directory:
-```
-mkdir build
-cd build
-cmake ..
-```
+This library is used under the [MIT](https://github.com/pboettch/json-schema-validator?tab=License-1-ov-file#readme) license.
 
-Each mdio target has the word "mdio" appended to it, to build the tests run 
-the following commands from the build directory:
-```
-make -j32 mdio_mdio_test
-make -j32 mdio_mdio_data_test
-```
-
-These tests will be installed here:
-```
-build/mdio/mdio_mdio_test
-build/mdio/mdio_mdio_data_test
-```
-and can be run from the command-line.
-
-Each mdio library will provide an associated CMake alias, e.g. mdio::mdio
-which can be use to link against mdio in a large project.
 
 ## Authors
 - **Ben Lasscock** - *Initial Work* - [blasscoc](https://github.com/blasscoc)
-- **Brian Michell** - *Initial Work* - 
+- **Brian Michell** - *Initial Work* - [BrianMichell](https://github.com/BrianMichell)
 
 
 

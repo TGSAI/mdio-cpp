@@ -594,7 +594,7 @@ class Variable {
         metadata(other.getReducedMetadata()),
         store(other.get_store()),
         attributes(other.attributes),
-        attributesAddress(attributesAddress) {}
+        attributesAddress(other.get_attributes_address()) {}
 
   friend std::ostream& operator<<(std::ostream& os, const Variable& obj) {
     os << obj.variableName << "\t" << obj.dimensions() << "\n";
@@ -971,6 +971,13 @@ class Variable {
       if (isCloudStore) {
         outpath = ".zattrs";
       }
+
+      if (output_json["attributes"].contains("metadata")) {
+        auto metadata = output_json["attributes"]["metadata"];
+        output_json["attributes"].erase("metadata");
+        output_json["attributes"].merge_patch(metadata);
+      }
+
       return tensorstore::kvstore::Write(
           store.kvstore(), outpath,
           absl::Cord(output_json["attributes"].dump()));
@@ -1100,6 +1107,16 @@ class Variable {
 
   // The data that should remain static, but MAY need to be updated.
   std::shared_ptr<std::shared_ptr<UserAttributes>> attributes;
+
+  /**
+   * @brief Gets the original address of the User Attributes.
+   * This method should NEVER be called by the user.
+   * It allows for the copy constructor without re-serializing metadata.
+   * @return The original address of the User Attributes.
+   */
+  const std::uintptr_t get_attributes_address() const {
+    return attributesAddress;
+  }
 
  private:
   /**
