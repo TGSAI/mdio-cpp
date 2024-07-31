@@ -66,7 +66,7 @@ ENV PATH="/venv/bin:$PATH"
 # FIXME - pip is out of date, find a better way
 RUN pip install --upgrade pip
 
-RUN pip install wheel yapf
+RUN pip install wheel yapf cpplint
 
 RUN pip install \
   "poetry==$POETRY_VERSION" \
@@ -75,6 +75,10 @@ RUN pip install \
 
 # if we want the user to be able to do pip install etc.
 RUN chmod -R 777 /venv
+
+# Allow users to update venv
+RUN mkdir /workspaces
+RUN chmod -R 777 /workspaces
 
 # you can use this for benchmarking cli tools
 RUN wget https://github.com/sharkdp/hyperfine/releases/download/v${HYPERFINE}/hyperfine_${HYPERFINE}_amd64.deb \
@@ -93,10 +97,6 @@ RUN mkdir -p /apps/cmake \
   && cd / \
   && rm -rf /apps/cmake \
   && ldconfig
-
-
-# Allow users to update venv
-RUN mkdir /workspaces && chmod -R 777 /workspaces
 
 
 ENV PYTHONPATH "${PYTHONPATH}:/workspaces/multidimio-cpp/multidimio-cpp"
