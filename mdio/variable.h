@@ -1396,5 +1396,5 @@ Result<VariableData<T, R, OriginKind>> from_variable(
       variable.get_variable_name(), variable.get_long_name(),
       variable.getReducedMetadata(), std::move(labeled_array)};
 }
-};      // namespace mdio
+};  // namespace mdio
 #endif  // MDIO_VARIABLE_H_

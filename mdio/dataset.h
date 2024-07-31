@@ -654,67 +654,69 @@ class Dataset {
     auto all_done_future = tensorstore::WaitAllFuture(futures);
 
     auto pair = tensorstore::PromiseFuturePair<Dataset>::Make();
-    all_done_future.ExecuteWhenReady([promise = std::move(pair.promise),
-                                      variables = std::move(variables),
-                                      metadata](tensorstore::ReadyFuture<void>
-                                                    readyFut) {
-      mdio::VariableCollection collection;
-      mdio::coordinate_map coords;
-      std::unordered_map<std::string, Index> shape_size;
+    all_done_future.ExecuteWhenReady(
+        [promise = std::move(pair.promise), variables = std::move(variables),
+         metadata](tensorstore::ReadyFuture<void> readyFut) {
+          mdio::VariableCollection collection;
+          mdio::coordinate_map coords;
+          std::unordered_map<std::string, Index> shape_size;
 
-      for (const auto& fvar : variables) {
-        // we should have waited for this to be ready so it's not blocking
-        // ...
-        auto _var = fvar.result();
-        if (!_var.ok()) {
-          promise.SetResult(_var.status());
-          continue;
-        }
-        auto var = _var.value();
+          for (const auto& fvar : variables) {
+            // we should have waited for this to be ready so it's not blocking
+            // ...
+            auto _var = fvar.result();
+            if (!_var.ok()) {
+              promise.SetResult(_var.status());
+              continue;
+            }
+            auto var = _var.value();
 
-        collection.add(var.get_variable_name(), std::move(var));
-        // update coordinates if any:
-        auto meta = var.getMetadata();
-        if (meta.contains("coordinates")) {
-          // Because of how Variable is set up, we need to break down a
-          // space delimited string to the vector
-          std::string coords_str = meta["coordinates"].get<std::string>();
-          std::vector<std::string> coords_vec = absl::StrSplit(coords_str, ' ');
-          coords[var.get_variable_name()] = coords_vec;
-        }
+            collection.add(var.get_variable_name(), std::move(var));
+            // update coordinates if any:
+            auto meta = var.getMetadata();
+            if (meta.contains("coordinates")) {
+              // Because of how Variable is set up, we need to break down a
+              // space delimited string to the vector
+              std::string coords_str = meta["coordinates"].get<std::string>();
+              std::vector<std::string> coords_vec =
+                  absl::StrSplit(coords_str, ' ');
+              coords[var.get_variable_name()] = coords_vec;
+            }
 
-        auto domain = var.dimensions();
-        auto shape = domain.shape().cbegin();
-        for (const auto& label : domain.labels()) {
-          // FIXME check that if exists shape is the same ...
-          shape_size[label] = *shape;
-          ++shape;
-        }
-      }
+            auto domain = var.dimensions();
+            auto shape = domain.shape().cbegin();
+            for (const auto& label : domain.labels()) {
+              // FIXME check that if exists shape is the same ...
+              shape_size[label] = *shape;
+              ++shape;
+            }
+          }
 
-      std::vector<std::string> keys;
-      std::vector<Index> values;
+          std::vector<std::string> keys;
+          std::vector<Index> values;
 
-      keys.reserve(shape_size.size());
-      values.reserve(shape_size.size());
-      for (const auto& pair : shape_size) {
-        keys.push_back(std::move(pair.first));
-        values.push_back(pair.second);
-      }
+          keys.reserve(shape_size.size());
+          values.reserve(shape_size.size());
+          for (const auto& pair : shape_size) {
+            keys.push_back(std::move(pair.first));
+            values.push_back(pair.second);
+          }
 
-      auto dataset_domain = tensorstore::IndexDomainBuilder<>(shape_size.size())
-                                .shape(values)
-                                .labels(keys)
-                                .Finalize();
+          auto dataset_domain =
+              tensorstore::IndexDomainBuilder<>(shape_size.size())
+                  .shape(values)
+                  .labels(keys)
+                  .Finalize();
 
-      if (!dataset_domain.ok()) {
-        promise.SetResult(dataset_domain.status());
-        return;
-      }
+          if (!dataset_domain.ok()) {
+            promise.SetResult(dataset_domain.status());
+            return;
+          }
 
-      Dataset new_dataset{metadata, collection, coords, dataset_domain.value()};
-      promise.SetResult(std::move(new_dataset));
-    });
+          Dataset new_dataset{metadata, collection, coords,
+                              dataset_domain.value()};
+          promise.SetResult(std::move(new_dataset));
+        });
     return pair.future;
   }
 
