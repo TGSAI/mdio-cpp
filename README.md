@@ -140,7 +140,7 @@ This library is used under the [MIT](https://github.com/pboettch/json-schema-val
 
 ## Authors
 - **Ben Lasscock** - *Initial Work* - [blasscoc](https://github.com/blasscoc)
-- **Brian Michell** - *Initial Work* - 
+- **Brian Michell** - *Initial Work* - [BrianMichell](https://github.com/BrianMichell)
 
 
 
