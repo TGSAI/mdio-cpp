@@ -843,15 +843,14 @@ class Variable {
       mdio::SliceDescriptor err;
       std::apply(
           [&](const auto&... desc) {
-              size_t idx = 0;
-              ((
-                  [&] {
-                      if (idx == preconditionStatus) {
-                          err = desc;
-                      }
-                      idx++;
-                  }()
-              ), ...);
+            size_t idx = 0;
+            (([&] {
+               if (idx == preconditionStatus) {
+                 err = desc;
+               }
+               idx++;
+             }()),
+             ...);
           },
           tuple_descs);
       return absl::InvalidArgumentError(
