@@ -500,6 +500,12 @@ buckets.
                "title": "Apiversion",
                "type": "string"
             },
+            "createdOn": {
+               "description": "The timestamp indicating when the dataset was first created, including timezone information. Expressed in ISO 8601 format.",
+               "format": "date-time",
+               "title": "Createdon",
+               "type": "string"
+            },
             "attributes": {
                "anyOf": [
                   {
@@ -516,7 +522,8 @@ buckets.
          },
          "required": [
             "name",
-            "apiVersion"
+            "apiVersion",
+            "createdOn"
          ],
          "title": "DatasetMetadata",
          "type": "object"
