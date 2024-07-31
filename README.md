@@ -11,6 +11,14 @@ MDIO schema definitions [here.](https://mdio-python.readthedocs.io/en/v1-new-sch
   - Clang 14 or better
 - ASM_NASM compiler
   - NASM version 2.15.05
+- Python 3.9 or better
+
+## Optional tools (Code quality control)
+- clang-format version 18
+- cpplint version 1.6.1
+
+## Optional tools (Integration)
+- Python module xarray version 2024.6.0 or better
 
 # Getting Started
 
