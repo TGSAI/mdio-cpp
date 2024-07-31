@@ -594,7 +594,7 @@ class Variable {
         metadata(other.getReducedMetadata()),
         store(other.get_store()),
         attributes(other.attributes),
-        attributesAddress(attributesAddress) {}
+        attributesAddress(other.get_attributes_address()) {}
 
   friend std::ostream& operator<<(std::ostream& os, const Variable& obj) {
     os << obj.variableName << "\t" << obj.dimensions() << "\n";
@@ -1100,6 +1100,16 @@ class Variable {
 
   // The data that should remain static, but MAY need to be updated.
   std::shared_ptr<std::shared_ptr<UserAttributes>> attributes;
+
+  /**
+   * @brief Gets the original address of the User Attributes.
+   * This method should NEVER be called by the user.
+   * It allows for the copy constructor without re-serializing metadata.
+   * @return The original address of the User Attributes.
+   */
+  const std::uintptr_t get_attributes_address() const {
+    return attributesAddress;
+  }
 
  private:
   /**
