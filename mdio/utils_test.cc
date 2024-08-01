@@ -188,8 +188,6 @@ TEST(TrimDataset, oneSlice) {
   ASSERT_TRUE(res.status().ok()) << res.status();
   auto dsRes = mdio::Dataset::Open(kTestPath, mdio::constants::kOpen);
   ASSERT_TRUE(dsRes.status().ok()) << dsRes.status();
-  auto ds = dsRes.value();
-  std::cout << ds << std::endl;
 }
 
 TEST(TrimDataset, oneSliceData) {

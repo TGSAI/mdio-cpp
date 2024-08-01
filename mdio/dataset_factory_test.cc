@@ -167,12 +167,6 @@ TEST(Toy, create) {
   res = Construct(j, "zarrs/toy_dataset");
 
   ASSERT_TRUE(res.status().ok()) << res.status();
-
-  nlohmann::json metadata = std::get<0>(res.value());
-  std::vector<nlohmann::json> variables = std::get<1>(res.value());
-  for (auto& variable : variables) {
-    std::cout << variable.dump() << "\n\n";
-  }
 }
 
 TEST(Teapot, create) {
@@ -361,12 +355,6 @@ TEST(Teapot, create) {
   nlohmann::json j = nlohmann::json::parse(teapotSchema);
   auto res = Construct(j, "zarrs/teapot_dome_3d");
   ASSERT_TRUE(res.status().ok()) << res.status();
-
-  nlohmann::json metadata = std::get<0>(res.value());
-  std::vector<nlohmann::json> variables = std::get<1>(res.value());
-  for (auto& variable : variables) {
-    std::cout << variable.dump() << "\n\n";
-  }
 }
 
 TEST(Variable, createTeapot) {
@@ -556,7 +544,7 @@ TEST(Variable, createTeapot) {
   auto res = Construct(j, "zarrs/teapot_dome_3d");
   ASSERT_TRUE(res.status().ok()) << res.status();
 
-  nlohmann::json metadata = std::get<0>(res.value());
+  nlohmann::json metadata = std::get<0>(res.value());  // NOLINT UNUSED
   std::vector<nlohmann::json> variables = std::get<1>(res.value());
   for (auto& variable : variables) {
     auto varStatus =
@@ -610,7 +598,7 @@ TEST(Variable, simple) {
   auto res = Construct(j, "zarrs/simple_dataset");
   ASSERT_TRUE(res.status().ok()) << res.status();
 
-  nlohmann::json metadata = std::get<0>(res.value());
+  nlohmann::json metadata = std::get<0>(res.value());  // NOLINT UNUSED
   std::vector<nlohmann::json> variables = std::get<1>(res.value());
   for (auto& variable : variables) {
     auto varStatus =
@@ -619,12 +607,12 @@ TEST(Variable, simple) {
   }
 }
 
-TEST(xarray, open) {
+TEST(Xarray, open) {
   nlohmann::json j = nlohmann::json::parse(manifest);
   auto res = Construct(j, "zarrs/simple_dataset");
   ASSERT_TRUE(res.status().ok()) << res.status();
 
-  nlohmann::json metadata = std::get<0>(res.value());
+  nlohmann::json metadata = std::get<0>(res.value());  // NOLINT UNUSED
   std::vector<nlohmann::json> variables = std::get<1>(res.value());
   for (auto& variable : variables) {
     variable.erase("attributes");
