@@ -897,16 +897,6 @@ TEST(Validate, valid) {
   EXPECT_TRUE(status.ok()) << status;
 }
 
-TEST(Validate, invalid) { EXPECT_TRUE(true); }
-
-TEST(Datetime, valid) {
-  EXPECT_TRUE(isISO8601DateTime("2023-12-12T15:02:06.413469-06:00"));
-}
-
-TEST(Datetime, invalid) {
-  EXPECT_FALSE(isISO8601DateTime("2023-12-12T15:02:06.413469-06:"));
-}
-
 // TODO(BrianMichell): Validate that the shapes are all valid
 // TODO(BrianMichell): Return a list of Variable specs + metadata
 

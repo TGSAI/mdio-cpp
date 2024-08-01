@@ -16,7 +16,6 @@
 #define MDIO_DATASET_VALIDATOR_H_
 
 #include <fstream>
-#include <regex>  // NOLINT
 #include <string>
 #include <unordered_set>
 
@@ -26,17 +25,6 @@
 // clang-format off
 #include <nlohmann/json-schema.hpp>  // NOLINT
 // clang-format on
-
-/**
- * @brief Checks if a string is a valid ISO8601 datetime
- * @param dateTimeStr A string representing a datetime
- * @return True if valid, false otherwise
- */
-bool isISO8601DateTime(const std::string& dateTimeStr) {
-  std::regex iso8601Regex(
-      R"(^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}(-\d{2}:\d{2}|Z)$)");
-  return std::regex_match(dateTimeStr, iso8601Regex);
-}
 
 /**
  * @brief Checks if a key exists in a map
@@ -55,26 +43,10 @@ bool contains(const std::unordered_set<std::string>& set,
  * InvalidArgumentError if validation fails for any reason
  */
 absl::Status validate_schema(nlohmann::json& spec /*NOLINT*/) {
-  // This is a hack to fix the date-time format not working as intended with the
-  // json-schema-validator
-
-  nlohmann::json createdOn = nlohmann::json::object();
-  if (spec.contains("metadata")) {
-    if (!spec["metadata"].contains("createdOn")) {
-      return absl::Status(absl::StatusCode::kInvalidArgument,
-                          "CreatedOn field not found.");
-    }
-    createdOn = spec["metadata"]["createdOn"];
-    spec["metadata"].erase("createdOn");
-    if (!isISO8601DateTime(createdOn.get<std::string>())) {
-      return absl::Status(absl::StatusCode::kInvalidArgument,
-                          "CreatedOn field is not a valid ISO8601 datetime.");
-    }
-  }
-
   nlohmann::json targetSchema = nlohmann::json::parse(kDatasetSchema);
 
-  nlohmann::json_schema::json_validator validator;
+  nlohmann::json_schema::json_validator validator(
+      nullptr, nlohmann::json_schema::default_string_format_check);
   validator.set_root_schema(targetSchema);
 
   try {
@@ -85,9 +57,6 @@ absl::Status validate_schema(nlohmann::json& spec /*NOLINT*/) {
         "Validation failed, here is why: " + std::string(e.what()));
   }
 
-  if (!createdOn.empty()) {
-    spec["metadata"]["createdOn"] = createdOn;
-  }
   return absl::OkStatus();
 }
 
