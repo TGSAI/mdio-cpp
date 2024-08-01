@@ -575,7 +575,8 @@ TEST(Variable, xarrayCompatibility) {
     basePath = "../..";
   }
 
-  std::string srcPath = std::string(basePath) + "/mdio/regression_tests/zarr_compatibility.py";
+  std::string srcPath =
+      std::string(basePath) + "/mdio/regression_tests/zarr_compatibility.py";
   std::string filePathBase = "./zarrs/acceptance/";
   std::string command = "python3 " + srcPath + " " + filePathBase;
 
@@ -1657,8 +1658,8 @@ TEST(Dataset, xarrayCompatible) {
     basePath = "../..";
   }
 
-  std::string srcPath =
-      std::string(basePath) + "/mdio/regression_tests/xarray_compatibility_test.py";
+  std::string srcPath = std::string(basePath) +
+                        "/mdio/regression_tests/xarray_compatibility_test.py";
   std::string datasetPath = "./zarrs/acceptance";
   std::string command = "python3 " + srcPath + " " + datasetPath + " False";
   int status = system(command.c_str());
