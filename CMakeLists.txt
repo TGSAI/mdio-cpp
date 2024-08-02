@@ -101,6 +101,8 @@ set(mdio_INTERNAL_DEPS
   tensorstore::index_space_dim_expression
   tensorstore::index_space_index_transform
   tensorstore::util_status_testutil
+  tensorstore::kvstore_gcs
+  tensorstore::driver_array
   PARENT_SCOPE
 )
 
