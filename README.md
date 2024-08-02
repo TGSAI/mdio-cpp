@@ -20,26 +20,26 @@ Welcome to **MDIO** - a descriptive format for energy data that is intended to r
 **MDIO** schema definitions [here.](https://mdio-python.readthedocs.io/en/v1-new-schema/data_models/version_1.html)
 
 # Requied tools
-- CMake 3.24 or better
+- CMake 3.24 *or better*
 - A C++17 compiler
-  - GCC 11 or better
-  - Clang 14 or better
+  - GCC 11 *or better*
+  - Clang 14 *or better*
 - ASM_NASM compiler
   - NASM version 2.15.05
-- Python 3.9 or better
+- Python 3.9 *or better*
 
 ## Optional tools (Code quality control)
 - clang-format version 18
 - cpplint version 1.6.1
 
 ## Optional tools (Integration)
-- Python module xarray version 2024.6.0 or better
+- Python module xarray version 2024.6.0 *or better*
 
 # Getting Started
 
 First clone the **MDIO** v1.0 library:
 
-This project uses CMake for the build and requires CMake 3.24 or better to build. The project build is configured to use the fetch and install it 3rd party dependencies. To build MDIO, clone the repos and create a build directory:
+This project uses CMake for the build and requires CMake 3.24 *or better* to build. The project build is configured to use the fetch and install it 3rd party dependencies. To build MDIO, clone the repos and create a build directory:
 ```bash
 $ mkdir build
 $ cd build
