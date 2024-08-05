@@ -18,6 +18,7 @@
 
 #include <fstream>
 #include <map>
+#include <memory>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -854,15 +855,14 @@ class Dataset {
 
     // We need to update the entire .zmetadata file
     std::vector<nlohmann::json> json_vars;
-    std::vector<Variable<>>
-        vars;  // Keeps the Variables in memory. Fix for premature reference
-               // decrement in LLVM compiler.
-    for (auto key : keys) {
-      auto var = variables.at(key).value();
+    std::vector<std::shared_ptr<Variable<>>>
+        vars;  // Keeps the Variables in memory using shared_ptr
+    for (const auto& key : keys) {
+      auto var = std::make_shared<Variable<>>(variables.at(key).value());
       vars.push_back(var);
       // Get the JSON, drop transform, and add attributes
       nlohmann::json json =
-          var.get_store().spec().value().ToJson(IncludeDefaults{}).value();
+          var->get_store().spec().value().ToJson(IncludeDefaults{}).value();
       json.erase("transform");
       json.erase("dtype");
       json["metadata"].erase("filters");
@@ -873,7 +873,7 @@ class Dataset {
       std::string path = json["kvstore"]["path"].get<std::string>();
       path.pop_back();
       json["kvstore"]["path"] = path;
-      nlohmann::json meta = var.getMetadata();
+      nlohmann::json meta = var->getMetadata();
       if (meta.contains("coordinates")) {
         meta["attributes"]["coordinates"] = meta["coordinates"];
         meta.erase("coordinates");
@@ -909,18 +909,16 @@ class Dataset {
         promises;
     std::vector<tensorstore::AnyFuture> futures;
 
-    vars.clear();  // Clear the vector so we can add only the modified Variables
-    for (auto key : modifiedVariables) {
+    for (const auto& key : modifiedVariables) {
       auto pair = tensorstore::PromiseFuturePair<
           tensorstore::TimestampedStorageGeneration>::Make();
-      auto var = variables.at(key).value();
-      vars.push_back(var);
-      auto updateFuture = var.PublishMetadata();
+      auto var = std::make_shared<Variable<>>(variables.at(key).value());
+      auto updateFuture = var->PublishMetadata();
       updateFuture.ExecuteWhenReady(
-          [promise = std::move(pair.promise)](
-              tensorstore::ReadyFuture<
-                  tensorstore::TimestampedStorageGeneration>
-                  readyFut) { promise.SetResult(readyFut.result()); });
+          [promise = std::move(pair.promise),
+           var](tensorstore::ReadyFuture<
+                tensorstore::TimestampedStorageGeneration>
+                    readyFut) { promise.SetResult(readyFut.result()); });
       variableFutures.push_back(std::move(updateFuture));
       futures.push_back(std::move(pair.future));
     }
