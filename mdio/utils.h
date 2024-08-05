@@ -62,6 +62,7 @@ Future<void> TrimDataset(std::string dataset_path,
 
   for (auto& varIdentifier : ds.variables.get_iterable_accessor()) {
     MDIO_ASSIGN_OR_RETURN(auto var, ds.variables.at(varIdentifier))
+    var.set_metadata_publish_flag(true);
 
     if (var.dimensions().labels().back() == "") {
       auto spec = var.spec();

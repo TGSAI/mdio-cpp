@@ -834,7 +834,14 @@ class Dataset {
     // Build out list of modified variables
     std::vector<std::string> modifiedVariables;
     for (const auto& key : keys) {
-      modifiedVariables.push_back(key);
+      auto var = variables.at(key).value();
+      if (var.was_updated() || var.should_publish()) {
+        modifiedVariables.push_back(key);
+      }
+      if (var.should_publish()) {
+        // Reset the flag. This should only get set by the trim util.
+        var.set_metadata_publish_flag(false);
+      }
     }
 
     // If nothing changed, we don't want to perform any writes
