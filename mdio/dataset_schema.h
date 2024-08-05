@@ -17,6 +17,16 @@
 
 #include <string>
 
+/*
+Note before progressing beyone here:
+This string is a direct copy of the MDIO Dataset model schema.
+https://mdio-python.readthedocs.io/en/v1/data_models/version_1.html
+
+It should NOT be modified unless the MDIO Dataset model schema is updated.
+*/
+
+/*NOLINT*/ static const std::string kSchemaVersion = "1.0.0";
+
 // TODO(BrianMichell): Cleanup NOLINT
 /*NOLINT*/ static const std::string kDatasetSchema = R"( 
 {

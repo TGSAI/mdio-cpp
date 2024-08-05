@@ -20,45 +20,45 @@ Welcome to **MDIO** - a descriptive format for energy data that is intended to r
 **MDIO** schema definitions [here.](https://mdio-python.readthedocs.io/en/v1-new-schema/data_models/version_1.html)
 
 # Requied tools
-- CMake 3.24 or better
+- CMake 3.24 *or better*
 - A C++17 compiler
-  - GCC 11 or better
-  - Clang 14 or better
+  - GCC 11 *or better*
+  - Clang 14 *or better*
 - ASM_NASM compiler
   - NASM version 2.15.05
-- Python 3.9 or better
+- Python 3.9 *or better*
 
 ## Optional tools (Code quality control)
 - clang-format version 18
 - cpplint version 1.6.1
 
 ## Optional tools (Integration)
-- Python module xarray version 2024.6.0 or better
+- Python module xarray version 2024.6.0 *or better*
 
 # Getting Started
 
 First clone the **MDIO** v1.0 library:
 
-This project uses CMake for the build and requires CMake 3.24 or better to build. The project build is configured to use the fetch and install it 3rd party dependencies. To build MDIO, clone the repos and create a build directory:
-```
-mkdir build
-cd build
+This project uses CMake for the build and requires CMake 3.24 *or better* to build. The project build is configured to use the fetch and install it 3rd party dependencies. To build MDIO, clone the repos and create a build directory:
+```bash
+$ mkdir build
+$ cd build
 # NOTE: "CMake Deprecation Warning at build/_deps/nlohmann_json_schema_validator-src/CMakeLists.txt:1" can safely be ignored
-cmake ..
+$ cmake ..
 ```
 Each **MDIO** target has the prefix "mdio" in its name, to build the tests run the following commands from the build directory:
-```
-make -j32 mdio_acceptance_test
+```bash
+$ make -j32 mdio_acceptance_test
 ```
 The acceptance test will validate that the MDIO/C++ data can be read by Python's Xarray. To ensure that the test passes, make sure your Python environment has Xarray install, and run the acceptance test:
-```
-cd build/mdio/
-./mdio_acceptance_test
+```bash
+$ cd build/mdio/
+$ ./mdio_acceptance_test
 ```
 The dataset and variables have their own test suite too: 
-```
-make -j32 mdio_variable_test
-make -j32 mdio_dataset_test
+```bash
+$ make -j32 mdio_variable_test
+$ make -j32 mdio_dataset_test
 ```
 Each **MDIO** library will provide an associated cmake alias, e.g. mdio::mdio which can be use to link against **MDIO** in your project.
 
