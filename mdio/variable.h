@@ -1132,9 +1132,7 @@ class Variable {
     if (attributes.get() != nullptr && attributes->get() != nullptr) {
       std::uintptr_t newAddress =
           reinterpret_cast<std::uintptr_t>(&(**attributes));
-      // TODO(BrianMichell): Leaving this as active is causing segfaults.
-      //   The features requiring it are low priority.
-      // attributesAddress = newAddress;
+      attributesAddress = newAddress;
     }
     // It is fine that this will only change in the "collection" instance of the
     // Variable, because that is the only one that will be operated on by the
