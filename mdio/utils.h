@@ -132,14 +132,18 @@ Result<void> DeleteDataset(const std::string dataset_path) {
   }
   auto ds = dsRes.value();
 
-  // Pick the arbitrarially first Variable in the dataset as the base KVStore template
-  MDIO_ASSIGN_OR_RETURN(auto var, ds.variables.at(ds.variables.get_keys().front()))
+  // Pick the arbitrarially first Variable in the dataset as the base KVStore
+  // template
+  MDIO_ASSIGN_OR_RETURN(auto var,
+                        ds.variables.at(ds.variables.get_keys().front()))
   MDIO_ASSIGN_OR_RETURN(auto spec, var.get_spec())
   nlohmann::json kvs = spec["kvstore"];
 
-  // Drop the Variable path from the KVStore path. This is will leave us with the full Dataset
-  std::size_t pos = kvs["path"].get<std::string>().rfind(var.get_variable_name());
-  std::string path = kvs["path"].get<std::string>().substr(0, pos-1);
+  // Drop the Variable path from the KVStore path. This is will leave us with
+  // the full Dataset
+  std::size_t pos =
+      kvs["path"].get<std::string>().rfind(var.get_variable_name());
+  std::string path = kvs["path"].get<std::string>().substr(0, pos - 1);
   if (path.back() == '/') {
     // Handle case where the variable is double slashed
     path.pop_back();
