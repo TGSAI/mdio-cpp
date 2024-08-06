@@ -15,12 +15,12 @@
 #ifndef MDIO_UTILS_H_
 #define MDIO_UTILS_H_
 
-#include <filesystem>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 #include "mdio/dataset.h"
+#include "tensorstore/kvstore/kvstore.h"
 
 namespace mdio {
 namespace utils {
@@ -122,7 +122,7 @@ Future<void> TrimDataset(std::string dataset_path,
  * @return OK result if the dataset was valid and deleted successfully,
  * otherwise an error result
  */
-Result<void> DeleteDataset(std::string dataset_path) {
+Result<void> DeleteDataset(const std::string dataset_path) {
   // Open the dataset
   // This is to ensure that what is getting deleted by MDIO is a valid MDIO
   // dataset itself.
@@ -130,23 +130,31 @@ Result<void> DeleteDataset(std::string dataset_path) {
   if (!dsRes.status().ok()) {
     return dsRes.status();
   }
+  auto ds = dsRes.value();
 
-  // Delete the dataset
-  try {
-    // TODO(BrianMichell): This is all probably a security risk...
-    if (dataset_path.rfind("gs://", 0) == 0) {
-      // Google Cloud Storage
-      std::system(("gsutil rm -r " + dataset_path).c_str());
-    } else if (dataset_path.rfind("s3://", 0) == 0) {
-      // Amazon S3
-      std::system(("aws s3 rm --recursive " + dataset_path).c_str());
-    } else {
-      // Local filesystem
-      std::filesystem::remove_all(dataset_path);
-    }
-  } catch (const std::exception& e) {
-    return absl::InternalError("Failed to delete dataset: " +
-                               std::string(e.what()));
+  // Pick the arbitrarially first Variable in the dataset as the base KVStore template
+  MDIO_ASSIGN_OR_RETURN(auto var, ds.variables.at(ds.variables.get_keys().front()))
+  MDIO_ASSIGN_OR_RETURN(auto spec, var.get_spec())
+  nlohmann::json kvs = spec["kvstore"];
+
+  // Drop the Variable path from the KVStore path. This is will leave us with the full Dataset
+  std::size_t pos = kvs["path"].get<std::string>().rfind(var.get_variable_name());
+  std::string path = kvs["path"].get<std::string>().substr(0, pos-1);
+  if (path.back() == '/') {
+    // Handle case where the variable is double slashed
+    path.pop_back();
+  }
+  kvs["path"] = path;
+
+  auto kvsFuture = tensorstore::kvstore::Open(kvs);
+  if (!kvsFuture.status().ok()) {
+    return kvsFuture.status();
+  }
+  auto kvstore = kvsFuture.value();
+
+  auto deleteRes = tensorstore::kvstore::DeleteRange(kvstore, {});
+  if (!deleteRes.status().ok()) {
+    return deleteRes.status();
   }
 
   return absl::OkStatus();
