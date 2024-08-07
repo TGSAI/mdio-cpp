@@ -109,6 +109,16 @@ if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   )
 endif()
 
+# Define internal deps for cloud specific drivers
+set(mdio_INTERNAL_GCS_DRIVER_DEPS
+  tensorstore::kvstore_gcs
+  PARENT_SCOPE  
+)
+
+set(mdio_INTERNAL_S3_DRIVER_DEPS
+  tensorstore::kvstore_s3
+  PARENT_SCOPE
+)
 
 list(APPEND mdio_COMMON_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR})
 
