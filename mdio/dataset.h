@@ -293,8 +293,14 @@ from_zmetadata(const std::string& dataset_path) {
   //  FIXME - enable async
   auto kvs_future = mdio::internal::dataset_kvs_store(dataset_path).result();
 
+  if (!kvs_future.ok()) {
+    return internal::CheckMissingDriverStatus(kvs_future.status());
+  }
   auto kvs_read_result =
       tensorstore::kvstore::Read(kvs_future.value(), ".zmetadata").result();
+  if (!kvs_read_result.ok()) {
+    return internal::CheckMissingDriverStatus(kvs_read_result.status());
+  }
 
   ::nlohmann::json zmetadata;
   try {
