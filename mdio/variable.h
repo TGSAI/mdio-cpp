@@ -80,6 +80,41 @@ struct SliceDescriptor {
 };
 
 namespace internal {
+
+/**
+ * @brief Checks a status for a missing driver message and returns an MDIO
+ * specific error message.
+ * @param status The status to check
+ * @return A driver specific message if the status is a missing driver message,
+ * otherwise the original status.
+ */
+absl::Status CheckMissingDriverStatus(const absl::Status& status) {
+  std::string error(status.message());
+  if (error.find("Error parsing object member \"driver\"") !=
+      std::string::npos) {
+    if (error.find("is not registered") != std::string::npos) {
+      if (error.find("gcs") != std::string::npos) {
+        return absl::InvalidArgumentError(
+            "A GCS path was detected but the GCS driver was not "
+            "registered.\nPlease ensure that your CMake includes the "
+            "mdio_INTERNAL_GCS_DRIVER_DEPS variable.");
+      } else if (error.find("s3") != std::string::npos) {
+        return absl::InvalidArgumentError(
+            "An S3 path was detected but the S3 driver was not "
+            "registered.\nPlease ensure that your CMake includes the "
+            "mdio_INTERNAL_S3_DRIVER_DEPS variable.");
+      } else {
+        return absl::InvalidArgumentError(
+            "An unexpected driver registration error has occured. Please file "
+            "a bug report with the error message to "
+            "https://github.com/TGSAI/mdio-cpp/issues\n" +
+            error);
+      }
+    }
+  }
+  return status;
+}
+
 /**
  * @brief Validates and processes a JSON specification for a tensorstore
  * variable.
@@ -358,7 +393,7 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
           tensorstore::ReadyFuture<void> readyFut) {
         auto ready_result = readyFut.result();
         if (!ready_result.ok()) {
-          promise.SetResult(ready_result.status());
+          promise.SetResult(CheckMissingDriverStatus(ready_result.status()));
         } else {
           promise.SetResult(variable_future.result());
         }
