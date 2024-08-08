@@ -481,6 +481,51 @@ TEST(Variable, mismatchAttrs) {
   std::filesystem::remove_all("test.zarr");
 }
 
+TEST(Variable, updateMetadata) {
+  nlohmann::json json = GetJsonSpecStruct();
+  auto variableRes =
+      mdio::Variable<>::Open(json, mdio::constants::kCreateClean);
+  ASSERT_TRUE(variableRes.status().ok()) << variableRes.status();
+  auto variable = variableRes.value();
+
+  // Update the metadata
+  nlohmann::json attrs = {
+      {"count", 100},
+      {"min", -1000.0},
+      {"max", 1000.0},
+      {"sum", 0.0},
+      {"sumSquares", 0.0},
+      {"histogram", {{"binCenters", {1.0, 2.0, 3.0}}, {"counts", {1, 2, 3}}}}};
+  auto attrsUpdateRes = variable.UpdateAttributes<float>(attrs);
+  ASSERT_TRUE(attrsUpdateRes.status().ok()) << attrsUpdateRes.status();
+
+  auto publishFuture = variable.PublishMetadata();
+  EXPECT_TRUE(publishFuture.status().ok()) << publishFuture.status();
+}
+
+TEST(Variable, publishNoStats) {
+  nlohmann::json json = GetJsonSpecStruct();
+  auto variableRes =
+      mdio::Variable<>::Open(json, mdio::constants::kCreateClean);
+  ASSERT_TRUE(variableRes.status().ok()) << variableRes.status();
+  auto variable = variableRes.value();
+
+  auto publishFuture = variable.PublishMetadata();
+  EXPECT_TRUE(publishFuture.status().ok()) << publishFuture.status();
+}
+
+TEST(Variable, publishNoAttrs) {
+  nlohmann::json json = GetJsonSpecStruct();
+  json["attributes"].erase("long_name");
+  auto variableRes =
+      mdio::Variable<>::Open(json, mdio::constants::kCreateClean);
+  ASSERT_TRUE(variableRes.status().ok()) << variableRes.status();
+  auto variable = variableRes.value();
+
+  auto publishFuture = variable.PublishMetadata();
+  EXPECT_TRUE(publishFuture.status().ok()) << publishFuture.status();
+}
+
 TEST(Variable, slice) {
   auto variable =
       mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean).value();
