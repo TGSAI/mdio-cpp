@@ -2,7 +2,7 @@
 The goal of this user guide is to provide an introduction on how you may want to use **MDIO** in your own applications.
 
 ## Getting started
-This user guide will assume that you are working in either the provided [devcontainer](https://github.com/TGSAI/mdio-cpp/.devcontainer) or have your environment configured according to the [README](https://github.com/TGSAI/mdio-cpp/README.md). Please ensure you have the [required tools](https://github.com/TGSAI/mdio-cpp?tab=readme-ov-file#requied-tools) before proceeding.
+This user guide will assume that you are working in either the provided [devcontainer](https://github.com/TGSAI/mdio-cpp/.devcontainer) or have your environment configured according to the [README](https://github.com/TGSAI/mdio-cpp/README.md). Please ensure you have the [required tools](https://github.com/TGSAI/mdio-cpp?tab=readme-ov-file#requied-tools) before proceeding. Following these guidelines should ensure a stable and consistent experience and will allow the community to provide better support without any guesswork regarding your environment.
 
 This user guide uses minimal BASH scripting in examples. Commands may need to be altered depending on your operating system.
 
@@ -13,7 +13,7 @@ This user guide uses minimal BASH scripting in examples. Commands may need to be
     ```Cmake
     include(FetchContent)
     ```
-2. Select a version of **MDIO**. Main can be expected to be stable but may update unexpectedly. [Tagged](https://github.com/TGSAI/mdio-cpp/tags) versions will also be available if a specific version is desired.
+2. Select a version of **MDIO**. Main can be expected to be stable but may update unexpectedly. [Tagged](https://github.com/TGSAI/mdio-cpp/tags) versions will also be available if a specific version is desired. New versions will be tagged as significant improvements, utilities, or features are added, as well as when underlying dependencies are updated.
     ```Cmake
     FetchContent_Declare(
       mdio
@@ -103,15 +103,76 @@ $ cd build
 $ pwd
 # /home/BrianMichell/mdio-cpp/examples/hello_mdio/build
 $ cmake ..
+# nproc will return the number of processors on your system. This helps speed up the build.
 $ make -j$(nproc) hello_mdio
 $ ./hello_mdio
 ```
 
 ## Concepts
+### Result based returns
+**MDIO** aims to follow the Google style of [not throwing exceptions](https://google.github.io/styleguide/cppguide.html#Exceptions). Instead we use result based returns wherever an error state could exist. A trivial example of this design pattern is a simple function that tries to divide two integers, and handles the case of divide-by-zero.
 
+```C++
+int divide(int numerator, int denominator) {
+  if (denominator == 0) {
+    throw std::invalid_argument("Denominator cannot be zero");
+  }
+  return numerator / denominator;
+}
+
+int main() {
+  int result;
+  try {
+    result = divide(10, 0);  // Oops, dividing by zero!
+  } catch (const std::invalid_argument& e) {
+    std::cerr << "Caught exception: " << e.what() << std::endl;
+    return 1;
+  }
+  std::cout << "10 / 0 = " << result << std::endl;
+  return 0;
+}
+```
+Now let's recreate this example with **MDIO** result based returns instead.
+```C++
+mdio::Result<int> divide(int numerator, int denominator) {
+  if (denominator == 0) {
+    return absl::InvalidArgumentError("Denominator cannot be zero") ;
+  }
+  return numerator / denominator;
+}
+
+int main() {
+  auto result = divide(10, 0);  // Oops, still dividing by zero!
+  if (!result.status().ok()) {
+    std::cerr << "Got a not-ok result: " << result.status() << std::endl;
+    return 1;
+  }
+  std::cout << "10 / 0 = " << result.value() << std::endl;
+  return 0;
+}
+```
+
+Result based returns have the benefit of streamlined error handling, but do slightly increase the verbosity of your code. Adapting to this design pattern may feel uncomfortable for some, but we have found it very robust and clean.
+
+If you find a case where **MDIO** throws an exception, please submit a [bug report](https://github.com/TGSAI/mdio-cpp/issues).
+
+### Open options
+Open options control how we interact with files, and **MDIO** is no different.
+- `mdio::constants::kOpen`: Opens an **MDIO** for reading and writing. This is only valid for existing MDIO files and will return an error status if it does not exist.
+- `mdio::constants::kCreate`: Opens a new **MDIO** for writing. This will return an error if the file already exists.
+- `mdio::constants::kCreateClean`: Opens a new **MDIO** for writing. This <b><u>will</u></b> overwrite existing metadata and should only be used in testing. Users are strongly encouraged to avoid including this option in any production environment as data could be lost if improperly used.
+
+### Variable, VariableData, and Dataset
+Simply put, an `mdio::Variable` is the C++ representation of the [Dataset model](https://mdio-python.readthedocs.io/en/v1/data_models/version_1.html#mdio.schemas.v1.variable.Variable) Variable. It holds no array data, but will be used to both read and write. This process will be explained in more depth below.
+
+An `mdio::VariableData` is what will be used to manipulate your data in-memory.
+
+An `mdio::Dataset` represents a collection of Variables, and their relation with one another.
+
+More information about Variables, their underlying constructs, and relation to XArray can be found [here](https://github.com/TGSAI/mdio-cpp/issues/8).
 
 ## Constructors
-
+Constructors are based entirely off of the [MDIO v1](https://mdio-python.readthedocs.io/en/v1/data_models/version_1.html#reference) Dataset model. Simply specify a JSON schema and provide it to the `mdio::Dataset::from_json()` method along with the desired path (which can be a relative path, absolute path, or even a GCS or S3 path!), and your open options
 
 ## Slicing
 Slicing in **MDIO** is the concept of getting a subset of the data. This could be anything from a single point to a full [hypercube](https://en.wikipedia.org/wiki/Hypercube). Slicing is non-destructive, meaning that if you have pre-existing data that gets sliced that original data will remain untouched.
@@ -135,8 +196,115 @@ mdio::SliceDescriptor xSlice = {
 };
 ```
 
+A label must be a dimension as outlined by the **MDIO** [dataset V1 model](https://mdio-python.readthedocs.io/en/v1/data_models/version_1.html#mdio.schemas.v1.variable.Variable.dimensions). If the label does not apply to a Variable it will simply be overloked during the slice (no-op). This means you can safely slice an entire dataset, even if there are Variables with differing dimensions.
+
+The recommended method to apply slices is at the dataset level. This will ensure consistent dimensions across your entire dataset.
+1. Construct your slice descriptors.
+2. Slice the dataset with the `isel` method.
+3. Operate on the returned dataset.
+
+Slicing is curcial when working on large datasets that would not fit into memory for reasons explained in the Read section below.
+
 ## Read
-Reading **MDIO** is performed lazily, which means that we will only read a small amount of metadata from disk when the **MDIO** is opened. 
+Reading **MDIO** is performed lazily, which means that we will only read a small amount of metadata from disk when the **MDIO** is opened. In order to read the array data from disk, we will need to actively solicit the read. It's important to note that once we solicit the read, all of the data will be read at once in parallel automatically. If the data is sliced before reading, only the [chunk grids](https://mdio-python.readthedocs.io/en/v1/data_models/version_1.html#mdio.schemas.v1.variable.VariableMetadata.chunk_grid) contained within the slice are read.
+
+```C++
+/** 
+ * @brief Reads an arbitrary Variable into memory.
+ * @return An Ok result if the process worked as expected.
+ */
+mdio::Result<void> read_and_return_result(mdio::Dataset& ds) {
+  // Pick the first key in the keys list.
+  std::string variableToRead = ds.variables.get_keys().front();
+  // Get the mdio::Variable object
+  MDIO_ASSIGN_OR_RETURN(auto variable, ds.variables.at(key));
+  // Solicit the read. This happens asynchronously so we could do other things while the data is read.
+  auto readFuture = variable.Read();
+  return readFuture.status();  // We are forcing the future to block here.
+}
+```
+This example isn't very useful on its own, so lets step it up by giving it a type and view the array.
+```C++
+/** 
+ * @brief Reads an arbitrary Variable into memory.
+ * @return An Ok result if the process worked as expected.
+ */
+mdio::Result<void> read_and_return_result(mdio::Dataset& ds) {
+  // We elect to use the `get_iterable_accessor` because the order is sorted.
+  std::string variableToRead = ds.variables.get_iterable_accessor().front();  // "Grid"
+  // We use `.get<T>()` so we can use the `get_data_accessor()` in a simple and easy way.
+  MDIO_ASSIGN_OR_RETURN(auto variable, ds.variables.get<mdio::dtypes::float32_t>(variableToRead));
+  auto readFuture = variable.Read();
+  if (!readFuture.status().ok()) {
+    return readFuture.status();
+  }
+  auto variableData = readFuture.value();
+
+  // This gives us our array
+  auto arrayValues = variableData.get_data_accessor();
+
+  for (mdio::Index x=0; x<10; x++) {
+    for (mdio::Index y=0; y<10; y++) {
+      std::cout << arrayValues({x, y}) << " ";
+      // You may also use bracket notation here if you wish
+      // std::cout << arrayValues[x][y] << " ";
+    }
+    std::cout << std::endl;
+  }
+
+  return absl::OkStatus();
+}
+```
 
 ## Write
+Writing **MDIO** data happens in parallel automatically, just like reading. We also need to have either read the values, or generated them from an empty Variable.
 
+```C++
+mdio::Result<void> write_and_return_result(mdio::Dataset& ds) {
+  std::string variableToWrite = ds.variables.get_iterable_accessor().front();  // "Grid"
+  MDIO_ASSIGN_OR_RETURN(auto variable, ds.variables.get<mdio::dtypes::float32_t>(variableToWrite));
+  auto readFuture = variable.Read();
+
+  if (!readFuture.status().ok()) {
+    return readFuture.status();
+  }
+  auto variableData = readFuture.value();
+
+  auto arrayValues = variableData.get_data_accessor();
+
+  float value = 0.0;
+  for (mdio::Index x=0; x<10; x++) {
+    for (mdio::Index y=0; y<10; y++) {
+      // The access pattern is the same as before, but now we're setting instead of reading
+      arrayValues({x, y}) = value++;
+    }
+  }
+
+  // Writing is async, we could be performing more operations here if we wished.
+  auto writeFuture = variable.Write(variableData);
+  return writeFuture.status();
+}
+```
+Since we are overwriting all of our data anyway, we can also use the `from_variable` function to get our `VariableData` object. This function is only recommended if you are the one originating all the data and must be used with caution. Not being chunk-aligned in writes using the `from_variable` method may result in undefined behavior and is not guarenteed to remain consistent between versions of mdio-cpp.
+
+If you are ever in doubt, use the above method of reading to get the VariableData object.
+```C++
+mdio::Result<void> overwrite_and_return_result(mdio::Dataset& ds) {
+  std::string variableToWrite = ds.variables.get_iterable_accessor().front();  // "Grid"
+  MDIO_ASSIGN_OR_RETURN(auto variable, ds.variables.get<mdio::dtypes::float32_t>(variableToWrite));
+  // This allows for shorter overall code and should avoid larger reads
+  MDIO_ASSIGN_OR_RETURN(auto variableData, mdio::from_variable<mdio::dtypes::float32_t>(variable));
+
+  auto arrayValues = variableData.get_data_accessor();
+
+  float value = 0.0;
+  for (mdio::Index x=0; x<10; x++) {
+    for (mdio::Index y=0; y<10; y++) {
+      arrayValues({x, y}) = value++;
+    }
+  }
+
+  auto writeFuture = variable.Write(variableData);
+  return writeFuture.status();
+}
+```
