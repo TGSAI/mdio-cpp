@@ -455,8 +455,7 @@ Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
   // go read the attributes return json ...
   auto parse = [](const tensorstore::kvstore::ReadResult& kvs_read,
                   const ::nlohmann::json& spec) {
-    // FIXME - if attributes supplied then validate with values
-    auto attributes = nlohmann::json::parse(std::string(kvs_read.value));
+    auto attributes = nlohmann::json::parse(std::string(kvs_read.value), nullptr, false);
     return attributes;
   };
 

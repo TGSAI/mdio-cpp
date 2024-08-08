@@ -43,7 +43,10 @@ bool contains(const std::unordered_set<std::string>& set,
  * InvalidArgumentError if validation fails for any reason
  */
 absl::Status validate_schema(nlohmann::json& spec /*NOLINT*/) {
-  nlohmann::json targetSchema = nlohmann::json::parse(kDatasetSchema);
+  nlohmann::json targetSchema = nlohmann::json::parse(kDatasetSchema, nullptr, false);
+  if (targetSchema.is_discarded()) {
+    return absl::NotFoundError("Failed to load schema");
+  }
 
   nlohmann::json_schema::json_validator validator(
       nullptr, nlohmann::json_schema::default_string_format_check);
