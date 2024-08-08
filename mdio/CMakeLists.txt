@@ -111,6 +111,30 @@ mdio_cc_test(
 
 mdio_cc_test(
   NAME
+    s3_test
+  SRCS
+    s3_test.cc
+  COPTS
+    ${mdio_DEFAULT_COPTS} 
+  LINKOPTS
+    ${mdio_DEFAULT_LINKOPTS}
+  DEPS
+    GTest::gmock_main
+    tensorstore::driver_array
+    tensorstore::driver_zarr
+    tensorstore::driver_json
+    tensorstore::kvstore_file
+    tensorstore::kvstore_memory
+    tensorstore::tensorstore
+    tensorstore::index_space_dim_expression
+    tensorstore::index_space_index_transform
+    tensorstore::util_status_testutil
+    nlohmann_json_schema_validator
+    tensorstore::kvstore_s3
+)
+
+mdio_cc_test(
+  NAME
     variable_collection_test
   SRCS
     variable_collection_test.cc
