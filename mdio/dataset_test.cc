@@ -533,8 +533,8 @@ TEST(Dataset, commitSlicedMetadata) {
 TEST(Dataset, openNonExistent) {
   auto json_vars = GetToyExample();
 
-  auto datasetRes = mdio::Dataset::from_json(json_vars, "zarrs/DNE",
-                                             mdio::constants::kOpen);
+  auto datasetRes =
+      mdio::Dataset::from_json(json_vars, "zarrs/DNE", mdio::constants::kOpen);
   ASSERT_FALSE(datasetRes.status().ok())
       << "Opened a non-existent dataset without error!";
 }
@@ -548,8 +548,9 @@ TEST(Dataset, kCreateOverExisting) {
 
   datasetRes = mdio::Dataset::from_json(json_vars, "zarrs/acceptance",
                                         mdio::constants::kCreate);
-  ASSERT_FALSE(datasetRes.status().ok()) << "Created a dataset over an existing "
-                                           "one without error!";
+  ASSERT_FALSE(datasetRes.status().ok())
+      << "Created a dataset over an existing "
+         "one without error!";
 }
 
 }  // namespace
