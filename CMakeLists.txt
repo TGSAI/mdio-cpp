@@ -103,11 +103,9 @@ if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     tensorstore::index_space_dim_expression
     tensorstore::index_space_index_transform
     tensorstore::util_status_testutil
-    tensorstore::kvstore_gcs
-    tensorstore::driver_array
     PARENT_SCOPE
   )
-  
+
   # Define internal deps for cloud specific drivers
   set(mdio_INTERNAL_GCS_DRIVER_DEPS
     tensorstore::kvstore_gcs
