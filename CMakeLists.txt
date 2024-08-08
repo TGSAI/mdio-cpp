@@ -98,7 +98,6 @@ if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     tensorstore::driver_zarr
     tensorstore::driver_json
     tensorstore::kvstore_file
-    tensorstore::kvstore_memory
     tensorstore::tensorstore
     tensorstore::index_space_dim_expression
     tensorstore::index_space_index_transform
