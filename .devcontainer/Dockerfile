@@ -66,7 +66,7 @@ ENV PATH="/venv/bin:$PATH"
 # FIXME - pip is out of date, find a better way
 RUN pip install --upgrade pip
 
-RUN pip install wheel yapf cpplint
+RUN pip install wheel yapf cpplint zarr xarray
 
 RUN pip install \
   "poetry==$POETRY_VERSION" \
@@ -84,19 +84,10 @@ RUN chmod -R 777 /workspaces
 RUN wget https://github.com/sharkdp/hyperfine/releases/download/v${HYPERFINE}/hyperfine_${HYPERFINE}_amd64.deb \
   && dpkg -i hyperfine_${HYPERFINE}_amd64.deb
 
-# this can be slow if you don't have a large number of cpus
-RUN mkdir -p /apps/cmake \
-  && cd /apps/cmake \
-  && wget https://cmake.org/files/v${CMAKE_MAJOR}/cmake-${CMAKE_VERSION}.tar.gz \
-  && tar -xzvf cmake-${CMAKE_VERSION}.tar.gz \
-  && rm cmake-${CMAKE_VERSION}.tar.gz \
-  && cd  cmake-${CMAKE_VERSION} \
-  && ./bootstrap --system-curl \
-  && make -j$(nproc) \
-  && make install \
-  && cd / \
-  && rm -rf /apps/cmake \
-  && ldconfig
+RUN wget https://cmake.org/files/v${CMAKE_MAJOR}/cmake-${CMAKE_VERSION}-linux-x86_64.sh \
+  && chmod +x cmake-${CMAKE_VERSION}-linux-x86_64.sh \
+  && ./cmake-${CMAKE_VERSION}-linux-x86_64.sh --skip-license --prefix=/usr/local \
+  && rm cmake-${CMAKE_VERSION}-linux-x86_64.sh
 
 
 ENV PYTHONPATH "${PYTHONPATH}:/workspaces/multidimio-cpp/multidimio-cpp"
