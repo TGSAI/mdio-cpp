@@ -23,13 +23,13 @@ This user guide will assume that you are working in either the provided [devcont
 This user guide uses minimal BASH scripting in examples. Commands may need to be altered depending on your operating system.
 
 ## How to include MDIO
-**MDIO** currently only supports the [CMake](https://cmake.org/) build system. This makes including **MDIO** straightforward in pre-existing CMake projects.
+**MDIO** currently only supports the [CMake](https://cmake.org/) build system. This makes including **MDIO** straightforward in pre-existing modern CMake projects.
 
 1. Ensure you have the `FetchContent` module included in your CMake project.
     ```Cmake
     include(FetchContent)
     ```
-2. Select a version of **MDIO**. Main can be expected to be stable but may update unexpectedly. [Tagged](https://github.com/TGSAI/mdio-cpp/tags) versions will also be available if a specific version is desired. New versions will be tagged as significant improvements, utilities, or features are added, as well as when underlying dependencies are updated.
+2. Select a version of **MDIO**. Main can be expected to be stable but may update unexpectedly. [Tagged](https://github.com/TGSAI/mdio-cpp/tags) versions will also be available if a specific version is desired. New versions will be tagged as significant improvements, utilities, or features are added to the API, as well as when underlying dependencies are updated.
     ```Cmake
     FetchContent_Declare(
       mdio
@@ -61,7 +61,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Include FetchContent module
 include(FetchContent)
 
-# Fetch the mdio-cpp library from the specified branch
+# Fetch the mdio-cpp library from the specified tag
 FetchContent_Declare(
   mdio
   GIT_REPOSITORY https://github.com/TGSAI/mdio-cpp.git
@@ -126,7 +126,7 @@ $ ./hello_mdio
 
 ## Concepts
 ### Result based returns
-**MDIO** aims to follow the Google style of [not throwing exceptions](https://google.github.io/styleguide/cppguide.html#Exceptions). Instead we use result based returns wherever an error state could exist. A trivial example of this design pattern is a simple function that tries to divide two integers, and handles the case of divide-by-zero.
+**MDIO** aims to follow the Google style of [not throwing exceptions](https://google.github.io/styleguide/cppguide.html#Exceptions). Instead, we use result based returns wherever an error state could exist. A trivial example of this design pattern is a simple function that tries to divide two integers, and handles the case of divide-by-zero.
 
 ```C++
 int divide(int numerator, int denominator) {
