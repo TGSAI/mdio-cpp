@@ -1,6 +1,22 @@
 # MDIO User Guide
 The goal of this user guide is to provide an introduction on how you may want to use **MDIO** in your own applications.
 
+## Table of contents
+- [Getting started](#getting-started)
+- [How to include MDIO](#how-to-include-mdio)
+  - [What a full CMake might look like for Hello, World!](#what-a-full-cmake-might-look-like-for-hello-world)
+- [Linking](#linking)
+- [How to compile](#how-to-compile)
+  - [What a full compile might look like for Hello, World!](#what-a-full-compile-might-look-like-for-hello-world)
+- [Concepts](#concepts)
+  - [Result based returns](#result-based-returns)
+  - [Open options](#open-options)
+  - [Variable, VariableData, and Dataset](#variable-variabledata-and-dataset)
+- [Constructors](#constructors)
+- [Slicing](#slicing)
+- [Read](#read)
+- [Write](#write)
+
 ## Getting started
 This user guide will assume that you are working in either the provided [devcontainer](https://github.com/TGSAI/mdio-cpp/.devcontainer) or have your environment configured according to the [README](https://github.com/TGSAI/mdio-cpp/README.md). Please ensure you have the [required tools](https://github.com/TGSAI/mdio-cpp?tab=readme-ov-file#requied-tools) before proceeding. Following these guidelines should ensure a stable and consistent experience and will allow the community to provide better support without any guesswork regarding your environment.
 
