@@ -324,3 +324,71 @@ mdio::Result<void> overwrite_and_return_result(mdio::Dataset& ds) {
   return writeFuture.status();
 }
 ```
+
+## Efficient Assignment (Advanced)
+For small datasets, setting data elements one at a time may be reasonable, but as your dataset grows, so too does the time it takes to copy from one array to another. The typical way to handle this is to use the STL `std::memcpy` function. When dealing with full datasets, this works exactly as expected, copy from one address or container to another. If the dataset is sliced, as would be expected for large datasets, there is an additional challenge that is presented. When slicing outside of the logical origin, there is an offset in memory that must be taken into account. **MDIO** does provide a convienent method to getting that offset, but as with any low-level operation care must be taken.
+```C++
+mdio::Result<void> copy_overwrite_and_return(mdio::Dataset& ds) {
+  std::string variableToWrite = ds.variables.get_iterable_accessor().front();  // "Grid"
+  MDIO_ASSIGN_OR_RETURN(auto variable, ds.variables.get<mdio::dtypes::float32_t>(variableToWrite));
+  MDIO_ASSIGN_OR_RETURN(auto variableData, mdio::from_variable<mdio::dtypes::float32_t>(variable));
+
+  // We will get the raw pointer first, and then cast it to a properly typed pointer.
+  auto voidPtr = variableData.get_data_accessor().data();  // Note the `.data()` call to get the raw pointer.
+  auto typedPtr = static_cast<mdio::dtypes::float32_t*>(voidPtr); 
+
+  // We'll generate some inert data to copy
+  std::vector<mdio::dtypes::float32_t> fill_val(51200);
+  for (auto i = 0; i < 51200; i++) {
+    fill_val[i] = float(i*.0002);
+  }
+
+  const auto offsetValue = variableData.get_flattened_offset();
+  std::size_t increment = 0;
+  for (auto i=0; i<51200; i++) {
+    std::memcpy(&typedPtr[offsetValue], fill_val.data(), sizeof(mdio::dtypes::float32_t)*51200);
+    increment += 51200;
+  }
+
+  auto writeFuture = variable.Write(variableData);
+  return writeFuture.status();
+}
+```
+This example is good for demonstration purposes, but for a practical application it's too inflexible. Lets fix it by slicing our dataset and copying the data.
+```C++
+mdio::Result<void> copy_overwrite_and_return(mdio::Dataset& ds) {
+  mdio::SliceDescriptor xSlice = {"X", 256, 512, 1};
+  mdio::SliceDescriptor ySlice = {"Y", 512, 768, 1};
+
+  MDIO_ASSIGN_OR_RETURN(auto slicedDs, ds.isel(xSlice, ySlice));
+
+  std::string variableToWrite = slicedDs.variables.get_iterable_accessor().front();  // "Grid"
+  MDIO_ASSIGN_OR_RETURN(auto variable, slicedDs.variables.get<mdio::dtypes::float32_t>(variableToWrite));
+  MDIO_ASSIGN_OR_RETURN(auto variableData, mdio::from_variable<mdio::dtypes::float32_t>(variable));
+
+  // We will get the raw pointer first, and then cast it to a properly typed pointer.
+  auto voidPtr = variableData.get_data_accessor().data();  // Note the `.data()` call to get the raw pointer.
+  auto typedPtr = static_cast<mdio::dtypes::float32_t*>(voidPtr); 
+
+  auto numSamples = variable.num_samples();
+
+  // We'll generate some inert data to copy
+  std::vector<mdio::dtypes::float32_t> fill_val(numSamples);
+  for (auto i = 0; i < numSamples; i++) {
+    fill_val[i] = float(i*.0002);
+  }
+
+  const auto offsetValue = variableData.get_flattened_offset();
+  std::size_t increment = 0;
+  for (auto i=0; i<1; i++) {
+    std::memcpy(&typedPtr[offsetValue], fill_val.data(), sizeof(mdio::dtypes::float32_t)*fill_val.size());
+    increment += numSamples;
+  }
+
+  auto writeFuture = variable.Write(variableData);
+  return writeFuture.status();
+}
+```
+
+## Summary Statistics
+You may have noticed that [summary statistics](https://mdio-python.readthedocs.io/en/v1/data_models/version_1.html#mdio.schemas.v1.stats.StatisticsMetadata) is part of the dataset model, but how can you include them in your Variable before you've even seen the data? This thought exercise assumes that the answer is "You can't!". To address this problem we allow a limited portion of the metadata to be changed at the Variable level.
