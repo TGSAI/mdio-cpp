@@ -6,19 +6,19 @@ welcomes contributions in the form of bug reports, feature requests, and pull re
 
 Here is a list of important resources for contributors:
 
-- [Source Code]
+- [Source Code][source code cpp]
 - [Documentation] (Updated link pending)
-- [Issue Tracker]
+- [Issue Tracker][issue tracker cpp]
 - [Code of Conduct]
 
 [apache 2.0 license]: https://opensource.org/licenses/Apache-2.0
-[source code]: https://github.com/TGSAI/mdio-cpp
+[source code cpp]: https://github.com/TGSAI/mdio-cpp
 [documentation]: https://mdio-python.readthedocs.io/
-[issue tracker]: https://github.com/TGSAI/mdio-cpp/issues
+[issue tracker cpp]: https://github.com/TGSAI/mdio-cpp/issues
 
 ## How to report a bug
 
-Report bugs on the [Issue Tracker].
+Report bugs on the [Issue Tracker][issue tracker cpp].
 
 When filing an issue, make sure to answer these questions:
 
@@ -33,7 +33,7 @@ and/or steps to reproduce the issue.
 
 ## How to request a feature
 
-Request features on the [Issue Tracker].
+Request features on the [Issue Tracker][issue tracker cpp].
 
 ## How to set up your development environment
 
@@ -119,7 +119,7 @@ Each **MDIO** library will provide an associated cmake alias, e.g. mdio::mdio wh
 
 ## How to submit changes
 
-Open a [pull request] to submit changes to this project.
+Open a [pull request][pull request cpp] to submit changes to this project.
 
 Your pull request needs to meet the following guidelines for acceptance:
 
@@ -134,7 +134,7 @@ Feel free to submit early, though—we can always iterate on this. Drafts are en
 It is recommended to open an issue before starting work on anything.
 This will allow a chance to talk it over with the owners and validate your approach.
 
-[pull request]: https://github.com/TGSAI/mdio-cpp/pulls
+[pull request cpp]: https://github.com/TGSAI/mdio-cpp/pulls
 
 <!-- github-only -->
 
