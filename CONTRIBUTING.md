@@ -119,7 +119,7 @@ Each **MDIO** library will provide an associated cmake alias, e.g. mdio::mdio wh
 
 ## How to submit changes
 
-Open a [pull request] to submit changes to this project.
+Open a [pull request][pull request cpp] to submit changes to this project.
 
 Your pull request needs to meet the following guidelines for acceptance:
 
@@ -134,7 +134,7 @@ Feel free to submit early, though—we can always iterate on this. Drafts are en
 It is recommended to open an issue before starting work on anything.
 This will allow a chance to talk it over with the owners and validate your approach.
 
-[pull request]: https://github.com/TGSAI/mdio-cpp/pulls
+[pull request cpp]: https://github.com/TGSAI/mdio-cpp/pulls
 
 <!-- github-only -->
 
