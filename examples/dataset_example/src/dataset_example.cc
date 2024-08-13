@@ -72,21 +72,22 @@ absl::Status Run() {
   /// Its memory footprint is small.
   std::cout << dataset << "\n" << std::endl;
 
-  /// Variable type is discoverable at runtime, initially the variable will have
-  /// a "void" type.
+  /// A dataset represents a collection of variables, and these variable can be
+  /// accessed by name. The type and other information is discoverable at
+  /// runtime, initially the variable will have a "void" type.
   std::cout << "dtype of the velocity : "
-            << dataset.variables.get<void>("velocity")->dtype() << "\n"
+            << dataset.variables.at("velocity")->dtype() << "\n"
             << std::endl;
 
   /// Collections of metadata including units can be accessed from the variable.
   std::cout << "metadata of the velocity : "
-            << dataset.variables.get<void>("velocity")->getMetadata() << "\n"
+            << dataset.variables.at("velocity")->getMetadata() << "\n"
             << std::endl;
 
   /// Struct data in this context is a little different because unless a "field"
   /// is requests by tensorstore, it will be opening as a byte array.
   std::cout << "\n dtype of the velocity image_headers : "
-            << dataset.variables.get<void>("image_headers")->dtype() << "\n"
+            << dataset.variables.at("image_headers")->dtype() << "\n"
             << std::endl;
 
   /// At this point however, we have just initialize the Dataset, we have not
@@ -176,6 +177,11 @@ absl::Status Run() {
   /// In the previous scenario used a slice to operate over the range of data
   /// [20, 120), this dataset is defined over the entire range, so we should see
   /// our changes on the subdomain, and the fill value "0" otherwise.
+  ///
+  /// In this case we know the data type of the variable, the get<> method will
+  /// cast the result appropriately. In case the underlying data is not castable
+  /// to uint32_t (in this case), then the get method will return a result that
+  /// is not OK.
   MDIO_ASSIGN_OR_RETURN(variableObject,
                         dataset.variables.get<uint32_t>("inline"))
   inclusive_min =
