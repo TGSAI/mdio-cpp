@@ -46,8 +46,21 @@ absl::Status Run() {
   auto json_spec = GetToyExample();
 
   /// A dataset is used to represent a collection of data "on disk".
+  ///
   /// The MDIO json schema for this can be found here:
   ///    mdio/dataset_schema.h
+  ///
+  /// Open Options handle these use cases.
+  ///
+  /// mdio::constants::kOpen - Open an existing dataset.
+  ///
+  /// mdio::constants::kCreate -
+  ///    Create a new dataset, but don't overwrite and existing if
+  ///    one exists in the path.
+  ///
+  /// mdio::constants::kCreateClean -
+  ///    Create a new dataset and overwrite an existing one.
+  ///
   auto dataset_future = mdio::Dataset::from_json(json_spec, dataset_path,
                                                  mdio::constants::kCreateClean);
 
