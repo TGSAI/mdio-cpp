@@ -799,7 +799,11 @@ class Dataset {
                 }
             }
         )";
-    nlohmann::json base = nlohmann::json::parse(baseStr);
+    nlohmann::json base = nlohmann::json::parse(baseStr, nullptr, false);
+    if (base.is_discarded()) {
+      return absl::Status(absl::StatusCode::kInternal,
+                          "Failed to parse base JSON.");
+    }
     if (found >= 0) {
       base["field"] = specJson["metadata"]["dtype"][found][0];
     } else {
