@@ -49,6 +49,7 @@ absl::Status Run(std::string dataset_path) {
       data(i) = i * 10 + 1000;
     }
   };
+
   RETURN_IF_NOT_OK(
       populate_and_write_variable<uint32_t>(dataset, "inline", populate_inline))
 
