@@ -1133,6 +1133,22 @@ class Variable {
     return attributesAddress != currentAddress;
   }
 
+  /**
+   * @brief Sets the flag whether the metadata should get republished.
+   * Intended for internal use with the trimming utility.
+   *
+   * @param shouldPublish True if the metadata should get republished.
+   */
+  void set_metadata_publish_flag(const bool shouldPublish) {
+    if (!toPublish) {
+      // This should never be the case, but better safe than sorry
+      toPublish = std::make_shared<std::shared_ptr<bool>>(
+          std::make_shared<bool>(shouldPublish));
+    } else {
+      *toPublish = std::make_shared<bool>(shouldPublish);
+    }
+  }
+
   // ===========================Member data getters===========================
   const std::string& get_variable_name() const { return variableName; }
 
@@ -1153,6 +1169,20 @@ class Variable {
     return attributesAddress;
   }
 
+  /**
+   * @brief Gets whether the metadata should get republished.
+   *
+   * @return True if the metadata should get republished.
+   */
+  bool should_publish() const {
+    if (toPublish && *toPublish) {
+      // Deref the shared_ptr so we're not increasing refcount
+      return **toPublish;
+    }
+    // If the flag was a nullptr, err on the side of caution and republish
+    return true;
+  }
+
  private:
   /**
    * This method should NEVER be called by the user.
@@ -1167,9 +1197,7 @@ class Variable {
     if (attributes.get() != nullptr && attributes->get() != nullptr) {
       std::uintptr_t newAddress =
           reinterpret_cast<std::uintptr_t>(&(**attributes));
-      // TODO(BrianMichell): Leaving this as active is causing segfaults.
-      //   The features requiring it are low priority.
-      // attributesAddress = newAddress;
+      attributesAddress = newAddress;
     }
     // It is fine that this will only change in the "collection" instance of the
     // Variable, because that is the only one that will be operated on by the
@@ -1185,6 +1213,9 @@ class Variable {
   tensorstore::TensorStore<T, R, M> store;
   // The address of the attributes. This MUST NEVER be touched by the user.
   std::uintptr_t attributesAddress;
+  // The metadata will need to be updated if the trim util was used on it.
+  std::shared_ptr<std::shared_ptr<bool>> toPublish =
+      std::make_shared<std::shared_ptr<bool>>(std::make_shared<bool>(false));
 };
 
 // Tensorstore Array's don't have an IndexDomain and so they can't be slice with
