@@ -12,10 +12,13 @@ The goal of this user guide is to provide an introduction on how you may want to
   - [Result based returns](#result-based-returns)
   - [Open options](#open-options)
   - [Variable, VariableData, and Dataset](#variable-variabledata-and-dataset)
+- [Example Schema](#example-schema)
 - [Constructors](#constructors)
 - [Slicing](#slicing)
 - [Read](#read)
 - [Write](#write)
+- [Efficient Assignment (Advanced)](#efficient-assignment-advanced)
+- [Mutable Metadata](#mutable-metadata)
 
 ## Getting started
 This user guide will assume that you are working in either the provided [devcontainer](https://github.com/TGSAI/mdio-cpp/.devcontainer) or have your environment configured according to the [README](https://github.com/TGSAI/mdio-cpp/README.md). Please ensure you have the [required tools](https://github.com/TGSAI/mdio-cpp?tab=readme-ov-file#requied-tools) before proceeding. Following these guidelines should ensure a stable and consistent experience and will allow the community to provide better support without any guesswork regarding your environment.
@@ -85,7 +88,7 @@ As mentioned above, linking is not as straight forward as fetching the library a
 - `mdio_INTERNAL_GCS_DRIVER_DEPS` is only required if using [Google Cloud Store](https://cloud.google.com/storage). It should come after `mdio_INTERNAL_DEPS`.
 - `mdio_INTERNAL_S3_DRIVER_DEPS` is only required if using [Amazon S3](https://aws.amazon.com/s3/). It should come after `mdio_INTERNAL_DEPS`.
 
-It is worth noting that both the GCS drivers and S3 drivers can be linked at the same time and order does not matter. It is also notable that the order of inclusion *should not* strictly matter for CMake projects, but maintaining this order will help in diagnosing any issues you may run into.
+It is worth noting that both the GCS drivers and S3 drivers can be linked at the same time and order does not matter. It is also notable that the order of inclusion *should not* strictly matter for CMake projects, but maintaining this order will help in quickly troubleshooting any issues you may run into.
 
 ## How to compile
 1. In your root directory you should make a new directory called `build`.
@@ -176,19 +179,93 @@ If you find a case where **MDIO** throws an exception, please submit a [bug repo
 Open options control how we interact with files, and **MDIO** is no different.
 - `mdio::constants::kOpen`: Opens an **MDIO** for reading and writing. This is only valid for existing MDIO files and will return an error status if it does not exist.
 - `mdio::constants::kCreate`: Opens a new **MDIO** for writing. This will return an error if the file already exists.
-- `mdio::constants::kCreateClean`: Opens a new **MDIO** for writing. This <b><u>will</u></b> overwrite existing metadata and should only be used in testing. Users are strongly encouraged to avoid including this option in any production environment as data could be lost if improperly used.
+- `mdio::constants::kCreateClean`: Opens a new **MDIO** for writing. This <b><u>will</u></b> overwrite existing metadata and stored arrays and should only be used in testing. Users are strongly encouraged to avoid including this option in any production environment as data could be lost if improperly used.
 
 ### Variable, VariableData, and Dataset
-Simply put, an `mdio::Variable` is the C++ representation of the [Dataset model](https://mdio-python.readthedocs.io/en/v1/data_models/version_1.html#mdio.schemas.v1.variable.Variable) Variable. It holds no array data, but will be used to both read and write. This process will be explained in more depth below.
+An `mdio::Variable` is the C++ representation of the [Dataset model](https://mdio-python.readthedocs.io/en/v1/data_models/version_1.html#mdio.schemas.v1.variable.Variable) Variable. It holds no array data, but will be used to both read and write. This process will be explained in more depth below.
 
-An `mdio::VariableData` is what will be used to manipulate your data in-memory.
+An `mdio::VariableData` is what will be used to manipulate your array data in-memory.
 
 An `mdio::Dataset` represents a collection of Variables, and their relation with one another.
 
 More information about Variables, their underlying constructs, and relation to XArray can be found [here](https://github.com/TGSAI/mdio-cpp/issues/8).
 
+## Example schema
+For all the following examples, this will be the constructor metadata.
+```JSON
+{
+  "metadata": {
+    "apiVersion": "1.0.0",
+    "name": "Demo MDIO",
+    "createdOn": "2024-08-01T15:50:00.000000Z"
+  },
+  "variables": [
+    {
+      "name": "X",
+      "dataType": "uint32",
+      "dimensions": [{"name": "X", "size": 51200}]
+    },
+    {
+      "name": "Y",
+      "dataType": "uint32",
+      "dimensions": [{"name": "Y", "size": 51200}]
+    },
+    {
+      "name": "Grid",
+      "dataType": "float32",
+      "dimensions": ["X", "Y"],
+      "metadata": {
+        "chunkGrid": {
+          "name": "regular",
+          "configuration": { "chunkShape": [256, 256] }
+        }
+      }
+    }
+  ]
+}
+```
+
 ## Constructors
-Constructors are based entirely off of the [MDIO v1](https://mdio-python.readthedocs.io/en/v1/data_models/version_1.html#reference) Dataset model. Simply specify a JSON schema and provide it to the `mdio::Dataset::from_json()` method along with the desired path (which can be a relative path, absolute path, or even a GCS or S3 path!), and your open options
+Constructors are based entirely off of the [MDIO v1](https://mdio-python.readthedocs.io/en/v1/data_models/version_1.html#reference) Dataset model. Simply specify a JSON schema and provide it to the `mdio::Dataset::from_json()` method along with the desired path (which can be a relative path, absolute path, or even a GCS or S3 path!), and your open options.
+#### Example header file defining the get_schema function
+```C++
+/**
+ * @brief A demo method signature in a header file.
+ * @return An MDIO schema in JSON.
+ */
+nlohmann::json get_schema();
+```
+#### Open a brand-new Dataset
+```C++
+int main() {
+  std::string path = "demo.mdio";
+  nlohmann::json schema = get_schema();
+  mdio::Future<mdio::Dataset> dsFuture = mdio::Dataset::from_json(path, schema, mdio::constants::kCreate);
+  if (!dsFuture.status().ok()) {
+    std::cerr << "Failed to open a new dataset\n" << dsFuture.status() << std::endl;
+    return 1;
+  }
+  
+  mdio::Dataset ds = dsFuture.value();
+  std::cout << ds << std::endl;
+  return 0;
+}
+```
+#### Open an existing Dataset
+```C++
+int main() {
+  std::string path = "demo.mdio";
+  mdio::Future<mdio::Dataset> dsFuture = mdio::Dataset::Open(path, mdio::constants::kOpen);
+  if (!dsFuture.status().ok()) {
+    std::cerr << "Failed to open a new dataset\n" << dsFuture.status() << std::endl;
+    return 1;
+  }
+
+  mdio::Dataset ds = dsFuture.value();
+  std::cout << ds << std::endl;
+  return 0;
+}
+```
 
 ## Slicing
 Slicing in **MDIO** is the concept of getting a subset of the data. This could be anything from a single point to a full [hypercube](https://en.wikipedia.org/wiki/Hypercube). Slicing is non-destructive, meaning that if you have pre-existing data that gets sliced that original data will remain untouched.
@@ -205,14 +282,14 @@ Slicing in **MDIO**-cpp is handled through an `mdio::SliceDescriptor`, which req
 Below is an example of how we can construct a slice descriptor for the *X* dimension.
 ```cpp
 mdio::SliceDescriptor xSlice = {
-    /*label=*/ "X",
-    /*start=*/ 0,
-    /*stop= */ 100,
-    /*step= */ 1
+  /*label=*/ "X",
+  /*start=*/ 0,
+  /*stop= */ 100,
+  /*step= */ 1
 };
 ```
 
-A label must be a dimension as outlined by the **MDIO** [dataset V1 model](https://mdio-python.readthedocs.io/en/v1/data_models/version_1.html#mdio.schemas.v1.variable.Variable.dimensions). If the label does not apply to a Variable it will simply be overloked during the slice (no-op). This means you can safely slice an entire dataset, even if there are Variables with differing dimensions.
+A label must be a dimension as outlined by the **MDIO** [dataset V1 model](https://mdio-python.readthedocs.io/en/v1/data_models/version_1.html#mdio.schemas.v1.variable.Variable.dimensions). If the label does not apply to a Variable it will simply be overlooked during the slice (no-op). This means you can safely slice an entire dataset, even if there are Variables with differing dimensions.
 
 The recommended method to apply slices is at the dataset level. This will ensure consistent dimensions across your entire dataset.
 1. Construct your slice descriptors.
@@ -220,6 +297,35 @@ The recommended method to apply slices is at the dataset level. This will ensure
 3. Operate on the returned dataset.
 
 Slicing is curcial when working on large datasets that would not fit into memory for reasons explained in the Read section below.
+```C++
+int main() {
+  std::string path = "demo.mdio";
+  mdio::Future<mdio::Dataset> dsFut = mdio::Dataset::Open(path, mdio::constants::kOpen);
+  if (!dsFut.status().ok()) {
+    std::cerr << "Failed to open dataset: " << dsFut.status() << std::endl;
+    return 1;
+  }
+
+  mdio::Dataset ds = dsFut.value();
+  mdio::SliceDescriptor xSlice = {"X", 0, 100, 1};
+  mdio::SliceDescriptor ySlice = {"Y", 50, 150, 1};
+
+  // We can pass any number of slices to the method, in any order.
+  mdio::Result<mdio::Dataset> slicedRes = ds.isel(xSlice, ySlice);
+  if (!slicedRes.status().ok()) {
+    std::cerr << "Failed to slice dataset: " << slicedRes.status() << std::endl;
+    return 1;
+  }
+
+  mdio::Dataset slicedDs = slicedRes.value();
+
+  std::cout << ds << std::endl;
+  std::cout << "==============================" << std::endl;
+  std::cout << slicedDs << std::endl;
+
+  return 0;
+}
+```
 
 ## Read
 Reading **MDIO** is performed lazily, which means that we will only read a small amount of metadata from disk when the **MDIO** is opened. In order to read the array data from disk, we will need to actively solicit the read. It's important to note that once we solicit the read, all of the data will be read at once in parallel automatically. If the data is sliced before reading, only the [chunk grids](https://mdio-python.readthedocs.io/en/v1/data_models/version_1.html#mdio.schemas.v1.variable.VariableMetadata.chunk_grid) contained within the slice are read.
@@ -354,7 +460,7 @@ mdio::Result<void> copy_overwrite_and_return(mdio::Dataset& ds) {
   return writeFuture.status();
 }
 ```
-This example is good for demonstration purposes, but for a practical application it's too inflexible. Lets fix it by slicing our dataset and copying the data.
+That example is good for demonstration purposes, but for a practical application it's too inflexible. Lets fix it by slicing our dataset and copying the data.
 ```C++
 mdio::Result<void> copy_overwrite_and_return(mdio::Dataset& ds) {
   mdio::SliceDescriptor xSlice = {"X", 256, 512, 1};
@@ -390,5 +496,49 @@ mdio::Result<void> copy_overwrite_and_return(mdio::Dataset& ds) {
 }
 ```
 
-## Summary Statistics
+## Mutable Metadata
 You may have noticed that [summary statistics](https://mdio-python.readthedocs.io/en/v1/data_models/version_1.html#mdio.schemas.v1.stats.StatisticsMetadata) is part of the dataset model, but how can you include them in your Variable before you've even seen the data? This thought exercise assumes that the answer is "You can't!". To address this problem we allow a limited portion of the metadata to be changed at the Variable level.
+```C++
+mdio::Future<void> UpdateStats(mdio::Dataset& ds) {
+  // We can use the .at method since we're not reading data from disk
+  MDIO_ASSIGN_OR_RETURN(auto gridVariable, ds.variables.at("Grid"));
+  MDIO_ASSIGN_OR_RETURN(auto xVariable, ds.variables.at("X"));
+  MDIO_ASSIGN_OR_RETURN(auto yVariable, ds.variables.at("Y"));
+
+  // Get the attributes JSON
+  nlohmann::json gridAttrs = gridVariable.GetAttributes();
+  nlohmann::json xAttrs = xVariable.GetAttributes();
+  nlohmann::json yAttrs = yVariable.GetAttributes();
+
+  // Modify the attributes in memory
+  xAttrs["attributes"]["foo"] = "bar";
+  yAttrs["attributes"]["ping"] = "pong";
+  // We had no stats in the original object, so we must populate all the required fields!
+  gridAttrs["statsV1"]["histogram"]["binCenters"] = {5, 15, 25, 35, 45};
+  gridAttrs["statsV1"]["histogram"]["counts"] = {1, 2, 3, 4, 5};
+  gridAttrs["statsV1"]["count"] = 51200;
+  gridAttrs["statsV1"]["min"] = 0.0;
+  gridAttrs["statsV1"]["max"] = 50.0;
+  gridAttrs["statsV1"]["sum"] = 52.7;
+  gridAttrs["statsV1"]["sumSquares"] = 2777.29;
+  gridAttrs["attributes"]["randomStats"] = true;
+
+  // Update the attributes in memory associated with their Variable
+  auto xUpdateRes = xVariable.UpdateAttributes(xAttrs);
+  if (!xUpdateRes.status().ok()) {
+    return xUpdateRes.status();
+  }
+  auto yUpdateRes = yVariable.UpdateAttributes(yAttrs);
+  if (!yUpdateRes.status().ok()) {
+    return yUpdateRes.status();
+  }
+  // Since we are using an integer historgram we need to specify the type. It can be float32 or int32.
+  auto gridUpdateRes = gridVariable.UpdateAttributes<mdio::dtypes::int32_t>(gridAttrs);
+  if (!gridUpdateRes.status().ok()) {
+    return gridUpdateRes.status();
+  }
+
+  // The commit step will commit the changes in memory to disk
+  return ds.CommitMetadata();
+}
+```
