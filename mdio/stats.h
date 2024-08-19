@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "mdio/impl.h"
 #include "tensorstore/tensorstore.h"
 
 // clang-format off
@@ -82,7 +83,7 @@ class Histogram {
   virtual ~Histogram() = default;
   virtual nlohmann::json getHistogram() const = 0;
   virtual std::unique_ptr<const Histogram> clone() const = 0;
-  virtual tensorstore::Result<std::unique_ptr<const Histogram>> FromJson(
+  virtual mdio::Result<std::unique_ptr<const Histogram>> FromJson(
       const nlohmann::json& j) const = 0;
   /**
    * @brief Notifier for whether or not the histogram is bindable
@@ -114,7 +115,7 @@ class CenteredBinHistogram : public Histogram {
                   "Histograms may only be float32 or int32_t.");
   }
 
-  tensorstore::Result<std::unique_ptr<const Histogram>> FromJson(
+  mdio::Result<std::unique_ptr<const Histogram>> FromJson(
       const nlohmann::json& j) const override {
     if (isHist(j)) {
       auto histogram = j[HIST_KEY];
@@ -123,8 +124,7 @@ class CenteredBinHistogram : public Histogram {
         std::vector<int32_t> counts = j[HIST_KEY]["counts"];
         auto hist =
             std::make_unique<CenteredBinHistogram<T>>(binCenters, counts);
-        return tensorstore::Result<std::unique_ptr<const Histogram>>(
-            std::move(hist));
+        return mdio::Result<std::unique_ptr<const Histogram>>(std::move(hist));
       }
       return absl::InvalidArgumentError(
           "Error parsing histogram:\n\tType detected: "
@@ -177,7 +177,7 @@ class EdgeDefinedHistogram : public Histogram {
    * @return A new EdgeDefinedHistogram if the input JSON is valid, otherwise an
    * error
    */
-  tensorstore::Result<std::unique_ptr<const Histogram>> FromJson(
+  mdio::Result<std::unique_ptr<const Histogram>> FromJson(
       const nlohmann::json& j) const override {
     if (isHist(j)) {
       auto histogram = j[HIST_KEY];
@@ -188,8 +188,7 @@ class EdgeDefinedHistogram : public Histogram {
         std::vector<int32_t> counts = j[HIST_KEY]["counts"];
         auto hist = std::make_unique<EdgeDefinedHistogram<T>>(
             binEdges, binWidths, counts);
-        return tensorstore::Result<std::unique_ptr<const Histogram>>(
-            std::move(hist));
+        return mdio::Result<std::unique_ptr<const Histogram>>(std::move(hist));
       }
       // TODO(BrianMichell): Provide better descriptive error message here.
       return absl::InvalidArgumentError(
@@ -255,7 +254,7 @@ class SummaryStats {
    * @return A result of the constructed summary stats
    */
   template <typename T = float>
-  static tensorstore::Result<SummaryStats> FromJson(const nlohmann::json j) {
+  static mdio::Result<SummaryStats> FromJson(const nlohmann::json j) {
     auto histRes = constructHist<T>(j);
     if (!histRes.status().ok()) {
       return histRes.status();
@@ -273,7 +272,7 @@ class SummaryStats {
         SummaryStats(j["count"].get<int32_t>(), j["max"].get<float>(),
                      j["min"].get<float>(), j["sum"].get<float>(),
                      j["sumSquares"].get<float>(), std::move(histogram));
-    return tensorstore::Result<SummaryStats>(stats);
+    return mdio::Result<SummaryStats>(stats);
   }
 
  private:
@@ -294,7 +293,7 @@ class SummaryStats {
    * is invalid
    */
   template <typename T = float>
-  static tensorstore::Result<std::unique_ptr<const Histogram>> constructHist(
+  static mdio::Result<std::unique_ptr<const Histogram>> constructHist(
       const nlohmann::json& stats) {
     if (!stats.contains("histogram")) {
       return absl::InvalidArgumentError(
@@ -368,7 +367,7 @@ class UserAttributes {
    * @pre The input JSON must be validated according to the MDIO schema. This is
    * unchecked and may have undefined behavior if not followed.
    */
-  static tensorstore::Result<UserAttributes> FromDatasetJson(
+  static mdio::Result<UserAttributes> FromDatasetJson(
       const nlohmann::json& dataset, const std::string& variable) {
     for (auto& var : dataset["variables"]) {
       if (var["name"] == variable) {
@@ -385,7 +384,7 @@ class UserAttributes {
                                       " not found in Dataset");
   }
 
-  static tensorstore::Result<UserAttributes> FromVariableJson(
+  static mdio::Result<UserAttributes> FromVariableJson(
       const nlohmann::json& variable) {
     auto param = variable.contains("metadata") ? variable["metadata"]
                                                : nlohmann::json::object();
@@ -405,7 +404,7 @@ class UserAttributes {
    * @return A UserAttributes object matching the input JSON
    */
   template <typename T = float>
-  static tensorstore::Result<UserAttributes> FromJson(const nlohmann::json& j) {
+  static mdio::Result<UserAttributes> FromJson(const nlohmann::json& j) {
     // Because the user can supply JSON here, there's a chance that the JSON is
     // malformed.
     try {
