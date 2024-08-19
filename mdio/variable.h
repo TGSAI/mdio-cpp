@@ -1149,6 +1149,72 @@ class Variable {
     }
   }
 
+  struct Interval {
+    friend std::ostream& operator<<(std::ostream& os, const Interval& obj) {
+      os << obj.label.label() << ": [" << obj.inclusive_min << ", "
+         << obj.exclusive_max << ")";
+      return os;
+    }
+
+    mdio::DimensionIdentifier label;
+    mdio::Index inclusive_min;
+    mdio::Index exclusive_max;
+  };
+
+  /**
+   * @brief Gets the domain of the whole Variable or selected dimensions.
+   * @param labels The DimensionIdentifier(s) of the dimensions to get.
+   * @return A vector of the domain of the selected dimensions, or the whole
+   * domain if no labels are provided.
+   */
+  template <typename... DimensionIdentifier>
+  mdio::Result<std::vector<Interval>> get_intervals(
+      const DimensionIdentifier&... labels) const {
+    constexpr size_t numLabels = sizeof...(labels);
+    std::vector<Interval> intervals;
+    auto domain = store.domain();
+
+    if (numLabels == 0) {
+      const auto labels = domain.labels();
+      auto idx(0);
+      for (const auto& label : labels) {
+        Interval interval = {label, domain[idx].interval().inclusive_min(),
+                             domain[idx].interval().exclusive_max()};
+        intervals.push_back(interval);
+        ++idx;
+      }
+    } else {
+      std::apply(
+          [&](const auto&... label) {
+            ((
+                [&] {
+                  if (this->hasLabel(label)) {
+                    auto idx(0);
+                    for (const auto& l : domain.labels()) {
+                      if (l == label) {
+                        break;
+                      }
+                      ++idx;
+                    }
+                    Interval interval{label,
+                                      domain[idx].interval().inclusive_min(),
+                                      domain[idx].interval().exclusive_max()};
+                    intervals.push_back(interval);
+                  }
+                }(),
+                ...));
+          },
+          std::make_tuple(labels...));
+    }
+
+    if (intervals.empty()) {
+      return absl::InvalidArgumentError(
+          "Labels were provided, but none were found for Variable " +
+          variableName);
+    }
+    return intervals;
+  }
+
   // ===========================Member data getters===========================
   const std::string& get_variable_name() const { return variableName; }
 

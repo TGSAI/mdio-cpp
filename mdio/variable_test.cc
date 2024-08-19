@@ -680,6 +680,92 @@ TEST(Variable, outOfBoundsSlice) {
   EXPECT_TRUE(legal.status().ok()) << legal.status();
 }
 
+TEST(Variable, noIntervals) {
+  auto varRes =
+      mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean);
+  ASSERT_TRUE(varRes.status().ok()) << varRes.status();
+  auto var = varRes.value();
+
+  auto intervalRes = var.get_intervals();
+  ASSERT_TRUE(intervalRes.status().ok()) << intervalRes.status();
+  auto intervals = intervalRes.value();
+  ASSERT_EQ(intervals.size(), 2);
+}
+
+TEST(Variable, oneInterval) {
+  auto varRes =
+      mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean);
+  ASSERT_TRUE(varRes.status().ok()) << varRes.status();
+  auto var = varRes.value();
+
+  auto intervalRes = var.get_intervals("y");
+  ASSERT_TRUE(intervalRes.status().ok()) << intervalRes.status();
+  auto intervals = intervalRes.value();
+  ASSERT_EQ(intervals.size(), 1);
+}
+
+TEST(Variable, mixedIntervals) {
+  auto varRes =
+      mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean);
+  ASSERT_TRUE(varRes.status().ok()) << varRes.status();
+  auto var = varRes.value();
+
+  auto intervalRes = var.get_intervals("x", "y", "z");
+  ASSERT_TRUE(intervalRes.status().ok()) << intervalRes.status();
+  auto intervals = intervalRes.value();
+  ASSERT_EQ(intervals.size(), 2);
+}
+
+TEST(Variable, wrongIntervals) {
+  auto varRes =
+      mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean);
+  ASSERT_TRUE(varRes.status().ok()) << varRes.status();
+  auto var = varRes.value();
+
+  auto intervalRes = var.get_intervals("z");
+  ASSERT_FALSE(intervalRes.status().ok()) << intervalRes.status();
+}
+
+TEST(Variable, slicedIntervals) {
+  auto varRes =
+      mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean);
+  ASSERT_TRUE(varRes.status().ok()) << varRes.status();
+  auto var = varRes.value();
+
+  auto intervalRes = var.get_intervals();
+  ASSERT_TRUE(intervalRes.status().ok()) << intervalRes.status();
+  auto intervals = intervalRes.value();
+  mdio::SliceDescriptor desc1, desc2;
+
+  for (auto& interval : intervals) {
+    if (interval.label.label() == "x") {
+      desc1.label = interval.label;
+      desc1.start = interval.inclusive_min + 100;
+      desc1.stop = interval.exclusive_max - 100;
+      desc1.step = 1;
+    } else if (interval.label.label() == "y") {
+      desc2.label = interval.label;
+      desc2.start = interval.inclusive_min + 200;
+      desc2.stop = interval.exclusive_max - 200;
+      desc2.step = 1;
+    } else {
+      FAIL() << "Unexpected interval label: " << interval.label;
+    }
+  }
+  auto slicedRes = var.slice(desc1, desc2);
+  ASSERT_TRUE(slicedRes.status().ok()) << slicedRes.status();
+  auto sliced = slicedRes.value();
+
+  auto slicedIntervalRes = sliced.get_intervals();
+  ASSERT_TRUE(slicedIntervalRes.status().ok()) << slicedIntervalRes.status();
+  auto slicedIntervals = slicedIntervalRes.value();
+  ASSERT_EQ(slicedIntervals.size(), 2);
+  EXPECT_EQ(slicedIntervals[0].inclusive_min, 100);
+  EXPECT_EQ(slicedIntervals[0].exclusive_max, 400);
+  EXPECT_EQ(slicedIntervals[1].inclusive_min, 200);
+  EXPECT_EQ(slicedIntervals[1].exclusive_max, 300);
+}
+
 TEST(VariableData, outOfBoundsSlice) {
   auto varRes =
       mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean).result();
