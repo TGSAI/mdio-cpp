@@ -126,7 +126,6 @@ TEST(SummaryStatsTest, fromJsonMissing) {
       {"sumSquares", 0.0},
       {"histogram", {{"binCenters", {1.0, 2.0, 3.0}}, {"counts", {1, 2, 3}}}}};
   auto statsRes = mdio::internal::SummaryStats::FromJson(expected);
-  std::cout << statsRes.status() << std::endl;
   ASSERT_FALSE(statsRes.status().ok()) << statsRes.status();
 }
 
