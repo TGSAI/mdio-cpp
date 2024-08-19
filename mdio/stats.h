@@ -261,6 +261,14 @@ class SummaryStats {
       return histRes.status();
     }
     auto histogram = std::move(histRes.value());
+    const std::array<std::string, 5> keys = {"count", "max", "min", "sum",
+                                             "sumSquares"};
+    for (const auto& key : keys) {
+      if (!j.contains(key)) {
+        return absl::InvalidArgumentError(
+            "Error parsing statsV1:\n\tMissing key: '" + key + "'");
+      }
+    }
     auto stats =
         SummaryStats(j["count"].get<int32_t>(), j["max"].get<float>(),
                      j["min"].get<float>(), j["sum"].get<float>(),
