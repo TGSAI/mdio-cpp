@@ -22,6 +22,7 @@
 #include <string>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -439,6 +440,31 @@ class Dataset {
   Result<Variable<T, R, M>> get_variable(const std::string& variable_name) {
     // return a variable from within the dataset.
     return variables.get<T, R, M>(variable_name);
+  }
+
+  template <typename... DimensionIdentifier>
+  mdio::Result<std::vector<Variable<>::Interval>> get_intervals(
+      const DimensionIdentifier&... labels) const {
+    std::vector<Variable<>::Interval> intervals;
+    std::unordered_set<std::string_view> labels_set;
+    auto idents = variables.get_iterable_accessor();
+    for (auto& ident : idents) {
+      MDIO_ASSIGN_OR_RETURN(auto var, variables.at(ident));
+      auto intervalRes = var.get_intervals(labels...);
+      if (intervalRes.status().ok()) {
+        for (auto& interval : intervalRes.value()) {
+          if (labels_set.count(interval.label.label()) == 0) {
+            labels_set.insert(interval.label.label());
+            intervals.push_back(interval);
+          }
+        }
+      }
+    }
+
+    if (intervals.empty()) {
+      return absl::NotFoundError("No intervals found for the given labels.");
+    }
+    return intervals;
   }
 
   /**

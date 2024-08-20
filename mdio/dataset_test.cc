@@ -423,6 +423,99 @@ TEST(Dataset, coordinates) {
       << "Dataset expected to have coordinates but none were present!";
 }
 
+TEST(Dataset, noIntervals) {
+  auto json_vars = GetToyExample();
+
+  auto datasetFut = mdio::Dataset::from_json(json_vars, "zarrs/acceptance",
+                                             mdio::constants::kCreateClean);
+
+  ASSERT_TRUE(datasetFut.status().ok()) << datasetFut.status();
+  auto dataset = datasetFut.value();
+  auto intervalRes = dataset.get_intervals();
+  ASSERT_TRUE(intervalRes.ok()) << intervalRes.status();
+  auto intervals = intervalRes.value();
+  ASSERT_EQ(intervals.size(), 4);
+  EXPECT_EQ(intervals[0].label, "inline");
+  EXPECT_EQ(intervals[1].label, "crossline");
+  EXPECT_EQ(intervals[2].label, "depth");
+  EXPECT_EQ(intervals[3].label, "");
+}
+
+TEST(Dataset, oneInterval) {
+  auto json_vars = GetToyExample();
+
+  auto datasetFut = mdio::Dataset::from_json(json_vars, "zarrs/acceptance",
+                                             mdio::constants::kCreateClean);
+
+  ASSERT_TRUE(datasetFut.status().ok()) << datasetFut.status();
+  auto dataset = datasetFut.value();
+  auto intervalRes = dataset.get_intervals("depth");
+  ASSERT_TRUE(intervalRes.ok()) << intervalRes.status();
+  auto intervals = intervalRes.value();
+  ASSERT_EQ(intervals.size(), 1);
+  EXPECT_EQ(intervals[0].label, "depth");
+}
+
+TEST(Dataset, mixedIntervals) {
+  auto json_vars = GetToyExample();
+
+  auto datasetFut = mdio::Dataset::from_json(json_vars, "zarrs/acceptance",
+                                             mdio::constants::kCreateClean);
+
+  ASSERT_TRUE(datasetFut.status().ok()) << datasetFut.status();
+  auto dataset = datasetFut.value();
+  auto intervalRes = dataset.get_intervals("inline", "crossline", "time");
+  ASSERT_TRUE(intervalRes.ok()) << intervalRes.status();
+  auto intervals = intervalRes.value();
+  ASSERT_EQ(intervals.size(), 2);
+  EXPECT_EQ(intervals[0].label, "inline");
+  EXPECT_EQ(intervals[1].label, "crossline");
+}
+
+TEST(Dataset, wrongIntervals) {
+  auto json_vars = GetToyExample();
+
+  auto datasetFut = mdio::Dataset::from_json(json_vars, "zarrs/acceptance",
+                                             mdio::constants::kCreateClean);
+
+  ASSERT_TRUE(datasetFut.status().ok()) << datasetFut.status();
+  auto dataset = datasetFut.value();
+  auto intervalRes =
+      dataset.get_intervals("offset", "azmiuth", "source_x", "source_y");
+  ASSERT_FALSE(intervalRes.ok()) << intervalRes.status();
+}
+
+TEST(Dataset, slicedIntervals) {
+  auto json_vars = GetToyExample();
+
+  auto datasetFut = mdio::Dataset::from_json(json_vars, "zarrs/acceptance",
+                                             mdio::constants::kCreateClean);
+
+  ASSERT_TRUE(datasetFut.status().ok()) << datasetFut.status();
+  auto dataset = datasetFut.value();
+  mdio::SliceDescriptor desc1 = {"inline", 0, 5, 1};
+  mdio::SliceDescriptor desc2 = {"crossline", 0, 5, 1};
+  auto sliceRes = dataset.isel(desc1, desc2);
+  ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
+  auto slice = sliceRes.value();
+  auto intervalRes = slice.get_intervals();
+  ASSERT_TRUE(intervalRes.ok()) << intervalRes.status();
+  auto intervals = intervalRes.value();
+  ASSERT_EQ(intervals.size(), 4);
+  EXPECT_EQ(intervals[0].label, "inline");
+  EXPECT_EQ(intervals[1].label, "crossline");
+  EXPECT_EQ(intervals[2].label, "depth");
+  EXPECT_EQ(intervals[3].label, "");
+  EXPECT_EQ(intervals[0].inclusive_min, 0);
+  EXPECT_EQ(intervals[0].exclusive_max, 5);
+  EXPECT_EQ(intervals[1].inclusive_min, 0);
+  EXPECT_EQ(intervals[1].exclusive_max, 5);
+  EXPECT_EQ(intervals[2].inclusive_min, 0);
+  EXPECT_EQ(intervals[2].exclusive_max, 384);
+  EXPECT_EQ(intervals[3].inclusive_min, 0);
+  EXPECT_EQ(intervals[3].exclusive_max, 12);
+}
+
 TEST(Dataset, create) {
   std::filesystem::remove_all("zarrs/acceptance");
 
