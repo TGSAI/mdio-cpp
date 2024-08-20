@@ -117,6 +117,18 @@ TEST(SummaryStatsTest, fromJsonInt) {
   EXPECT_EQ(stats.getBindable(), expected);
 }
 
+TEST(SummaryStatsTest, fromJsonMissing) {
+  nlohmann::json expected = {
+      {"count", 100},
+      {"min", -1000.0},
+      // {"max", 1000.0},  // User forgot to add max field (required)
+      {"sum", 0.0},
+      {"sumSquares", 0.0},
+      {"histogram", {{"binCenters", {1.0, 2.0, 3.0}}, {"counts", {1, 2, 3}}}}};
+  auto statsRes = mdio::internal::SummaryStats::FromJson(expected);
+  ASSERT_FALSE(statsRes.status().ok()) << statsRes.status();
+}
+
 TEST(UserAttributesTest, fromJsonNoStats) {
   nlohmann::json expected = {{"attributes",
                               {{"foo", "bar"},
