@@ -21,4 +21,4 @@ jobs:
       - name: Build tests
         run: cd build && make mdio_acceptance_test  && make mdio_variable_test && make mdio_dataset_test
       - name: Run tests
-        run: cd build && ./mdio_acceptance_test && ./mdio_variable_test && ./mdio_dataset_test
+        run: cd build/mdio/  && ./mdio_acceptance_test && ./mdio_variable_test && ./mdio_dataset_test
