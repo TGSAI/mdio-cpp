@@ -14,6 +14,11 @@ jobs:
         uses: ilammy/setup-nasm@v1
       - name: Checkout
         uses: actions/checkout@v4.1.7
+      - name: Setup Cache
+        uses: ./.github/actions/setup_cache
+        with:
+          compiler: ${{ matrix.compiler }}
+          os: ${{ matrix.os }}
       - name: Configure and Build Project
         uses: threeal/cmake-action@main
         with:
