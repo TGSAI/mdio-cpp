@@ -5,15 +5,24 @@ on: [push, pull_request]
 jobs:
   cmake_build:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest] # [ubuntu-latest, macos-latest]
         compiler: [g++, clang++]
     runs-on: ${{ matrix.os }}
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
     steps:
       - name: Setup NASM
         uses: ilammy/setup-nasm@v1
       - name: Checkout
-        uses: actions/checkout@v4.1.7
+        uses: actions/checkout@v4.1.7# Initializes the CodeQL tools for scanning.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v1
+        with:
+          languages: "cpp"
       - name: Configure and Build Project
         uses: threeal/cmake-action@main
         with:
@@ -36,3 +45,5 @@ jobs:
           && ./mdio_stats_test \
           && ./mdio_utils_test \
           && ./mdio_variable_collection_test
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v1
