@@ -302,7 +302,7 @@ std::string schema = R"(
   auto depthAccessor = depthData.get_data_accessor();
 
   // Inline has some repeated values to show possible conditions for slicing
-  std::vector<mdio::dtypes::int32_t> inlineCoords({1,2,3,3,4,5,6,7,8,8});
+  std::vector<mdio::dtypes::int32_t> inlineCoords({1,2,3,4,3,5,6,7,8,8});
 
   for (int i=0; i<10; ++i) {
     inlineAccessor({i}) = inlineCoords[i];
@@ -324,7 +324,7 @@ std::string schema = R"(
   for (int i=0; i<10; ++i) {
     for (int j=0; j<15; ++j) {
       for (int k=0; k<20; ++k) {
-        dataAccessor({i, j, k}) = float(i) + float(j)/10;  // Do nothing special for depth
+        dataAccessor({i, j, k}) = float(inlineCoords[i]) + float(j)/100;  // Do nothing special for depth
       }
     }
   }
@@ -444,9 +444,28 @@ TEST(Dataset, selRepeatedValue) {
   mdio::ValueDescriptor<mdio::dtypes::int32_t> ilValue = {"inline", 3};
 
   auto sliceRes = ds.sel(ilValue);
-  // TODO(BrianMichell): Update this to expect ok status when implemented
-  EXPECT_EQ(sliceRes.status().code(), absl::StatusCode::kUnimplemented);
-  GTEST_SKIP() << "Feature is not yet implemented";
+  ASSERT_TRUE(sliceRes.status().ok()) << sliceRes.status();
+  auto slicedDs = sliceRes.value();
+
+  auto inlineVarRes = slicedDs.variables.at("inline");
+  ASSERT_TRUE(inlineVarRes.status().ok()) << inlineVarRes.status();
+  auto samples = inlineVarRes.value().num_samples();
+  EXPECT_EQ(samples, 2) << "Expected 1 sample for inline but got " << samples;
+
+  auto xlineVarRes = slicedDs.variables.at("crossline");
+  ASSERT_TRUE(xlineVarRes.status().ok()) << xlineVarRes.status();
+  samples = xlineVarRes.value().num_samples();
+  EXPECT_EQ(samples, 15) << "Expected 15 samples for crossline but got " << samples;
+
+  auto depthVarRes = slicedDs.variables.at("depth");
+  ASSERT_TRUE(depthVarRes.status().ok()) << depthVarRes.status();
+  samples = depthVarRes.value().num_samples();
+  EXPECT_EQ(samples, 20) << "Expected 20 samples for depth but got " << samples;
+
+  auto dataVarRes = slicedDs.variables.at("data");
+  ASSERT_TRUE(dataVarRes.status().ok()) << dataVarRes.status();
+  samples = dataVarRes.value().num_samples();
+  EXPECT_EQ(samples, 2*15*20) << "Expected 2*15*20 samples for data but got " << samples;
 }
 
 TEST(Dataset, selMultipleValues) {

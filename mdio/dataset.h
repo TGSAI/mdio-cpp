@@ -42,7 +42,6 @@ namespace mdio {
 namespace internal {
 
 constexpr std::size_t kMaxNumSlices = 32;  // TODO(BrianMichell): Select appropriate compile-time default and make CMAKE configurable
-constexpr std::string_view kInertSliceKey = "MDIO_INERT_SLICE_KEY_CONSTANT_NO_USE";
 
 /**
  * @brief Retrieves the .zarray JSON metadata from the given `metadata`.
@@ -733,10 +732,9 @@ class Dataset {
       for (auto& elem : label_to_indices) {
         auto size = elem.second.size();
         if (size > 1) {
-          // for (int i=0; i<size; ++i) {
-          //   slices.emplace_back(SliceDescriptor({elem.first, elem.second[i], elem.second[i] + 1, 1}));
-          // }
-          return absl::UnimplementedError("Support for reoccuring values is not yet implemented.");
+          for (int i=0; i<size; ++i) {
+            slices.emplace_back(SliceDescriptor({elem.first, elem.second[i], elem.second[i] + 1, 1}));
+          }
         }
         if (size == 1) {
           slices.emplace_back(SliceDescriptor({elem.first, elem.second[0], elem.second[0] + 1, 1}));

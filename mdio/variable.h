@@ -37,6 +37,7 @@
 #include "tensorstore/open.h"
 #include "tensorstore/tensorstore.h"
 #include "tensorstore/util/future.h"
+#include "tensorstore/stack.h"
 
 // clang-format off
 #include <nlohmann/json.hpp>  // NOLINT
@@ -166,6 +167,8 @@ struct extract_descriptor_Ttype<T&&> {
 };
 
 namespace internal {
+
+constexpr std::string_view kInertSliceKey = "MDIO_INERT_SLICE_KEY_CONSTANT_NO_USE";
 
 /**
  * @brief Checks a status for a missing driver message and returns an MDIO
@@ -983,12 +986,60 @@ class Variable {
     }
 
     if (labels.size()) {
-      MDIO_ASSIGN_OR_RETURN(auto slice_store,
-                            store | tensorstore::Dims(labels).HalfOpenInterval(
-                                        start, stop, step));
-      // return a new variable with the sliced store
-      return Variable{variableName, longName, metadata, slice_store,
-                      attributes};
+      std::set<std::string_view> labelSet;
+      for (const auto& label : labels) {
+        labelSet.insert(label.label());
+      }
+
+      // Concat the sliced Variable together if there are duplicate labels(dimensions)
+      if (labelSet.size() != labels.size()) {
+        std::vector<Variable> fragments;
+        absl::Status trueStatus = absl::OkStatus();
+        auto fragmentStore = [&](auto& descriptor) ->absl::Status {
+          if (descriptor.label.label() == internal::kInertSliceKey) {
+            // pass on kInertSliceKey
+            return absl::OkStatus();
+          }
+          std::stringstream ss;
+          ss << this->variableName << "_fragment_" << fragments.size();
+          std::cout << ss.str() << std::endl;
+          auto sliceRes = slice(descriptor);
+          if (!sliceRes.status().ok()) {
+            trueStatus = sliceRes.status();
+            return trueStatus;
+          }
+          fragments.push_back(sliceRes.value());
+          return absl::OkStatus();
+        };
+
+        auto status = (fragmentStore(descriptors).ok() && ...);
+        if (!status) {
+          return trueStatus;
+        }
+
+        tensorstore::TensorStore<T, R, M> catStore;
+        if (!fragments.empty()) {
+          // Initialize catStore with the first fragment's store
+          catStore = fragments.front().get_store();
+
+          // Concatenate remaining fragments
+          for (size_t i = 1; i < fragments.size(); ++i) {
+            MDIO_ASSIGN_OR_RETURN(catStore, tensorstore::Concat({catStore, fragments[i].get_store()}, /*axis=*/0));
+          }
+        } else {
+          return absl::InternalError("No fragments to concatenate.");
+        }
+
+        // Return a new Variable with the concatenated store
+        return Variable{variableName, longName, metadata, catStore, attributes};
+      } else {
+        MDIO_ASSIGN_OR_RETURN(auto slice_store,
+                              store | tensorstore::Dims(labels).HalfOpenInterval(
+                                          start, stop, step));
+        // return a new variable with the sliced store
+        return Variable{variableName, longName, metadata, slice_store,
+                        attributes};
+      }
     } else {
       // the slice didn't change anything in the variables dimensions.
       return *this;
