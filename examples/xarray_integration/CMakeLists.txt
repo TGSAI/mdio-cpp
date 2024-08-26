@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(dataset_example_project VERSION 1.0.0 LANGUAGES CXX)
+project(xarray_integration_project VERSION 1.0.0 LANGUAGES CXX)
 
 # Set the C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -17,10 +17,16 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(mdio)
 
 # Create an executable target
-add_executable(dataset_example src/dataset_example.cc)
+add_executable(xarray_integration src/xarray_integration.cc)
+add_executable(mdio_from_xarray src/mdio_from_xarray.cc)
 
 # Link the mdio library to the executable
-target_link_libraries(dataset_example PRIVATE 
+target_link_libraries(mdio_from_xarray PRIVATE 
+  mdio
+  ${mdio_INTERNAL_DEPS}
+)
+
+target_link_libraries(xarray_integration PRIVATE 
   mdio
   ${mdio_INTERNAL_DEPS}
 )

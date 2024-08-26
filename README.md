@@ -119,7 +119,7 @@ Our vision is to provide a tool that not only simplifies the management of energ
   - Improve documentation and examples to reduce the cognitive load of adopting **MDIO**.
   - Resolve performance critical issues (runtime or storage costs).
 
-## (dependency) Google's Tensorstore library
+## (dependency) Tensorstore
 
 We use the [tensorstore](https://google.github.io/tensorstore/) library to provide native a C/C++ interface to 
 ZArr. If you're familiar with the Python DASK library, tensorstore has very similar semantics when it 
