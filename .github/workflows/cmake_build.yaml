@@ -20,7 +20,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4 # Initializes the CodeQL tools for scanning.
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v1
+        uses: github/codeql-action/init@v2
         with:
           languages: "cpp"
       - name: Configure and Build Project
