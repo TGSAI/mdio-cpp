@@ -25,6 +25,8 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+#include <cstddef>
+#include <stdexcept>
 
 #include "mdio/dataset_factory.h"
 #include "mdio/variable.h"
@@ -38,6 +40,9 @@
 
 namespace mdio {
 namespace internal {
+
+constexpr std::size_t kMaxNumSlices = 32;  // TODO(BrianMichell): Select appropriate compile-time default and make CMAKE configurable
+constexpr std::string_view kInertSliceKey = "MDIO_INERT_SLICE_KEY_CONSTANT_NO_USE";
 
 /**
  * @brief Retrieves the .zarray JSON metadata from the given `metadata`.
@@ -561,6 +566,278 @@ class Dataset {
                               .labels(labels)
                               .Finalize())
     return Dataset{metadata, vars, coordinates, new_domain};
+  }
+
+  template<typename First, typename... Rest>
+  constexpr bool are_same() {
+    return (... && std::is_same_v<typename outer_type<First>::type, typename outer_type<Rest>::type>);
+  }
+
+    // Generate an index sequence
+    template<size_t... I>
+    struct index_sequence {};
+
+    template<size_t N, size_t... I>
+    struct make_index_sequence : make_index_sequence<N - 1, N - 1, I...> {};
+
+    template<size_t... I>
+    struct make_index_sequence<0, I...> : index_sequence<I...> {};
+
+    // Function to call `isel` with a parameter pack expanded from the vector
+    template<std::size_t... I>
+    Result<Dataset> call_isel_with_vector_impl(const std::vector<SliceDescriptor>& slices, std::index_sequence<I...>) {
+        return isel(slices[I]...);
+    }
+
+    // Wrapper function that generates the index sequence
+    Result<Dataset> call_isel_with_vector(const std::vector<SliceDescriptor>& slices) {
+        if (slices.empty()) {
+            return absl::InvalidArgumentError("No slices provided.");
+        }
+
+        if (slices.size() > internal::kMaxNumSlices) {
+            return absl::InvalidArgumentError("Too many slices provided or implicitly generated.");
+        }
+
+        std::vector<SliceDescriptor> slicesCopy = slices;
+        for (int i=slices.size(); i<=internal::kMaxNumSlices; i++) {
+            slicesCopy.emplace_back(SliceDescriptor({internal::kInertSliceKey, 0, 1, 1}));
+        }
+
+        // Generate the index sequence and call the implementation
+        return call_isel_with_vector_impl(slicesCopy, std::make_index_sequence<internal::kMaxNumSlices>{});
+    }
+
+
+  /**
+   * @brief Performs a label-based slice on the Dataset
+   * This method will slice the Dataset based on coordinates rather than indicies.
+   * @param descriptors The descriptors to use for the slice. May be RangeDescriptor, ValueDescriptor, or ListDescriptor
+  */
+  template<typename... Descriptors>
+  Result<Dataset> sel(Descriptors... descriptors) {
+    /*
+    Case 1: ValueDescriptor with repeated values: Get all occurrences of the value
+    Case 2: ListDescriptor with repeated values (single element): Return Invalid Reindexing error
+    Case 3: ListDescriptor with repeated values (multiple elements): Return Invalid Reindexing error (Case 2)
+    Case 4: Same as Case 1
+    Case 5: RangeDescriptor with repeated values: Return Invalid Reindexing error
+    Case 6: RangeDescriptor with unique values: Get the range from start to stop, include everything in-between
+
+    Case fail: label is not 1D
+    Case fail: label is repeated. This is a dictionary in xarray, so not allowed.
+    */
+
+    /*
+    Valid cases:
+      Case 1: ValueDescriptor with unique value: Get the single value.
+        No error state.
+        Get the index and convert to conventional isel.
+      Case 2: ValueDescriptor with non-unique value: Get all occurrences of the value.
+        No error state.
+        TODO(BrianMichell): Can I create a list of RangeDescriptor of size 1, isel a bunch of Variables, and cat them together?
+      Case 3: ListDescriptor with unique values: Get the individual values.
+        Error state for repeated values.
+        TODO(BrianMichell): Defer
+      Case 4: RangeDescriptor with unique start and stop values: Get the range from start to stop, include everything in-between.
+        Error state for repeated start/stop values. Any repeated values that are not start/stop are fair game.
+        Get the start and stop indicies and create a single isel.
+    */
+
+    // Check that all descriptors are of the same outer type
+    if (!are_same<Descriptors...>()) {
+      return absl::InvalidArgumentError("All descriptors must be of the same type.");
+    }
+
+    // Validate each descriptor (for example, ListDescriptor not yet supported)
+    auto validateDescriptors = [this](auto& descriptor) {
+      using DescriptorType = typename outer_type<decltype(descriptor)>::type;
+      if constexpr (std::is_same_v<std::remove_reference_t<DescriptorType>, ListDescriptor<typename std::remove_reference_t<decltype(descriptor)>::type>>) {
+        return absl::UnimplementedError("Support for ListDescriptor is not yet implemented.");
+      }
+      // TODO(BrianMichell): Remove this check when SliceDescriptor is removed
+      if constexpr (std::is_same_v<DescriptorType, SliceDescriptor>) {
+        return absl::InvalidArgumentError("SliceDescriptor is deprecated and will be removed in future versions. Please use RangeDescriptor instead.\nThe sel method does not support SliceDescriptor.");
+      }
+
+      MDIO_ASSIGN_OR_RETURN(auto var, variables.at(std::string(descriptor.label.label())));
+      if (!var.dimensions().rank() == 1) {
+        return absl::InvalidArgumentError("Label must be 1D.");
+      }
+
+      return absl::OkStatus();
+    };
+
+    std::set<std::string_view> labels;
+
+    // Call validateDescriptors for each descriptor
+    {
+      // Manage the scope of status
+      absl::Status status;
+      for (auto& descriptor : {descriptors...}) {
+        status = validateDescriptors(descriptor);
+        if (!status.ok()) {
+          return status;
+        }
+        if (labels.count(descriptor.label.label()) > 0) {
+          return absl::InvalidArgumentError("Label must not be repeated.");
+        }
+        labels.insert(descriptor.label.label());
+      }
+    }
+
+    // Check if the descriptors are of type ValueDescriptor
+    if constexpr ((std::is_same_v<Descriptors, ValueDescriptor<typename Descriptors::type>> && ...)) {
+      // Define the map to store the results
+      std::map<std::string_view, std::vector<Index>> label_to_indices;
+      absl::Status trueStatus = absl::OkStatus();  // A hack to allow for true error status return.
+
+      // Process each descriptor to populate the map
+      auto processDescriptor = [this, &label_to_indices, &trueStatus](auto& descriptor) -> absl::Status {
+        using ValueType = typename extract_descriptor_Ttype<decltype(descriptor)>::type;
+
+        auto varRes = variables.get<ValueType>(std::string(descriptor.label.label()));
+        if (!varRes.status().ok()) {
+          trueStatus = varRes.status();
+          return trueStatus;
+        }
+        auto var = varRes.value();
+        auto varFut = var.Read();
+        if (!varFut.status().ok()) {
+          trueStatus = varFut.status();
+          return trueStatus;
+        }
+        auto varDat = varFut.value();
+        auto varAccessor = varDat.get_data_accessor();
+
+        std::vector<Index> indices;
+        auto offset = varDat.get_flattened_offset();
+        // We must check for every occurance of the value
+        for (Index i = offset; i < var.num_samples()+offset; ++i) {
+          if (varAccessor({i}) == descriptor.value) {
+            label_to_indices[descriptor.label.label()].push_back(i);
+          }
+        }
+
+        // Add the indices to the map
+        return absl::OkStatus();
+      };
+
+      auto status = (processDescriptor(descriptors).ok() && ...);
+      if (!status) {
+        return trueStatus;
+      }
+
+      // Build out the slice descriptors
+      std::vector<SliceDescriptor> slices;
+      for (auto& elem : label_to_indices) {
+        auto size = elem.second.size();
+        if (size > 1) {
+          // for (int i=0; i<size; ++i) {
+          //   slices.emplace_back(SliceDescriptor({elem.first, elem.second[i], elem.second[i] + 1, 1}));
+          // }
+          return absl::UnimplementedError("Support for reoccuring values is not yet implemented.");
+        }
+        if (size == 1) {
+          slices.emplace_back(SliceDescriptor({elem.first, elem.second[0], elem.second[0] + 1, 1}));
+        }
+      }
+
+      if (slices.empty()) {
+        return absl::InvalidArgumentError("No slices could be made from the given descriptors.");
+      }
+      // The map 'label_to_indices' is now populated with all the relevant indices.
+      // You can now proceed with further processing based on this map.
+        
+      return call_isel_with_vector(slices);
+    } else if constexpr ((std::is_same_v<Descriptors, RangeDescriptor<typename Descriptors::type>> && ...)) {
+      std::map<std::string_view, std::pair<Index, Index>> label_to_range;  // pair.first = start, pair.second = stop
+      absl::Status trueStatus = absl::OkStatus();  // A hack to allow for true error status return.
+
+      auto processDescriptor = [this, &label_to_range, &trueStatus](auto& descriptor) -> absl::Status {
+        using ValueType = typename extract_descriptor_Ttype<decltype(descriptor)>::type;
+
+        if (descriptor.start == descriptor.stop) {
+          trueStatus = absl::InvalidArgumentError("Start and stop values must be different.");
+          return trueStatus;
+        }
+
+        auto varRes = variables.get<ValueType>(std::string(descriptor.label.label()));
+        if (!varRes.status().ok()) {
+          trueStatus = varRes.status();
+          return trueStatus;
+        }
+        auto var = varRes.value();
+        auto varFut = var.Read();
+        if (!varFut.status().ok()) {
+          trueStatus = varFut.status();
+          return trueStatus;
+        }
+        auto varDat = varFut.value();
+        auto varAccessor = varDat.get_data_accessor();
+
+        std::pair<bool, Index> start = {false, 0};
+        std::pair<bool, Index> stop = {false, 0};
+        auto offset = varDat.get_flattened_offset();
+
+        for (Index i=offset; i<var.num_samples()+offset; i++) {
+          if (varAccessor({i}) == descriptor.start) {
+            if (start.first) {
+              trueStatus = absl::InvalidArgumentError("Repeated start value.");
+              return trueStatus;
+            }
+            start = {true, i};
+          }
+          if (varAccessor({i}) == descriptor.stop) {
+            if (stop.first) {
+              trueStatus = absl::InvalidArgumentError("Repeated stop value.");
+              return trueStatus;
+            }
+            stop = {true, i};
+          }
+        }
+
+        if (!start.first) {
+          trueStatus = absl::InvalidArgumentError("Start value not found.");
+          return trueStatus;
+        }
+        if (!stop.first) {
+          trueStatus = absl::InvalidArgumentError("Stop value not found.");
+          return trueStatus;
+        }
+
+        // Xarray behavior is to effectively remove the Variable in this case.
+        if (start.second >= stop.second) {
+          trueStatus = absl::UnimplementedError("Start value happens after stop value. This is not a supported case.");
+          return trueStatus;
+        }
+        // This case should be caught by the earlier check, but it's here for completeness.
+        if (label_to_range.count(descriptor.label.label()) > 0) {
+          trueStatus = absl::InvalidArgumentError("Label must not be repeated.");
+          return trueStatus;
+        }
+        label_to_range[descriptor.label.label()] = {start.second, stop.second};
+        return absl::OkStatus();
+      };
+
+      auto status = (processDescriptor(descriptors).ok() && ...);
+      if (!status) {
+        return trueStatus;
+      }
+
+      std::vector<SliceDescriptor> slices;
+      for (auto& elem : label_to_range) {
+        slices.emplace_back(SliceDescriptor({elem.first, elem.second.first, elem.second.second + 1, 1}));
+      }
+
+      if (slices.empty()) {
+        return absl::InvalidArgumentError("No slices could be made from the given descriptors.");
+      }
+
+      return call_isel_with_vector(slices);
+    }
+
+    return absl::OkStatus();
   }
 
   /**

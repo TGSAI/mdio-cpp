@@ -54,6 +54,13 @@ struct VariableData;
 template <typename T, DimensionIndex R, ArrayOriginKind OriginKind>
 struct LabeledArray;
 
+template<typename T>
+struct extract_descriptor_Ttype;
+
+template<typename T>
+struct outer_type;
+
+
 /**
  * @brief A descriptor for slicing a Variable.
  * A struct representing how to slice a Variable or Dataset.
@@ -71,12 +78,91 @@ struct LabeledArray;
  * mdio::SliceDescriptor desc1 = {"inline", 0, 100, 1};
  * mdio::SliceDescriptor desc2 = {"crossline", 0, 200, 1};
  * @endcode
+ * 
+ * @deprecated This struct is deprecated in favor of using the `mdio::RangeDescriptor` struct.
  */
 struct SliceDescriptor {
   DimensionIdentifier label;
   Index start;
   Index stop;
   Index step;
+};
+
+template <typename T = Index>
+struct RangeDescriptor {
+  using type = T;
+  DimensionIdentifier label;
+  T start;
+  T stop;
+  Index step = 1;
+};
+
+template <typename T>
+struct ValueDescriptor {
+  using type = T;
+  DimensionIdentifier label;
+  T value;
+};
+
+template <typename T>
+struct ListDescriptor {
+  using type = T;
+  DimensionIdentifier label;
+  std::vector<T> values;
+};
+
+template<typename T>
+struct outer_type {
+  using type = T;
+};
+
+template<template<typename> class Outer, typename T>
+struct outer_type<Outer<T>> {
+  using type = Outer<T>;
+};
+
+// Specialization for lvalue references
+template<typename T>
+struct outer_type<T&> {
+  using type = typename outer_type<std::remove_reference_t<T>>::type;
+};
+
+// Specialization for rvalue references
+template<typename T>
+struct outer_type<T&&> {
+  using type = typename outer_type<std::remove_reference_t<T>>::type;
+};
+
+template<typename T>
+struct extract_descriptor_Ttype {
+    using type = T;
+};
+
+template<typename T>
+struct extract_descriptor_Ttype<RangeDescriptor<T>> {
+    using type = T;
+};
+
+template<typename T>
+struct extract_descriptor_Ttype<ValueDescriptor<T>> {
+    using type = T;
+};
+
+template<typename T>
+struct extract_descriptor_Ttype<ListDescriptor<T>> {
+    using type = T;
+};
+
+// Specialization for lvalue references
+template<typename T>
+struct extract_descriptor_Ttype<T&> {
+    using type = typename extract_descriptor_Ttype<std::remove_reference_t<T>>::type;
+};
+
+// Specialization for rvalue references
+template<typename T>
+struct extract_descriptor_Ttype<T&&> {
+    using type = typename extract_descriptor_Ttype<std::remove_reference_t<T>>::type;
 };
 
 namespace internal {
