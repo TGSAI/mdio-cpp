@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <mdio/mdio.h>
+
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <string>
@@ -26,14 +28,48 @@
 #include "absl/types/span.h"
 
 /**
- * @brief In MDIO collections of seismic data and other data is schematized.
- * A "Dataset" represents a collection of related data. This data has the
- * basic characteristics of "variable", dimension coordinate (inline/crossline
- * etc) and coordinates. A variable might be a stack or a horizon. A coordinate
- * is a variable that is associated with another variable within the same
- * domain. Here we provide a schema for a toy dataset.
+ * @brief MDIO v1.0 is compatible Python's Xarray through it Zarr backend.
+ * Xarray is widely used particularly in climate sciences an oceanography.
+ * You can create an MDIO v1.0 compatible dataset and open it using Xarray. You
+ * can also update data stored in the dataset using Xarray. However, since MDIO
+ * v1.0 is somewhat opinonated about the dataset layout, not every Xarray
+ * compatible dataset will conform with the MDIO v1.0 specification.
  */
-::nlohmann::json GetToyExample() {
+
+#define RETURN_IF_NOT_OK(result) \
+  if (!result.ok()) {            \
+    return result.status();      \
+  }
+
+// Define a specific version of the SharedArray for this problem.
+template <typename T, mdio::DimensionIndex R = mdio::dynamic_rank,
+          mdio::ArrayOriginKind OriginKind = mdio::offset_origin>
+using SharedArray = mdio::SharedArray<T, R, OriginKind>;
+
+template <typename T = void>
+mdio::Result<mdio::VariableData<T>> from_dataset(
+    const mdio::Dataset& dataset, const std::string& variable_name) {
+  MDIO_ASSIGN_OR_RETURN(auto variable, dataset.variables.get<T>(variable_name))
+
+  return mdio::from_variable<T>(variable);
+}
+
+template <typename T>
+mdio::Result<void> populate_and_write_variable(
+    mdio::Dataset& dataset, const std::string& variable_name,
+    std::function<void(SharedArray<T>&)> populate_func) {
+  MDIO_ASSIGN_OR_RETURN(auto variable_data,
+                        from_dataset<T>(dataset, variable_name));
+  auto data = variable_data.get_data_accessor();
+
+  populate_func(data);
+
+  MDIO_ASSIGN_OR_RETURN(auto variable, dataset.variables.get<T>(variable_name));
+
+  return variable.Write(variable_data).result();
+}
+
+::nlohmann::json XarrayExample() {
   std::string schema = R"({
       "metadata": {
         "name": "seismic_3d",
