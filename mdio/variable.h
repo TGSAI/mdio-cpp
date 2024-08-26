@@ -1000,9 +1000,6 @@ class Variable {
             // pass on kInertSliceKey
             return absl::OkStatus();
           }
-          std::stringstream ss;
-          ss << this->variableName << "_fragment_" << fragments.size();
-          std::cout << ss.str() << std::endl;
           auto sliceRes = slice(descriptor);
           if (!sliceRes.status().ok()) {
             trueStatus = sliceRes.status();
