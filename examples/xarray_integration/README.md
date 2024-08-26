@@ -57,6 +57,12 @@ depth = [0 1000 2000 3000]
 
 ### Step 5: Complete the round-trip validate the first row of image is '1'
 
+``sh
 build/mdio_from_xarray --PATH=test.mdio
+``
 
+### Expected Outputs
 
+```
+MDIO mdio from xarray example complete.
+```

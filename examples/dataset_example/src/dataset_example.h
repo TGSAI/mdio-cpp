@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include <fstream>
-#include <nlohmann/json-schema.hpp>
 #include <nlohmann/json.hpp>
 #include <string>
 
@@ -167,4 +166,4 @@
       ]
     })";
   return ::nlohmann::json::parse(schema);
-};
+}

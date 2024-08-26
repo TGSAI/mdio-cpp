@@ -19,10 +19,11 @@
 
 #include "xarray_integration.h"
 
+#include <mdio/mdio.h>
+
 #include "absl/flags/flag.h"
 #include "absl/flags/marshalling.h"
 #include "absl/status/status.h"
-#include "mdio/dataset.h"
 
 using Index = mdio::Index;
 

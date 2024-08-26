@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(hello_world_project VERSION 1.0.0 LANGUAGES CXX)
+project(dataset_example_project VERSION 1.0.0 LANGUAGES CXX)
 
 # Set the C++ standard
 set(CMAKE_CXX_STANDARD 17)

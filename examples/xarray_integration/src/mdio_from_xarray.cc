@@ -17,11 +17,12 @@
  * that has been written by Python's xarray. In the example xarray is used to
  * initialize the "image" variable to all 1's.
  */
+#include <mdio/mdio.h>
+
 #include "absl/flags/flag.h"
 #include "absl/flags/marshalling.h"
 #include "absl/flags/parse.h"
 #include "absl/status/status.h"
-#include "mdio/dataset.h"
 
 absl::Status Run(std::string dataset_path) {
   MDIO_ASSIGN_OR_RETURN(

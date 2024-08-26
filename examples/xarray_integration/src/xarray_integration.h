@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <mdio/mdio.h>
+
 #include <fstream>
-#include <nlohmann/json-schema.hpp>
 #include <nlohmann/json.hpp>
 #include <string>
 
@@ -25,7 +26,6 @@
 #include "absl/strings/str_split.h"
 #include "absl/time/time.h"
 #include "absl/types/span.h"
-#include "mdio/dataset.h"
 
 /**
  * @brief MDIO v1.0 is compatible Python's Xarray through it Zarr backend.
@@ -52,7 +52,7 @@ mdio::Result<mdio::VariableData<T>> from_dataset(
   MDIO_ASSIGN_OR_RETURN(auto variable, dataset.variables.get<T>(variable_name))
 
   return mdio::from_variable<T>(variable);
-};
+}
 
 template <typename T>
 mdio::Result<void> populate_and_write_variable(
@@ -202,4 +202,4 @@ mdio::Result<void> populate_and_write_variable(
       ]
     })";
   return ::nlohmann::json::parse(schema);
-};
+}
