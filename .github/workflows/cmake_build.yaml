@@ -18,3 +18,21 @@ jobs:
         uses: threeal/cmake-action@main
         with:
           cxx-compiler: ${{ matrix.compiler }}
+      - name: Build tests
+        run: cd build && make -j
+      - name: Install test dependencies
+        run: |
+          sudo apt-get install -y python3.10-full \
+          &&  pip install --upgrade pip \
+          && pip install wheel yapf cpplint zarr xarray
+      - name: Run tests
+        run: |
+          cd build/mdio/ \
+          && ./mdio_acceptance_test \
+          && ./mdio_variable_test \
+          && ./mdio_dataset_test \
+          && ./mdio_dataset_factory_test \
+          && ./mdio_dataset_validator_test \
+          && ./mdio_stats_test \
+          && ./mdio_utils_test \
+          && ./mdio_variable_collection_test

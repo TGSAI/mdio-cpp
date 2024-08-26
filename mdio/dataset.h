@@ -18,9 +18,11 @@
 
 #include <fstream>
 #include <map>
+#include <memory>
 #include <string>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -440,6 +442,31 @@ class Dataset {
     return variables.get<T, R, M>(variable_name);
   }
 
+  template <typename... DimensionIdentifier>
+  mdio::Result<std::vector<Variable<>::Interval>> get_intervals(
+      const DimensionIdentifier&... labels) const {
+    std::vector<Variable<>::Interval> intervals;
+    std::unordered_set<std::string_view> labels_set;
+    auto idents = variables.get_iterable_accessor();
+    for (auto& ident : idents) {
+      MDIO_ASSIGN_OR_RETURN(auto var, variables.at(ident));
+      auto intervalRes = var.get_intervals(labels...);
+      if (intervalRes.status().ok()) {
+        for (auto& interval : intervalRes.value()) {
+          if (labels_set.count(interval.label.label()) == 0) {
+            labels_set.insert(interval.label.label());
+            intervals.push_back(interval);
+          }
+        }
+      }
+    }
+
+    if (intervals.empty()) {
+      return absl::NotFoundError("No intervals found for the given labels.");
+    }
+    return intervals;
+  }
+
   /**
    * @brief Constructs a Dataset from a JSON schema.
    * This method will validate the JSON schema against the MDIO Dataset schema.
@@ -799,7 +826,11 @@ class Dataset {
                 }
             }
         )";
-    nlohmann::json base = nlohmann::json::parse(baseStr);
+    nlohmann::json base = nlohmann::json::parse(baseStr, nullptr, false);
+    if (base.is_discarded()) {
+      return absl::Status(absl::StatusCode::kInternal,
+                          "Failed to parse base JSON.");
+    }
     if (found >= 0) {
       base["field"] = specJson["metadata"]["dtype"][found][0];
     } else {
@@ -840,7 +871,14 @@ class Dataset {
     // Build out list of modified variables
     std::vector<std::string> modifiedVariables;
     for (const auto& key : keys) {
-      modifiedVariables.push_back(key);
+      auto var = variables.at(key).value();
+      if (var.was_updated() || var.should_publish()) {
+        modifiedVariables.push_back(key);
+      }
+      if (var.should_publish()) {
+        // Reset the flag. This should only get set by the trim util.
+        var.set_metadata_publish_flag(false);
+      }
     }
 
     // If nothing changed, we don't want to perform any writes
@@ -853,15 +891,14 @@ class Dataset {
 
     // We need to update the entire .zmetadata file
     std::vector<nlohmann::json> json_vars;
-    std::vector<Variable<>>
-        vars;  // Keeps the Variables in memory. Fix for premature reference
-               // decrement in LLVM compiler.
-    for (auto key : keys) {
-      auto var = variables.at(key).value();
+    std::vector<std::shared_ptr<Variable<>>>
+        vars;  // Keeps the Variables in memory using shared_ptr
+    for (const auto& key : keys) {
+      auto var = std::make_shared<Variable<>>(variables.at(key).value());
       vars.push_back(var);
       // Get the JSON, drop transform, and add attributes
       nlohmann::json json =
-          var.get_store().spec().value().ToJson(IncludeDefaults{}).value();
+          var->get_store().spec().value().ToJson(IncludeDefaults{}).value();
       json.erase("transform");
       json.erase("dtype");
       json["metadata"].erase("filters");
@@ -872,7 +909,7 @@ class Dataset {
       std::string path = json["kvstore"]["path"].get<std::string>();
       path.pop_back();
       json["kvstore"]["path"] = path;
-      nlohmann::json meta = var.getMetadata();
+      nlohmann::json meta = var->getMetadata();
       if (meta.contains("coordinates")) {
         meta["attributes"]["coordinates"] = meta["coordinates"];
         meta.erase("coordinates");
@@ -908,18 +945,16 @@ class Dataset {
         promises;
     std::vector<tensorstore::AnyFuture> futures;
 
-    vars.clear();  // Clear the vector so we can add only the modified Variables
-    for (auto key : modifiedVariables) {
+    for (const auto& key : modifiedVariables) {
       auto pair = tensorstore::PromiseFuturePair<
           tensorstore::TimestampedStorageGeneration>::Make();
-      auto var = variables.at(key).value();
-      vars.push_back(var);
-      auto updateFuture = var.PublishMetadata();
+      auto var = std::make_shared<Variable<>>(variables.at(key).value());
+      auto updateFuture = var->PublishMetadata();
       updateFuture.ExecuteWhenReady(
-          [promise = std::move(pair.promise)](
-              tensorstore::ReadyFuture<
-                  tensorstore::TimestampedStorageGeneration>
-                  readyFut) { promise.SetResult(readyFut.result()); });
+          [promise = std::move(pair.promise),
+           var](tensorstore::ReadyFuture<
+                tensorstore::TimestampedStorageGeneration>
+                    readyFut) { promise.SetResult(readyFut.result()); });
       variableFutures.push_back(std::move(updateFuture));
       futures.push_back(std::move(pair.future));
     }

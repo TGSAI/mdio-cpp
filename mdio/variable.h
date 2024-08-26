@@ -455,8 +455,8 @@ Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
   // go read the attributes return json ...
   auto parse = [](const tensorstore::kvstore::ReadResult& kvs_read,
                   const ::nlohmann::json& spec) {
-    // FIXME - if attributes supplied then validate with values
-    auto attributes = nlohmann::json::parse(std::string(kvs_read.value));
+    auto attributes =
+        nlohmann::json::parse(std::string(kvs_read.value), nullptr, false);
     return attributes;
   };
 
@@ -1133,6 +1133,88 @@ class Variable {
     return attributesAddress != currentAddress;
   }
 
+  /**
+   * @brief Sets the flag whether the metadata should get republished.
+   * Intended for internal use with the trimming utility.
+   *
+   * @param shouldPublish True if the metadata should get republished.
+   */
+  void set_metadata_publish_flag(const bool shouldPublish) {
+    if (!toPublish) {
+      // This should never be the case, but better safe than sorry
+      toPublish = std::make_shared<std::shared_ptr<bool>>(
+          std::make_shared<bool>(shouldPublish));
+    } else {
+      *toPublish = std::make_shared<bool>(shouldPublish);
+    }
+  }
+
+  struct Interval {
+    friend std::ostream& operator<<(std::ostream& os, const Interval& obj) {
+      os << obj.label.label() << ": [" << obj.inclusive_min << ", "
+         << obj.exclusive_max << ")";
+      return os;
+    }
+
+    mdio::DimensionIdentifier label;
+    mdio::Index inclusive_min;
+    mdio::Index exclusive_max;
+  };
+
+  /**
+   * @brief Gets the domain of the whole Variable or selected dimensions.
+   * @param labels The DimensionIdentifier(s) of the dimensions to get.
+   * @return A vector of the domain of the selected dimensions, or the whole
+   * domain if no labels are provided.
+   */
+  template <typename... DimensionIdentifier>
+  mdio::Result<std::vector<Interval>> get_intervals(
+      const DimensionIdentifier&... labels) const {
+    constexpr size_t numLabels = sizeof...(labels);
+    std::vector<Interval> intervals;
+    auto domain = store.domain();
+
+    if (numLabels == 0) {
+      const auto labels = domain.labels();
+      auto idx(0);
+      for (const auto& label : labels) {
+        Interval interval = {label, domain[idx].interval().inclusive_min(),
+                             domain[idx].interval().exclusive_max()};
+        intervals.push_back(interval);
+        ++idx;
+      }
+    } else {
+      std::apply(
+          [&](const auto&... label) {
+            ((
+                [&] {
+                  if (this->hasLabel(label)) {
+                    auto idx(0);
+                    for (const auto& l : domain.labels()) {
+                      if (l == label) {
+                        break;
+                      }
+                      ++idx;
+                    }
+                    Interval interval{label,
+                                      domain[idx].interval().inclusive_min(),
+                                      domain[idx].interval().exclusive_max()};
+                    intervals.push_back(interval);
+                  }
+                }(),
+                ...));
+          },
+          std::make_tuple(labels...));
+    }
+
+    if (intervals.empty()) {
+      return absl::InvalidArgumentError(
+          "Labels were provided, but none were found for Variable " +
+          variableName);
+    }
+    return intervals;
+  }
+
   // ===========================Member data getters===========================
   const std::string& get_variable_name() const { return variableName; }
 
@@ -1153,6 +1235,20 @@ class Variable {
     return attributesAddress;
   }
 
+  /**
+   * @brief Gets whether the metadata should get republished.
+   *
+   * @return True if the metadata should get republished.
+   */
+  bool should_publish() const {
+    if (toPublish && *toPublish) {
+      // Deref the shared_ptr so we're not increasing refcount
+      return **toPublish;
+    }
+    // If the flag was a nullptr, err on the side of caution and republish
+    return true;
+  }
+
  private:
   /**
    * This method should NEVER be called by the user.
@@ -1167,9 +1263,7 @@ class Variable {
     if (attributes.get() != nullptr && attributes->get() != nullptr) {
       std::uintptr_t newAddress =
           reinterpret_cast<std::uintptr_t>(&(**attributes));
-      // TODO(BrianMichell): Leaving this as active is causing segfaults.
-      //   The features requiring it are low priority.
-      // attributesAddress = newAddress;
+      attributesAddress = newAddress;
     }
     // It is fine that this will only change in the "collection" instance of the
     // Variable, because that is the only one that will be operated on by the
@@ -1185,6 +1279,9 @@ class Variable {
   tensorstore::TensorStore<T, R, M> store;
   // The address of the attributes. This MUST NEVER be touched by the user.
   std::uintptr_t attributesAddress;
+  // The metadata will need to be updated if the trim util was used on it.
+  std::shared_ptr<std::shared_ptr<bool>> toPublish =
+      std::make_shared<std::shared_ptr<bool>>(std::make_shared<bool>(false));
 };
 
 // Tensorstore Array's don't have an IndexDomain and so they can't be slice with
