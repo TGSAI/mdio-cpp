@@ -1,0 +1,21 @@
+name: "setup_cache"
+description: "sets up the shared cache"
+inputs:
+  compiler:
+    required: true
+    type: string
+  os:
+    required: true
+    type: string
+runs:
+  using: "composite"
+  steps:
+    - name: Cache
+      uses: actions/cache@v3
+      with:
+        # You might want to add .ccache to your cache configuration?
+        path: |
+          build/_deps
+        key: ${{ inputs.os }}-${{ inputs.compiler }}
+        restore-keys: |
+          ${{ inputs.os }}-${{ inputs.compiler }}
