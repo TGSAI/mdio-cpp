@@ -15,7 +15,7 @@ runs:
       with:
         # You might want to add .ccache to your cache configuration?
         path: |
-          mdio-cpp/build/_deps
+          build/_deps
         key: ${{ inputs.os }}-${{ inputs.compiler }}
         restore-keys: |
           ${{ inputs.os }}-${{ inputs.compiler }}
