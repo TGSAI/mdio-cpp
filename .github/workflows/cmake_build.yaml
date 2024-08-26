@@ -19,10 +19,6 @@ jobs:
         uses: ilammy/setup-nasm@v1
       - name: Checkout
         uses: actions/checkout@v4 # Initializes the CodeQL tools for scanning.
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: "cpp"
       - name: Configure and Build Project
         uses: threeal/cmake-action@main
         with:
@@ -45,5 +41,3 @@ jobs:
           && ./mdio_stats_test \
           && ./mdio_utils_test \
           && ./mdio_variable_collection_test
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3

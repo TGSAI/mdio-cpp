@@ -13,6 +13,7 @@
 
 [![C/C++ build](https://github.com/TGSAI/mdio-cpp/actions/workflows/cmake_build.yaml/badge.svg)](https://github.com/TGSAI/mdio-cpp/actions/workflows/cmake_build.yaml)
 [![clang-format check](https://github.com/TGSAI/mdio-cpp/actions/workflows/clang-format-check.yml/badge.svg)](https://github.com/TGSAI/mdio-cpp/actions/workflows/clang-format-check.yml)
+[![CodeQL Analysis](https://github.com/TGSAI/mdio-cpp/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/TGSAI/mdio-cpp/actions/workflows/codeql-analysis.yml)
 
 
 Welcome to **MDIO** - a descriptive format for energy data that is intended to reduce storage costs,  improve the efficiency of I/O and make energy data and workflows understandable and reproducible.
