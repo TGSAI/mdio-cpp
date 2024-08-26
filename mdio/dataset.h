@@ -588,24 +588,92 @@ class Dataset {
         return isel(slices[I]...);
     }
 
-    // Wrapper function that generates the index sequence
-    Result<Dataset> call_isel_with_vector(const std::vector<SliceDescriptor>& slices) {
-        if (slices.empty()) {
-            return absl::InvalidArgumentError("No slices provided.");
-        }
-
-        if (slices.size() > internal::kMaxNumSlices) {
-            return absl::InvalidArgumentError("Too many slices provided or implicitly generated.");
-        }
-
-        std::vector<SliceDescriptor> slicesCopy = slices;
-        for (int i=slices.size(); i<=internal::kMaxNumSlices; i++) {
-            slicesCopy.emplace_back(SliceDescriptor({internal::kInertSliceKey, 0, 1, 1}));
-        }
-
-        // Generate the index sequence and call the implementation
-        return call_isel_with_vector_impl(slicesCopy, std::make_index_sequence<internal::kMaxNumSlices>{});
+  // Wrapper function that generates the index sequence
+  Result<Dataset> call_isel_with_vector(const std::vector<SliceDescriptor>& slices) {
+    if (slices.empty()) {
+      return absl::InvalidArgumentError("No slices provided.");
     }
+
+    if (slices.size() > internal::kMaxNumSlices) {
+      return absl::InvalidArgumentError("Too many slices provided or implicitly generated.");
+    }
+
+    std::vector<SliceDescriptor> slicesCopy = slices;
+    for (int i=slices.size(); i<=internal::kMaxNumSlices; i++) {
+      slicesCopy.emplace_back(SliceDescriptor({internal::kInertSliceKey, 0, 1, 1}));
+    }
+
+    // Generate the index sequence and call the implementation
+    return call_isel_with_vector_impl(slicesCopy, std::make_index_sequence<internal::kMaxNumSlices>{});
+  }
+
+  template<typename... Descriptors>
+  Result<std::map<std::string_view, std::vector<Index>>> descriptor_to_index(Descriptors... descriptors) {
+    absl::Status trueStatus = absl::OkStatus();  // A hack to allow for true error status return.
+    std::map<std::string_view, std::vector<Index>> label_to_indices;
+    auto processDescriptor = [this, &label_to_indices, &trueStatus](auto& descriptor) -> absl::Status {
+      using ValueType = typename extract_descriptor_Ttype<decltype(descriptor)>::type;
+
+      auto varRes = variables.get<ValueType>(std::string(descriptor.label.label()));
+      if (!varRes.status().ok()) {
+        trueStatus = varRes.status();
+        return trueStatus;
+      }
+      auto var = varRes.value();
+      auto varFut = var.Read();
+      if (!varFut.status().ok()) {
+        trueStatus = varFut.status();
+        return trueStatus;
+      }
+      auto varDat = varFut.value();
+      auto varAccessor = varDat.get_data_accessor();
+
+      std::vector<Index> indices;
+      auto offset = varDat.get_flattened_offset();
+      if constexpr ((std::is_same_v<Descriptors, ListDescriptor<typename Descriptors::type>> && ...)) {
+        std::set<ValueType> values;
+        for (auto val : descriptor.values) {
+          if (values.count(val) > 0) {
+            trueStatus = absl::InvalidArgumentError("Repeated value found in ListDescriptor.");
+            return trueStatus;
+          }
+          values.insert(val);
+          bool found = false;
+          for (Index i = offset; i < var.num_samples()+offset; ++i) {
+            if (varAccessor({i}) == val) {
+              if (found) {
+                trueStatus = absl::InvalidArgumentError("Repeated value found in ListDescriptor.");
+                return trueStatus;
+              }
+              label_to_indices[descriptor.label.label()].push_back(i);
+              found = true;
+            }
+          }
+          if (!found) {
+            trueStatus = absl::InvalidArgumentError("Value not found in ListDescriptor.");
+            return trueStatus;
+          }
+        }
+      } else {
+      // We must check for every occurance of the value
+        for (Index i = offset; i < var.num_samples()+offset; ++i) {
+          if (varAccessor({i}) == descriptor.value) {
+            label_to_indices[descriptor.label.label()].push_back(i);
+          }
+        }
+      }
+
+      // Add the indices to the map
+      return absl::OkStatus();
+    };
+
+    auto status = (processDescriptor(descriptors).ok() && ...);
+    if (!status) {
+      return trueStatus;
+    }
+
+    return label_to_indices;
+  }
 
 
   /**
@@ -634,10 +702,8 @@ class Dataset {
         Get the index and convert to conventional isel.
       Case 2: ValueDescriptor with non-unique value: Get all occurrences of the value.
         No error state.
-        TODO(BrianMichell): Can I create a list of RangeDescriptor of size 1, isel a bunch of Variables, and cat them together?
       Case 3: ListDescriptor with unique values: Get the individual values.
         Error state for repeated values.
-        TODO(BrianMichell): Defer
       Case 4: RangeDescriptor with unique start and stop values: Get the range from start to stop, include everything in-between.
         Error state for repeated start/stop values. Any repeated values that are not start/stop are fair game.
         Get the start and stop indicies and create a single isel.
@@ -687,58 +753,21 @@ class Dataset {
 
     // Check if the descriptors are of type ValueDescriptor
     if constexpr ((std::is_same_v<Descriptors, ValueDescriptor<typename Descriptors::type>> && ...)) {
-      // Define the map to store the results
-      std::map<std::string_view, std::vector<Index>> label_to_indices;
-      absl::Status trueStatus = absl::OkStatus();  // A hack to allow for true error status return.
-
-      // Process each descriptor to populate the map
-      auto processDescriptor = [this, &label_to_indices, &trueStatus](auto& descriptor) -> absl::Status {
-        using ValueType = typename extract_descriptor_Ttype<decltype(descriptor)>::type;
-
-        auto varRes = variables.get<ValueType>(std::string(descriptor.label.label()));
-        if (!varRes.status().ok()) {
-          trueStatus = varRes.status();
-          return trueStatus;
-        }
-        auto var = varRes.value();
-        auto varFut = var.Read();
-        if (!varFut.status().ok()) {
-          trueStatus = varFut.status();
-          return trueStatus;
-        }
-        auto varDat = varFut.value();
-        auto varAccessor = varDat.get_data_accessor();
-
-        std::vector<Index> indices;
-        auto offset = varDat.get_flattened_offset();
-        // We must check for every occurance of the value
-        for (Index i = offset; i < var.num_samples()+offset; ++i) {
-          if (varAccessor({i}) == descriptor.value) {
-            label_to_indices[descriptor.label.label()].push_back(i);
-          }
-        }
-
-        // Add the indices to the map
-        return absl::OkStatus();
-      };
-
-      auto status = (processDescriptor(descriptors).ok() && ...);
-      if (!status) {
-        return trueStatus;
+      auto slicer = descriptor_to_index(descriptors...);
+      if (!slicer.status().ok()) {
+        return slicer.status();
       }
+
+      auto label_to_indices = slicer.value();
 
       // Build out the slice descriptors
       std::vector<SliceDescriptor> slices;
       for (auto& elem : label_to_indices) {
         auto size = elem.second.size();
-        if (size > 1) {
-          for (int i=0; i<size; ++i) {
-            slices.emplace_back(SliceDescriptor({elem.first, elem.second[i], elem.second[i] + 1, 1}));
-          }
+        for (int i=0; i<size; ++i) {
+          slices.emplace_back(SliceDescriptor({elem.first, elem.second[i], elem.second[i] + 1, 1}));
         }
-        if (size == 1) {
-          slices.emplace_back(SliceDescriptor({elem.first, elem.second[0], elem.second[0] + 1, 1}));
-        }
+
       }
 
       if (slices.empty()) {
@@ -748,7 +777,36 @@ class Dataset {
       // You can now proceed with further processing based on this map.
         
       return call_isel_with_vector(slices);
-    } else if constexpr ((std::is_same_v<Descriptors, RangeDescriptor<typename Descriptors::type>> && ...)) {
+    } else if constexpr ((std::is_same_v<Descriptors, ListDescriptor<typename Descriptors::type>> && ...)) {
+      auto slicer = descriptor_to_index(descriptors...);
+      if (!slicer.status().ok()) {
+        return slicer.status();
+      }
+
+      auto label_to_indices = slicer.value();
+
+      // Build out the slice descriptors
+      std::vector<SliceDescriptor> slices;
+      for (auto& elem : label_to_indices) {
+        auto size = elem.second.size();
+        std::cout << "Size is " << size << std::endl;
+        // if (size == 0) {
+        //   return absl::InvalidArgumentError("Missing value(s) from coordinate in ListDescriptor.");
+        // }
+        for (int i=0; i<size; ++i) {
+          slices.emplace_back(SliceDescriptor({elem.first, elem.second[i], elem.second[i] + 1, 1}));
+        }
+
+      }
+
+      if (slices.empty()) {
+        return absl::InvalidArgumentError("No slices could be made from the given descriptors.");
+      }
+      // The map 'label_to_indices' is now populated with all the relevant indices.
+      // You can now proceed with further processing based on this map.
+        
+      return call_isel_with_vector(slices);
+    } else {
       std::map<std::string_view, std::pair<Index, Index>> label_to_range;  // pair.first = start, pair.second = stop
       absl::Status trueStatus = absl::OkStatus();  // A hack to allow for true error status return.
 

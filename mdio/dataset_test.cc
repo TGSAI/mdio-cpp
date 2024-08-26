@@ -516,7 +516,50 @@ TEST(Dataset, selRepeated) {
 }
 
 TEST(Dataset, selList) {
-  GTEST_SKIP() << "Feature is not yet implemented";
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  std::vector<mdio::dtypes::int32_t> selCoords = {2, 1, 5, 7};
+  mdio::ListDescriptor<mdio::dtypes::int32_t> ilValues = {"inline", selCoords};
+
+  auto sliceRes = ds.sel(ilValues);
+  ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
+
+  std::cout << sliceRes.value() << std::endl;
+
+  auto slicedDs = sliceRes.value();
+  auto dataVarRes = slicedDs.variables.get<mdio::dtypes::float32_t>("data");
+  ASSERT_TRUE(dataVarRes.status().ok()) << dataVarRes.status();
+  auto dataVar = dataVarRes.value();
+  auto dataDataRes = dataVar.Read();
+  ASSERT_TRUE(dataDataRes.status().ok()) << dataDataRes.status();
+  auto dataData = dataDataRes.value();
+  auto dataAccessor = dataData.get_data_accessor();
+
+
+  for (auto i=1; i<5; ++i) {
+    for (auto j=0; j<15; ++j) {
+      for (auto k=0; k<1; ++k) {
+        std::cout << dataAccessor({i, j, k}) << " ";
+      }
+    }
+    std::cout << std::endl;
+  }
+}
+
+TEST(Dataset, selListMissingCoord) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  std::vector<mdio::dtypes::int32_t> selCoords = {2, 1, 5, 7, 9};
+  mdio::ListDescriptor<mdio::dtypes::int32_t> ilValues = {"inline", selCoords};
+
+  auto sliceRes = ds.sel(ilValues);
+  ASSERT_FALSE(sliceRes.ok()) << sliceRes.status();
 }
 
 TEST(Dataset, selRange) {
@@ -544,11 +587,27 @@ TEST(Dataset, selRangeFlippedStartStop) {
 }
 
 TEST(Dataset, selRepeatedListSingleton) {
-  GTEST_SKIP() << "Feature is not yet implemented";
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  mdio::ListDescriptor<mdio::dtypes::int32_t> ilValues = {"inline", {3}};
+
+  auto sliceRes = ds.sel(ilValues);
+  ASSERT_FALSE(sliceRes.ok()) << sliceRes.status();
 }
 
 TEST(Dataset, selRepeatedListMulti) {
-  GTEST_SKIP() << "Feature is not yet implemented";
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  mdio::ListDescriptor<mdio::dtypes::int32_t> ilValues = {"inline", {3, 4, 5}};
+
+  auto sliceRes = ds.sel(ilValues);
+  ASSERT_FALSE(sliceRes.ok()) << sliceRes.status();
 }
 
 TEST(Dataset, selRepeatedRangeStart) {
