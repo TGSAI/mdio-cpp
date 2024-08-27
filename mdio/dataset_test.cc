@@ -211,8 +211,6 @@ std::vector<::nlohmann::json> make_vars() {
   return {jvar1, jvar2};
 }
 
-
-
 mdio::Dataset make() {
   auto json_vars = make_vars();
 
@@ -246,7 +244,7 @@ mdio::Dataset make() {
 }
 
 mdio::Result<mdio::Dataset> makePopulated(std::string& path) {
-std::string schema = R"(
+  std::string schema = R"(
 {
   "metadata": {
     "name": "selTester",
@@ -286,15 +284,24 @@ std::string schema = R"(
     return dsFut.status();
   }
   auto ds = dsFut.value();
-  MDIO_ASSIGN_OR_RETURN(auto dataVar, ds.variables.get<mdio::dtypes::float32_t>("data"));
-  MDIO_ASSIGN_OR_RETURN(auto inlineVar, ds.variables.get<mdio::dtypes::int32_t>("inline"));
-  MDIO_ASSIGN_OR_RETURN(auto crosslineVar, ds.variables.get<mdio::dtypes::int32_t>("crossline"));
-  MDIO_ASSIGN_OR_RETURN(auto depthVar, ds.variables.get<mdio::dtypes::int32_t>("depth"));
+  MDIO_ASSIGN_OR_RETURN(auto dataVar,
+                        ds.variables.get<mdio::dtypes::float32_t>("data"));
+  MDIO_ASSIGN_OR_RETURN(auto inlineVar,
+                        ds.variables.get<mdio::dtypes::int32_t>("inline"));
+  MDIO_ASSIGN_OR_RETURN(auto crosslineVar,
+                        ds.variables.get<mdio::dtypes::int32_t>("crossline"));
+  MDIO_ASSIGN_OR_RETURN(auto depthVar,
+                        ds.variables.get<mdio::dtypes::int32_t>("depth"));
 
-  MDIO_ASSIGN_OR_RETURN(auto dataData, mdio::from_variable<mdio::dtypes::float32_t>(dataVar));
-  MDIO_ASSIGN_OR_RETURN(auto inlineData, mdio::from_variable<mdio::dtypes::int32_t>(inlineVar));
-  MDIO_ASSIGN_OR_RETURN(auto crosslineData, mdio::from_variable<mdio::dtypes::int32_t>(crosslineVar));
-  MDIO_ASSIGN_OR_RETURN(auto depthData, mdio::from_variable<mdio::dtypes::int32_t>(depthVar));
+  MDIO_ASSIGN_OR_RETURN(auto dataData,
+                        mdio::from_variable<mdio::dtypes::float32_t>(dataVar));
+  MDIO_ASSIGN_OR_RETURN(auto inlineData,
+                        mdio::from_variable<mdio::dtypes::int32_t>(inlineVar));
+  MDIO_ASSIGN_OR_RETURN(
+      auto crosslineData,
+      mdio::from_variable<mdio::dtypes::int32_t>(crosslineVar));
+  MDIO_ASSIGN_OR_RETURN(auto depthData,
+                        mdio::from_variable<mdio::dtypes::int32_t>(depthVar));
 
   auto dataAccessor = dataData.get_data_accessor();
   auto inlineAccessor = inlineData.get_data_accessor();
@@ -302,18 +309,19 @@ std::string schema = R"(
   auto depthAccessor = depthData.get_data_accessor();
 
   // Inline has some repeated values to show possible conditions for slicing
-  std::vector<mdio::dtypes::int32_t> inlineCoords({1,2,3,4,3,5,6,7,8,8});
+  std::vector<mdio::dtypes::int32_t> inlineCoords(
+      {1, 2, 3, 4, 3, 5, 6, 7, 8, 8});
 
-  for (int i=0; i<10; ++i) {
+  for (int i = 0; i < 10; ++i) {
     inlineAccessor({i}) = inlineCoords[i];
   }
 
   // Assign some coordinate values
-  for (int i=0; i<15; ++i) {
-    crosslineAccessor({i}) = i+18;
+  for (int i = 0; i < 15; ++i) {
+    crosslineAccessor({i}) = i + 18;
   }
-  for (int i=0; i<20; ++i) {
-    depthAccessor({i}) = i+50;
+  for (int i = 0; i < 20; ++i) {
+    depthAccessor({i}) = i + 50;
   }
 
   auto inlineFut = inlineVar.Write(inlineData);
@@ -321,10 +329,12 @@ std::string schema = R"(
   auto depthFut = depthVar.Write(depthData);
 
   // Assign some data to the data variable
-  for (int i=0; i<10; ++i) {
-    for (int j=0; j<15; ++j) {
-      for (int k=0; k<20; ++k) {
-        dataAccessor({i, j, k}) = float(inlineCoords[i]) + float(j)/100;  // Do nothing special for depth
+  for (int i = 0; i < 10; ++i) {
+    for (int j = 0; j < 15; ++j) {
+      for (int k = 0; k < 20; ++k) {
+        dataAccessor({i, j, k}) =
+            float(inlineCoords[i]) +
+            float(j) / 100;  // Do nothing special for depth
       }
     }
   }
@@ -421,7 +431,8 @@ TEST(Dataset, selValue) {
   auto xlineVarRes = slicedDs.variables.at("crossline");
   ASSERT_TRUE(xlineVarRes.status().ok()) << xlineVarRes.status();
   samples = xlineVarRes.value().num_samples();
-  EXPECT_EQ(samples, 15) << "Expected 15 samples for crossline but got " << samples;
+  EXPECT_EQ(samples, 15) << "Expected 15 samples for crossline but got "
+                         << samples;
 
   auto depthVarRes = slicedDs.variables.at("depth");
   ASSERT_TRUE(depthVarRes.status().ok()) << depthVarRes.status();
@@ -431,7 +442,8 @@ TEST(Dataset, selValue) {
   auto dataVarRes = slicedDs.variables.at("data");
   ASSERT_TRUE(dataVarRes.status().ok()) << dataVarRes.status();
   samples = dataVarRes.value().num_samples();
-  EXPECT_EQ(samples, 1*15*20) << "Expected 1*15*20 samples for data but got " << samples;
+  EXPECT_EQ(samples, 1 * 15 * 20)
+      << "Expected 1*15*20 samples for data but got " << samples;
 }
 
 TEST(Dataset, selIndex) {
@@ -440,7 +452,8 @@ TEST(Dataset, selIndex) {
   ASSERT_TRUE(dsRes.ok()) << dsRes.status();
   auto ds = dsRes.value();
 
-  mdio::RangeDescriptor<mdio::dtypes::int32_t> ilRange = {0, 2, 5, 1};  // Attempt to get the 0th dimension from the dataset (illegal)
+  // Attempt to get the 0th dimension from the dataset (illegal)
+  mdio::RangeDescriptor<mdio::dtypes::int32_t> ilRange = {0, 2, 5, 1};
 
   auto sliceRes = ds.sel(ilRange);
   ASSERT_FALSE(sliceRes.ok());
@@ -466,7 +479,8 @@ TEST(Dataset, selRepeatedValue) {
   auto xlineVarRes = slicedDs.variables.at("crossline");
   ASSERT_TRUE(xlineVarRes.status().ok()) << xlineVarRes.status();
   samples = xlineVarRes.value().num_samples();
-  EXPECT_EQ(samples, 15) << "Expected 15 samples for crossline but got " << samples;
+  EXPECT_EQ(samples, 15) << "Expected 15 samples for crossline but got "
+                         << samples;
 
   auto depthVarRes = slicedDs.variables.at("depth");
   ASSERT_TRUE(depthVarRes.status().ok()) << depthVarRes.status();
@@ -476,7 +490,8 @@ TEST(Dataset, selRepeatedValue) {
   auto dataVarRes = slicedDs.variables.at("data");
   ASSERT_TRUE(dataVarRes.status().ok()) << dataVarRes.status();
   samples = dataVarRes.value().num_samples();
-  EXPECT_EQ(samples, 2*15*20) << "Expected 2*15*20 samples for data but got " << samples;
+  EXPECT_EQ(samples, 2 * 15 * 20)
+      << "Expected 2*15*20 samples for data but got " << samples;
 }
 
 TEST(Dataset, selMultipleValues) {
@@ -491,7 +506,7 @@ TEST(Dataset, selMultipleValues) {
   auto sliceRes = ds.sel(ilValue, xlValue);
   ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
   auto slicedDs = sliceRes.value();
-  
+
   auto inlineVarRes = slicedDs.variables.at("inline");
   ASSERT_TRUE(inlineVarRes.status().ok()) << inlineVarRes.status();
   auto samples = inlineVarRes.value().num_samples();
@@ -500,7 +515,8 @@ TEST(Dataset, selMultipleValues) {
   auto xlineVarRes = slicedDs.variables.at("crossline");
   ASSERT_TRUE(xlineVarRes.status().ok()) << xlineVarRes.status();
   samples = xlineVarRes.value().num_samples();
-  EXPECT_EQ(samples, 1) << "Expected 1 sample for crossline but got " << samples;
+  EXPECT_EQ(samples, 1) << "Expected 1 sample for crossline but got "
+                        << samples;
 
   auto depthVarRes = slicedDs.variables.at("depth");
   ASSERT_TRUE(depthVarRes.status().ok()) << depthVarRes.status();
@@ -510,7 +526,8 @@ TEST(Dataset, selMultipleValues) {
   auto dataVarRes = slicedDs.variables.at("data");
   ASSERT_TRUE(dataVarRes.status().ok()) << dataVarRes.status();
   samples = dataVarRes.value().num_samples();
-  EXPECT_EQ(samples, 1*1*20) << "Expected 1*1*20 samples for data but got " << samples;
+  EXPECT_EQ(samples, 1 * 1 * 20)
+      << "Expected 1*1*20 samples for data but got " << samples;
 }
 
 TEST(Dataset, selRepeated) {
@@ -523,7 +540,9 @@ TEST(Dataset, selRepeated) {
   mdio::ValueDescriptor<mdio::dtypes::int32_t> ilValue2 = {"inline", 4};
 
   auto sliceRes = ds.sel(ilValue1, ilValue2);
-  EXPECT_FALSE(sliceRes.status().ok()) << "Descriptor with repeated labels are expressly forbidden, but passed anyway";
+  EXPECT_FALSE(sliceRes.status().ok())
+      << "Descriptor with repeated labels are expressly forbidden, but passed "
+         "anyway";
 }
 
 TEST(Dataset, selList) {

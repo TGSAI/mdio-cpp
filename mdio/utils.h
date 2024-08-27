@@ -51,7 +51,8 @@ Future<void> TrimDataset(std::string dataset_path,
   mdio::Dataset ds = dsRes.value();
   // Trim the dataset
   std::unordered_map<std::string_view, mdio::Index> shapeDescriptors;
-  std::vector<mdio::RangeDescriptor<mdio::Index>> descriptorList = {descriptors...};
+  std::vector<mdio::RangeDescriptor<mdio::Index>> descriptorList = {
+      descriptors...};
   if (descriptorList.size() == 0) {
     // No slices = no op
     return absl::OkStatus();

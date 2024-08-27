@@ -662,8 +662,9 @@ TEST(Variable, outOfBoundsSlice) {
 
   // mdio::RangeDescriptor<mdio::Index> same_idx = {"x", 1, 1, 1};
   // auto legal = var.value().slice(same_idx);
-  // EXPECT_TRUE(legal.status().ok()) << legal.status();mdio::RangeDescriptor<mdio::Index>
-  // illegal_step = {"x", 0, 500, 2};
+  // EXPECT_TRUE(legal.status().ok()) <<
+  // legal.status();mdio::RangeDescriptor<mdio::Index> illegal_step = {"x", 0,
+  // 500, 2};
   auto var1 =
       mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean).result();
   auto illegal = var1.value().slice(illegal_step);
