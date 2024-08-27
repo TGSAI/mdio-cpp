@@ -183,7 +183,7 @@ TEST(TrimDataset, noop) {
 
 TEST(TrimDataset, oneSlice) {
   ASSERT_TRUE(SETUP(kTestPath).status().ok());
-  mdio::SliceDescriptor slice = {"inline", 0, 128, 1};
+  mdio::RangeDescriptor<mdio::Index> slice = {"inline", 0, 128, 1};
   auto res = mdio::utils::TrimDataset(kTestPath, slice);
   ASSERT_TRUE(res.status().ok()) << res.status();
   auto dsRes = mdio::Dataset::Open(kTestPath, mdio::constants::kOpen);
@@ -216,7 +216,7 @@ TEST(TrimDataset, oneSliceData) {
   ASSERT_TRUE(writeFuture.status().ok()) << writeFuture.status();
 
   // Trim outside of a chunk boundry
-  mdio::SliceDescriptor slice = {"inline", 0, 128, 1};
+  mdio::RangeDescriptor<mdio::Index> slice = {"inline", 0, 128, 1};
   auto res = mdio::utils::TrimDataset(kTestPath, slice);
   ASSERT_TRUE(res.status().ok()) << res.status();
 

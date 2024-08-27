@@ -369,7 +369,7 @@ TEST(Dataset, isel) {
 
   ASSERT_TRUE(dataset.ok());
 
-  mdio::SliceDescriptor desc1 = {"inline", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> desc1 = {"inline", 0, 5, 1};
 
   auto slice = dataset->isel(desc1);
 
@@ -820,8 +820,8 @@ TEST(Dataset, slicedIntervals) {
 
   ASSERT_TRUE(datasetFut.status().ok()) << datasetFut.status();
   auto dataset = datasetFut.value();
-  mdio::SliceDescriptor desc1 = {"inline", 0, 5, 1};
-  mdio::SliceDescriptor desc2 = {"crossline", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> desc1 = {"inline", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> desc2 = {"crossline", 0, 5, 1};
   auto sliceRes = dataset.isel(desc1, desc2);
   ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
   auto slice = sliceRes.value();
@@ -926,8 +926,8 @@ TEST(Dataset, commitSlicedMetadata) {
   ASSERT_TRUE(datasetRes.status().ok()) << datasetRes.status();
   auto dataset = datasetRes.value();
 
-  mdio::SliceDescriptor desc1 = {"inline", 0, 5, 1};
-  mdio::SliceDescriptor desc2 = {"crossline", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> desc1 = {"inline", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> desc2 = {"crossline", 0, 5, 1};
 
   auto sliceRes = dataset.isel(desc1, desc2);
 

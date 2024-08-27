@@ -34,7 +34,7 @@ namespace utils {
  * may make writing generalized functions more difficult, but we elected to err
  * on the side of caution.
  *
- * @tparam ...Descriptors Expects an mdio::SliceDescriptor
+ * @tparam ...Descriptors Expects an mdio::RangeDescriptor<mdio::Index>
  * @param dataset_path The path to the dataset to trim.
  * @param descriptors The descriptors to use for the slice. Only considers the
  * label and stop value.
@@ -51,7 +51,7 @@ Future<void> TrimDataset(std::string dataset_path,
   mdio::Dataset ds = dsRes.value();
   // Trim the dataset
   std::unordered_map<std::string_view, mdio::Index> shapeDescriptors;
-  std::vector<mdio::SliceDescriptor> descriptorList = {descriptors...};
+  std::vector<mdio::RangeDescriptor<mdio::Index>> descriptorList = {descriptors...};
   if (descriptorList.size() == 0) {
     // No slices = no op
     return absl::OkStatus();

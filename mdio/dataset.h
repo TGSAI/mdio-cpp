@@ -508,8 +508,8 @@ class Dataset {
    *
    * Supply a variadic list of object to slice along the dimension coordinates.
    * @code
-   * mdio::SliceDescriptor desc1 = {"inline", 20, 120, 1};
-   * mdio::SliceDescriptor desc2 = {"crossline", 100, 200, 1};
+   * mdio::RangeDescriptor<Index> desc1 = {"inline", 20, 120, 1};
+   * mdio::RangeDescriptor<Index> desc2 = {"crossline", 100, 200, 1};
    *
    * MDIO_ASSIGN_OR_RETURN(
    *  auto slice, dataset.isel(desc1, desc2)
@@ -584,12 +584,12 @@ class Dataset {
 
     // Function to call `isel` with a parameter pack expanded from the vector
     template<std::size_t... I>
-    Result<Dataset> call_isel_with_vector_impl(const std::vector<SliceDescriptor>& slices, std::index_sequence<I...>) {
+    Result<Dataset> call_isel_with_vector_impl(const std::vector<RangeDescriptor<Index>>& slices, std::index_sequence<I...>) {
         return isel(slices[I]...);
     }
 
   // Wrapper function that generates the index sequence
-  Result<Dataset> call_isel_with_vector(const std::vector<SliceDescriptor>& slices) {
+  Result<Dataset> call_isel_with_vector(const std::vector<RangeDescriptor<Index>>& slices) {
     if (slices.empty()) {
       return absl::InvalidArgumentError("No slices provided.");
     }
@@ -598,9 +598,9 @@ class Dataset {
       return absl::InvalidArgumentError("Too many slices provided or implicitly generated.");
     }
 
-    std::vector<SliceDescriptor> slicesCopy = slices;
+    std::vector<RangeDescriptor<Index>> slicesCopy = slices;
     for (int i=slices.size(); i<=internal::kMaxNumSlices; i++) {
-      slicesCopy.emplace_back(SliceDescriptor({internal::kInertSliceKey, 0, 1, 1}));
+      slicesCopy.emplace_back(RangeDescriptor<Index>({internal::kInertSliceKey, 0, 1, 1}));
     }
 
     // Generate the index sequence and call the implementation
@@ -720,7 +720,7 @@ class Dataset {
       if constexpr (std::is_same_v<std::remove_reference_t<DescriptorType>, ListDescriptor<typename std::remove_reference_t<decltype(descriptor)>::type>>) {
         return absl::UnimplementedError("Support for ListDescriptor is not yet implemented.");
       }
-      // TODO(BrianMichell): Remove this check when SliceDescriptor is removed
+      // TODO(BrianMichell): Remove this check when RangeDescriptor<Index> is removed
       if constexpr (std::is_same_v<DescriptorType, SliceDescriptor>) {
         return absl::InvalidArgumentError("SliceDescriptor is deprecated and will be removed in future versions. Please use RangeDescriptor instead.\nThe sel method does not support SliceDescriptor.");
       }
@@ -764,11 +764,11 @@ class Dataset {
       auto label_to_indices = slicer.value();
 
       // Build out the slice descriptors
-      std::vector<SliceDescriptor> slices;
+      std::vector<RangeDescriptor<Index>> slices;
       for (auto& elem : label_to_indices) {
         auto size = elem.second.size();
         for (int i=0; i<size; ++i) {
-          slices.emplace_back(SliceDescriptor({elem.first, elem.second[i], elem.second[i] + 1, 1}));
+          slices.emplace_back(RangeDescriptor<Index>({elem.first, elem.second[i], elem.second[i] + 1, 1}));
         }
 
       }
@@ -789,11 +789,11 @@ class Dataset {
       auto label_to_indices = slicer.value();
 
       // Build out the slice descriptors
-      std::vector<SliceDescriptor> slices;
+      std::vector<RangeDescriptor<Index>> slices;
       for (auto& elem : label_to_indices) {
         auto size = elem.second.size();
         for (int i=0; i<size; ++i) {
-          slices.emplace_back(SliceDescriptor({elem.first, elem.second[i], elem.second[i] + 1, 1}));
+          slices.emplace_back(RangeDescriptor<Index>({elem.first, elem.second[i], elem.second[i] + 1, 1}));
         }
 
       }
@@ -880,9 +880,9 @@ class Dataset {
         return trueStatus;
       }
 
-      std::vector<SliceDescriptor> slices;
+      std::vector<RangeDescriptor<Index>> slices;
       for (auto& elem : label_to_range) {
-        slices.emplace_back(SliceDescriptor({elem.first, elem.second.first, elem.second.second + 1, 1}));
+        slices.emplace_back(RangeDescriptor<Index>({elem.first, elem.second.first, elem.second.second + 1, 1}));
       }
 
       if (slices.empty()) {

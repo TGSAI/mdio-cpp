@@ -874,7 +874,7 @@ class Variable {
    * @return A slice descriptor that will not go out-of-bounds for the given
    * Variable.
    */
-  SliceDescriptor sliceInRange(const SliceDescriptor& desc) const {
+  RangeDescriptor<Index> sliceInRange(const RangeDescriptor<Index>& desc) const {
     auto domain = dimensions();
     const auto labels = domain.labels();
 
@@ -908,8 +908,8 @@ class Variable {
    * This provides an example of slicing the Variable along the inline and
    * crossline dimensions.
    * @code
-   * mdio::SliceDescriptor desc1 = {"inline", 0, 100, 1};
-   * mdio::SliceDescriptor desc2 = {"crossline", 0, 200, 1};
+   * mdio::RangeDescriptor<Index> desc1 = {"inline", 0, 100, 1};
+   * mdio::RangeDescriptor<Index> desc2 = {"crossline", 0, 200, 1};
    * MDIO_ASSIGN_OR_RETURN(auto sliced_velocity, velocity.slice(desc1, desc2));
    * @endcode
    * @return An `mdio::Result` object containing the resulting sub-Variable.
@@ -964,7 +964,7 @@ class Variable {
       return absl::InvalidArgumentError(
           "Only step 1 is supported for slicing.");
     } else if (preconditionStatus >= 0) {
-      mdio::SliceDescriptor err;
+      mdio::RangeDescriptor<Index> err;
       std::apply(
           [&](const auto&... desc) {
             size_t idx = 0;
@@ -1038,7 +1038,7 @@ class Variable {
         }
         return absl::InternalError("No fragments to concatenate.");
       }
-      
+
       return absl::InvalidArgumentError("Unexpected error occured while trying to slice the Variable.");
     } 
     // the slice didn't change anything in the variables dimensions.
@@ -1064,8 +1064,8 @@ class Variable {
    * @code
    *  MDIO_ASSIGN_OR_RETURN(auto chunkShape, velocity.get_chunk_shape());
    *  // Build descriptors to slice out a swath, here we will get every chunk in
-   * the z-direction mdio::SliceDescriptor desc1 = {"inline", chunkShape[0],
-   * chunkShape[0] * 2, 1}; mdio::SliceDescriptor desc2 = {"crossline",
+   * the z-direction mdio::RangeDescriptor<Index> desc1 = {"inline", chunkShape[0],
+   * chunkShape[0] * 2, 1}; mdio::RangeDescriptor<Index> desc2 = {"crossline",
    * chunkShape[1], chunkShape[1] * 2, 1};
    * @endcode
    * @return An NotFoundError if the chunk shape could not be retrieved,
@@ -1611,7 +1611,7 @@ struct VariableData {
    * @return The offset of the flattened data.
    * @code
    * // "my_variable" has dimension "Dimension_0" which has shape [10]
-   * mdio::SliceDescriptor dim_zero_slice = {"Dimension_0", 4, 10, 1};
+   * mdio::RangeDescriptor<Index> dim_zero_slice = {"Dimension_0", 4, 10, 1};
    * MDIO_ASSIGN_OR_RETURN(auto sliced_dataset, dataset.isel(dim_zero_slice));
    * MDIO_ASSIGN_OR_RETURN(auto sliced_variable,
    * sliced_dataset.variables.get<mdio::dtypes::float32>("my_variable"));
