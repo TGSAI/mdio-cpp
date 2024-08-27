@@ -792,10 +792,6 @@ class Dataset {
       std::vector<SliceDescriptor> slices;
       for (auto& elem : label_to_indices) {
         auto size = elem.second.size();
-        std::cout << "Size is " << size << std::endl;
-        // if (size == 0) {
-        //   return absl::InvalidArgumentError("Missing value(s) from coordinate in ListDescriptor.");
-        // }
         for (int i=0; i<size; ++i) {
           slices.emplace_back(SliceDescriptor({elem.first, elem.second[i], elem.second[i] + 1, 1}));
         }

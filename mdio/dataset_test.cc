@@ -537,27 +537,6 @@ TEST(Dataset, selList) {
 
   auto sliceRes = ds.sel(ilValues);
   ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
-
-  std::cout << sliceRes.value() << std::endl;
-
-  auto slicedDs = sliceRes.value();
-  auto dataVarRes = slicedDs.variables.get<mdio::dtypes::float32_t>("data");
-  ASSERT_TRUE(dataVarRes.status().ok()) << dataVarRes.status();
-  auto dataVar = dataVarRes.value();
-  auto dataDataRes = dataVar.Read();
-  ASSERT_TRUE(dataDataRes.status().ok()) << dataDataRes.status();
-  auto dataData = dataDataRes.value();
-  auto dataAccessor = dataData.get_data_accessor();
-
-
-  for (auto i=1; i<5; ++i) {
-    for (auto j=0; j<15; ++j) {
-      for (auto k=0; k<1; ++k) {
-        std::cout << dataAccessor({i, j, k}) << " ";
-      }
-    }
-    std::cout << std::endl;
-  }
 }
 
 TEST(Dataset, selListMissingCoord) {

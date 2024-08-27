@@ -985,8 +985,8 @@ class Variable {
           std::to_string(err.stop) + "'.");
     }
 
-
-    if (labels.size()) {
+    auto labelSize = labels.size();
+    if (labelSize) {
       std::set<std::string_view> labelSet;
       std::set<DimensionIndex> indexSet;
       for (const auto& label : labels) {
@@ -994,14 +994,14 @@ class Variable {
         indexSet.insert(label.index());
       }
 
-      if (labelSet.size() == labels.size() || indexSet.size() == labels.size()) {
+      if (labelSet.size() == labelSize || indexSet.size() == labelSize) {
         MDIO_ASSIGN_OR_RETURN(auto slice_store,
                               store | tensorstore::Dims(labels).HalfOpenInterval(
                                           start, stop, step));
         // return a new variable with the sliced store
         return Variable{variableName, longName, metadata, slice_store,
                         attributes};
-      } else if (labelSet.size() != labels.size()) {
+      } else if (labelSet.size() != labelSize) {
         // Concat the sliced Variable together if there are duplicate labels(dimensions)
         std::vector<Variable> fragments;
         absl::Status trueStatus = absl::OkStatus();
@@ -1037,14 +1037,12 @@ class Variable {
           return Variable{variableName, longName, metadata, catStore, attributes};
         }
         return absl::InternalError("No fragments to concatenate.");
-
-      } else {
-        return absl::InvalidArgumentError("Unexpected error occured while trying to slice the Variable.");
       }
-    } else {
-      // the slice didn't change anything in the variables dimensions.
-      return *this;
-    }
+      
+      return absl::InvalidArgumentError("Unexpected error occured while trying to slice the Variable.");
+    } 
+    // the slice didn't change anything in the variables dimensions.
+    return *this;
   }
 
   Result<nlohmann::json> get_spec() const {
