@@ -243,7 +243,7 @@ mdio::Dataset make() {
   return {metadata, variables, coords, domain_result.value()};
 }
 
-mdio::Result<mdio::Dataset> makePopulated(std::string& path) {
+mdio::Result<mdio::Dataset> makePopulated(const std::string& path) {
   std::string schema = R"(
 {
   "metadata": {
@@ -333,8 +333,8 @@ mdio::Result<mdio::Dataset> makePopulated(std::string& path) {
     for (int j = 0; j < 15; ++j) {
       for (int k = 0; k < 20; ++k) {
         dataAccessor({i, j, k}) =
-            float(inlineCoords[i]) +
-            float(j) / 100;  // Do nothing special for depth
+            static_cast<float>(inlineCoords[i]) +
+            static_cast<float>(j) / 100;  // Do nothing special for depth
       }
     }
   }

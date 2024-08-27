@@ -18,8 +18,10 @@
 
 #include <cstddef>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <memory>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <tuple>
@@ -836,9 +838,10 @@ class Dataset {
       // indices. You can now proceed with further processing based on this map.
 
       return call_isel_with_vector(slices);
-    } else if constexpr ((std::is_same_v<
-                              Descriptors,
-                              ListDescriptor<typename Descriptors::type>> &&
+    } else if constexpr ((std::is_same_v</*NOLINT: readability/braces*/
+                                         Descriptors,
+                                         ListDescriptor<
+                                             typename Descriptors::type>> &&
                           ...)) {
       auto slicer = descriptor_to_index(descriptors...);
       if (!slicer.status().ok()) {
