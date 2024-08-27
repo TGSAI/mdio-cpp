@@ -5,10 +5,15 @@ on: [push, pull_request]
 jobs:
   cmake_build:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest] # [ubuntu-latest, macos-latest]
         compiler: [g++, clang++]
     runs-on: ${{ matrix.os }}
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
     steps:
       - name: Setup NASM
         uses: ilammy/setup-nasm@v1

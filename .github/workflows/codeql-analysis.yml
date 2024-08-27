@@ -1,0 +1,35 @@
+name: CodeQL Analysis
+
+on:
+  schedule:
+    - cron: "59 23 * * 6"
+
+jobs:
+  cmake_build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest] # [ubuntu-latest, macos-latest]
+        compiler: [g++]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Setup NASM
+        uses: ilammy/setup-nasm@v1
+      - name: Checkout
+        uses: actions/checkout@v4 # Initializes the CodeQL tools for scanning.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: "cpp"
+      - name: Configure and Build Project
+        uses: threeal/cmake-action@main
+        with:
+          cxx-compiler: ${{ matrix.compiler }}
+      - name: Build tests
+        run: cd build && make
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
