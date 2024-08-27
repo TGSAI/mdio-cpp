@@ -24,6 +24,9 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/Findnlohmann_json_schema_validator.
 # Create mdio target as an interface library
 add_library(mdio INTERFACE)
 
+# Propagate the MAX_NUM_SLICES definition to any consumers of mdio
+target_compile_definitions(mdio INTERFACE MAX_NUM_SLICES=${MAX_NUM_SLICES})
+
 # Include directories for the mdio target
 target_include_directories(mdio INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
