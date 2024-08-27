@@ -985,17 +985,27 @@ class Variable {
           std::to_string(err.stop) + "'.");
     }
 
+
     if (labels.size()) {
       std::set<std::string_view> labelSet;
+      std::set<DimensionIndex> indexSet;
       for (const auto& label : labels) {
         labelSet.insert(label.label());
+        indexSet.insert(label.index());
       }
 
-      // Concat the sliced Variable together if there are duplicate labels(dimensions)
-      if (labelSet.size() != labels.size()) {
+      if (labelSet.size() == labels.size() || indexSet.size() == labels.size()) {
+        MDIO_ASSIGN_OR_RETURN(auto slice_store,
+                              store | tensorstore::Dims(labels).HalfOpenInterval(
+                                          start, stop, step));
+        // return a new variable with the sliced store
+        return Variable{variableName, longName, metadata, slice_store,
+                        attributes};
+      } else if (labelSet.size() != labels.size()) {
+        // Concat the sliced Variable together if there are duplicate labels(dimensions)
         std::vector<Variable> fragments;
         absl::Status trueStatus = absl::OkStatus();
-        auto fragmentStore = [&](auto& descriptor) ->absl::Status {
+        auto fragmentStore = [&](auto& descriptor) -> absl::Status {
           if (descriptor.label.label() == internal::kInertSliceKey) {
             // pass on kInertSliceKey
             return absl::OkStatus();
@@ -1023,19 +1033,13 @@ class Variable {
           for (size_t i = 1; i < fragments.size(); ++i) {
             MDIO_ASSIGN_OR_RETURN(catStore, tensorstore::Concat({catStore, fragments[i].get_store()}, /*axis=*/0));
           }
-        } else {
-          return absl::InternalError("No fragments to concatenate.");
+          // Return a new Variable with the concatenated store
+          return Variable{variableName, longName, metadata, catStore, attributes};
         }
+        return absl::InternalError("No fragments to concatenate.");
 
-        // Return a new Variable with the concatenated store
-        return Variable{variableName, longName, metadata, catStore, attributes};
       } else {
-        MDIO_ASSIGN_OR_RETURN(auto slice_store,
-                              store | tensorstore::Dims(labels).HalfOpenInterval(
-                                          start, stop, step));
-        // return a new variable with the sliced store
-        return Variable{variableName, longName, metadata, slice_store,
-                        attributes};
+        return absl::InvalidArgumentError("Unexpected error occured while trying to slice the Variable.");
       }
     } else {
       // the slice didn't change anything in the variables dimensions.
