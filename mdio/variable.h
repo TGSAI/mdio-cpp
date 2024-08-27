@@ -89,6 +89,14 @@ struct SliceDescriptor {
   Index step;
 };
 
+/**
+ * @brief A descriptor for slicing a Variable or Dataset.
+ * @tparam T The type of the range. Default is `Index` for `isel` based slicing.
+ * @param label The label of the dimension to slice. The recommended is to use a label instead of an index.
+ * @param start The start index or value of the slice.
+ * @param stop The stop index or value of the slice.
+ * @param step The step index or value of the slice. Default is 1.
+*/
 template <typename T = Index>
 struct RangeDescriptor {
   using type = T;
@@ -98,6 +106,13 @@ struct RangeDescriptor {
   Index step = 1;
 };
 
+/**
+ * @brief A descriptor for slicing a single dimension value from a Dataset.
+ * This structure is not supported for index-based slicing.
+ * @tparam T The type of the value.
+ * @param label The label of the dimension to slice.
+ * @param value The value to slice.
+*/
 template <typename T>
 struct ValueDescriptor {
   using type = T;
@@ -105,6 +120,13 @@ struct ValueDescriptor {
   T value;
 };
 
+/**
+ * @brief A descriptor for slicing a list of values from a Dataset.
+ * This structure is not supported for index-based slicing.
+ * @tparam T The type of the values.
+ * @param label The label of the dimension to slice.
+ * @param values The vector of values to slice.
+*/
 template <typename T>
 struct ListDescriptor {
   using type = T;

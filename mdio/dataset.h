@@ -567,6 +567,9 @@ class Dataset {
     return Dataset{metadata, vars, coordinates, new_domain};
   }
 
+  /**
+   * @brief Internal use only.
+  */
   template<typename First, typename... Rest>
   constexpr bool are_same() {
     return (... && std::is_same_v<typename outer_type<First>::type, typename outer_type<Rest>::type>);
@@ -583,12 +586,21 @@ class Dataset {
     struct make_index_sequence<0, I...> : index_sequence<I...> {};
 
     // Function to call `isel` with a parameter pack expanded from the vector
+    /**
+     * @brief Internal use only.
+     * Calls the `isel` method with a parameter pack expanded from the vector.
+    */
     template<std::size_t... I>
     Result<Dataset> call_isel_with_vector_impl(const std::vector<RangeDescriptor<Index>>& slices, std::index_sequence<I...>) {
         return isel(slices[I]...);
     }
 
   // Wrapper function that generates the index sequence
+  /**
+   * @brief Internal use only.
+   * Calls the `isel` method with a vector of `RangeDescriptor` objects.
+   * Limited to `internal::kMaxNumSlices` slices which may not be equal to the number of descriptors.
+  */
   Result<Dataset> call_isel_with_vector(const std::vector<RangeDescriptor<Index>>& slices) {
     if (slices.empty()) {
       return absl::InvalidArgumentError("No slices provided.");
@@ -607,6 +619,10 @@ class Dataset {
     return call_isel_with_vector_impl(slicesCopy, std::make_index_sequence<internal::kMaxNumSlices>{});
   }
 
+  /**
+   * @brief Internal use only.
+   * Converts the `sel` descriptors to their `isel` equivalents.
+  */
   template<typename... Descriptors>
   Result<std::map<std::string_view, std::vector<Index>>> descriptor_to_index(Descriptors... descriptors) {
     absl::Status trueStatus = absl::OkStatus();  // A hack to allow for true error status return.
@@ -679,7 +695,8 @@ class Dataset {
   /**
    * @brief Performs a label-based slice on the Dataset
    * This method will slice the Dataset based on coordinates rather than indicies.
-   * @param descriptors The descriptors to use for the slice. May be RangeDescriptor, ValueDescriptor, or ListDescriptor
+   * It may generate multiple slices depending on the type of descriptors provided.
+   * @param descriptors The descriptors to use for the slice. May be `RangeDescriptor`, `ValueDescriptor`, or `ListDescriptor`.
   */
   template<typename... Descriptors>
   Result<Dataset> sel(Descriptors... descriptors) {
@@ -720,7 +737,7 @@ class Dataset {
       if constexpr (std::is_same_v<std::remove_reference_t<DescriptorType>, ListDescriptor<typename std::remove_reference_t<decltype(descriptor)>::type>>) {
         return absl::UnimplementedError("Support for ListDescriptor is not yet implemented.");
       }
-      // TODO(BrianMichell): Remove this check when RangeDescriptor<Index> is removed
+      // TODO(BrianMichell): Remove this check when SliceDescriptor is removed
       if constexpr (std::is_same_v<DescriptorType, SliceDescriptor>) {
         return absl::InvalidArgumentError("SliceDescriptor is deprecated and will be removed in future versions. Please use RangeDescriptor instead.\nThe sel method does not support SliceDescriptor.");
       }
