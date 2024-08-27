@@ -18,13 +18,18 @@ jobs:
       - name: Setup NASM
         uses: ilammy/setup-nasm@v1
       - name: Checkout
-        uses: actions/checkout@v4 # Initializes the CodeQL tools for scanning.
+        uses: actions/checkout@v4.1.7
+      - name: Setup Cache
+        uses: ./.github/actions/setup_cache
+        with:
+          compiler: ${{ matrix.compiler }}
+          os: ${{ matrix.os }}
       - name: Configure and Build Project
         uses: threeal/cmake-action@main
         with:
           cxx-compiler: ${{ matrix.compiler }}
       - name: Build tests
-        run: cd build && make
+        run: cd build && pwd && make -j
       - name: Install test dependencies
         run: |
           sudo apt-get install -y python3.10-full \

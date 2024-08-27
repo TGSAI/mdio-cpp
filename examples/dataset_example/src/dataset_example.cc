@@ -25,9 +25,9 @@
 
 #include "dataset_example.h"
 
-#include <filesystem>
+#include <mdio/mdio.h>
 
-#include "mdio/dataset.h"
+#include <filesystem>
 
 using Index = mdio::Index;
 using namespace mdio::dtypes;
