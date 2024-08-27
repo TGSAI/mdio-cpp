@@ -43,9 +43,8 @@
 namespace mdio {
 namespace internal {
 
-// TODO(BrianMichell): Select appropriate compile-time default and make CMAKE
-// configurable
-constexpr std::size_t kMaxNumSlices = 32;
+// Gets set by -DMAX_NUM_SLICES cmake flag or defaults to 32
+constexpr std::size_t kMaxNumSlices = MAX_NUM_SLICES;
 
 /**
  * @brief Retrieves the .zarray JSON metadata from the given `metadata`.
@@ -617,7 +616,11 @@ class Dataset {
 
     if (slices.size() > internal::kMaxNumSlices) {
       return absl::InvalidArgumentError(
-          "Too many slices provided or implicitly generated.");
+          absl::StrCat("Too many slices provided or implicitly generated. "
+                       "Maximum number of slices is ",
+                       internal::kMaxNumSlices, " but ", slices.size(),
+                       " were provided.\n\tUse -DMAX_NUM_SLICES cmake flag to "
+                       "increase the maximum number of slices."));
     }
 
     std::vector<RangeDescriptor<Index>> slicesCopy = slices;
