@@ -432,7 +432,18 @@ TEST(Dataset, selValue) {
   ASSERT_TRUE(dataVarRes.status().ok()) << dataVarRes.status();
   samples = dataVarRes.value().num_samples();
   EXPECT_EQ(samples, 1*15*20) << "Expected 1*15*20 samples for data but got " << samples;
+}
 
+TEST(Dataset, selIndex) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  mdio::RangeDescriptor<mdio::dtypes::int32_t> ilRange = {0, 2, 5, 1};  // Attempt to get the 0th dimension from the dataset (illegal)
+
+  auto sliceRes = ds.sel(ilRange);
+  ASSERT_FALSE(sliceRes.ok());
 }
 
 TEST(Dataset, selRepeatedValue) {

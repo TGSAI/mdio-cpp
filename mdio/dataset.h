@@ -747,6 +747,9 @@ class Dataset {
         if (labels.count(descriptor.label.label()) > 0) {
           return absl::InvalidArgumentError("Label must not be repeated.");
         }
+        if (descriptor.label.index() != std::numeric_limits<DimensionIndex>::max()) {
+          return absl::InvalidArgumentError("Expected label to be a dimension name but got an index.");
+        }
         labels.insert(descriptor.label.label());
       }
     }
