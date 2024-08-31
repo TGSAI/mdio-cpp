@@ -525,8 +525,8 @@ TEST(Variable, sliceByDimIdx) {
   ASSERT_TRUE(f8.status().ok()) << f8.status();
   ASSERT_TRUE(voided.status().ok()) << voided.status();
 
-  mdio::SliceDescriptor zeroIdxSlice = {0, 0, 5, 1};
-  mdio::SliceDescriptor oneIdxSlice = {1, 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> zeroIdxSlice = {0, 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> oneIdxSlice = {1, 0, 5, 1};
 
   auto i2Slice = i2.value().slice(zeroIdxSlice, oneIdxSlice);
   auto i4Slice = i4.value().slice(zeroIdxSlice, oneIdxSlice);
@@ -836,8 +836,8 @@ TEST(Variable, sliceByDimName) {
   ASSERT_TRUE(f8.status().ok()) << f8.status();
   ASSERT_TRUE(voided.status().ok()) << voided.status();
 
-  mdio::SliceDescriptor inlineSlice = {"inline", 0, 5, 1};
-  mdio::SliceDescriptor crosslineSpec = {"crossline", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> inlineSlice = {"inline", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> crosslineSpec = {"crossline", 0, 5, 1};
   auto i2Slice = i2.value().slice(inlineSlice, crosslineSpec);
   auto i4Slice = i4.value().slice(inlineSlice, crosslineSpec);
   auto i8Slice = i8.value().slice(inlineSlice, crosslineSpec);
@@ -976,8 +976,8 @@ TEST(VariableData, namedDimensions) {
 
 TEST(VariableData, sliceByDimIdx) {
   auto variableData = getVariable().Read().value();
-  mdio::SliceDescriptor zeroIdxSlice = {0, 0, 5, 1};
-  mdio::SliceDescriptor oneIdxSlice = {1, 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> zeroIdxSlice = {0, 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> oneIdxSlice = {1, 0, 5, 1};
   auto slicedVariableData = variableData.slice(zeroIdxSlice, oneIdxSlice);
   ASSERT_TRUE(slicedVariableData.status().ok()) << slicedVariableData.status();
   EXPECT_THAT(slicedVariableData.value().domain().shape(),
@@ -987,8 +987,8 @@ TEST(VariableData, sliceByDimIdx) {
 
 TEST(VariableData, sliceByDimName) {
   auto variableData = getVariable().Read().value();
-  mdio::SliceDescriptor inlineSlice = {"inline", 0, 5, 1};
-  mdio::SliceDescriptor crosslineSpec = {"crossline", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> inlineSlice = {"inline", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> crosslineSpec = {"crossline", 0, 5, 1};
   auto slicedVariableData = variableData.slice(inlineSlice, crosslineSpec);
   ASSERT_TRUE(slicedVariableData.status().ok()) << slicedVariableData.status();
   EXPECT_THAT(slicedVariableData.value().domain().shape(),
@@ -1620,7 +1620,7 @@ TEST(Dataset, isel) {
   ASSERT_TRUE(dataset.status().ok()) << dataset.status();
   auto ds = dataset.value();
 
-  mdio::SliceDescriptor desc1 = {"inline", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> desc1 = {"inline", 0, 5, 1};
   auto slice = ds.isel(desc1);
   ASSERT_TRUE(slice.status().ok());
 

@@ -243,6 +243,120 @@ mdio::Dataset make() {
   return {metadata, variables, coords, domain_result.value()};
 }
 
+mdio::Result<mdio::Dataset> makePopulated(const std::string& path) {
+  std::string schema = R"(
+{
+  "metadata": {
+    "name": "selTester",
+    "apiVersion": "1.0.0",
+    "createdOn": "2024-08-23T08:56:00.000000-06:00"
+  },
+  "variables": [
+    {
+      "name": "data",
+      "dataType": "float32",
+      "dimensions": [
+        {"name": "inline", "size": 10},
+        {"name": "crossline", "size": 15},
+        {"name": "depth", "size": 20}
+      ]
+    },
+    {
+      "name": "inline",
+      "dataType": "int32",
+      "dimensions": [{"name": "inline", "size": 10}]
+    },
+    {
+      "name": "crossline",
+      "dataType": "int32",
+      "dimensions": [{"name": "crossline", "size": 15}]
+    },
+    {
+      "name": "depth",
+      "dataType": "int32",
+      "dimensions": [{"name": "depth", "size": 20}]
+    }
+  ]
+})";
+  nlohmann::json j = nlohmann::json::parse(schema);
+  auto dsFut = mdio::Dataset::from_json(j, path, mdio::constants::kCreateClean);
+  if (!dsFut.status().ok()) {
+    return dsFut.status();
+  }
+  auto ds = dsFut.value();
+  MDIO_ASSIGN_OR_RETURN(auto dataVar,
+                        ds.variables.get<mdio::dtypes::float32_t>("data"));
+  MDIO_ASSIGN_OR_RETURN(auto inlineVar,
+                        ds.variables.get<mdio::dtypes::int32_t>("inline"));
+  MDIO_ASSIGN_OR_RETURN(auto crosslineVar,
+                        ds.variables.get<mdio::dtypes::int32_t>("crossline"));
+  MDIO_ASSIGN_OR_RETURN(auto depthVar,
+                        ds.variables.get<mdio::dtypes::int32_t>("depth"));
+
+  MDIO_ASSIGN_OR_RETURN(auto dataData,
+                        mdio::from_variable<mdio::dtypes::float32_t>(dataVar));
+  MDIO_ASSIGN_OR_RETURN(auto inlineData,
+                        mdio::from_variable<mdio::dtypes::int32_t>(inlineVar));
+  MDIO_ASSIGN_OR_RETURN(
+      auto crosslineData,
+      mdio::from_variable<mdio::dtypes::int32_t>(crosslineVar));
+  MDIO_ASSIGN_OR_RETURN(auto depthData,
+                        mdio::from_variable<mdio::dtypes::int32_t>(depthVar));
+
+  auto dataAccessor = dataData.get_data_accessor();
+  auto inlineAccessor = inlineData.get_data_accessor();
+  auto crosslineAccessor = crosslineData.get_data_accessor();
+  auto depthAccessor = depthData.get_data_accessor();
+
+  // Inline has some repeated values to show possible conditions for slicing
+  std::vector<mdio::dtypes::int32_t> inlineCoords(
+      {1, 2, 3, 4, 3, 5, 6, 7, 8, 8});
+
+  for (int i = 0; i < 10; ++i) {
+    inlineAccessor({i}) = inlineCoords[i];
+  }
+
+  // Assign some coordinate values
+  for (int i = 0; i < 15; ++i) {
+    crosslineAccessor({i}) = i + 18;
+  }
+  for (int i = 0; i < 20; ++i) {
+    depthAccessor({i}) = i + 50;
+  }
+
+  auto inlineFut = inlineVar.Write(inlineData);
+  auto crosslineFut = crosslineVar.Write(crosslineData);
+  auto depthFut = depthVar.Write(depthData);
+
+  // Assign some data to the data variable
+  for (int i = 0; i < 10; ++i) {
+    for (int j = 0; j < 15; ++j) {
+      for (int k = 0; k < 20; ++k) {
+        dataAccessor({i, j, k}) =
+            static_cast<float>(inlineCoords[i]) +
+            static_cast<float>(j) / 100;  // Do nothing special for depth
+      }
+    }
+  }
+
+  auto dataFut = dataVar.Write(dataData);
+
+  if (!inlineFut.status().ok()) {
+    return inlineFut.status();
+  }
+  if (!crosslineFut.status().ok()) {
+    return crosslineFut.status();
+  }
+  if (!depthFut.status().ok()) {
+    return depthFut.status();
+  }
+  if (!dataFut.status().ok()) {
+    return dataFut.status();
+  }
+
+  return ds;
+}
+
 TEST(DatasetSpec, valid) {
   auto dataset = make();
 
@@ -265,7 +379,7 @@ TEST(Dataset, isel) {
 
   ASSERT_TRUE(dataset.ok());
 
-  mdio::SliceDescriptor desc1 = {"inline", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> desc1 = {"inline", 0, 5, 1};
 
   auto slice = dataset->isel(desc1);
 
@@ -295,6 +409,238 @@ TEST(Dataset, isel) {
       << "Inline range should start at 0";
   EXPECT_EQ(inlineRange.interval().exclusive_max(), 5)
       << "Inline range should end at 5";
+}
+
+TEST(Dataset, selValue) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  mdio::ValueDescriptor<mdio::dtypes::int32_t> ilValue = {"inline", 1};
+
+  auto sliceRes = ds.sel(ilValue);
+  ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
+  auto slicedDs = sliceRes.value();
+
+  auto inlineVarRes = slicedDs.variables.at("inline");
+  ASSERT_TRUE(inlineVarRes.status().ok()) << inlineVarRes.status();
+  auto samples = inlineVarRes.value().num_samples();
+  EXPECT_EQ(samples, 1) << "Expected 1 sample for inline but got " << samples;
+
+  auto xlineVarRes = slicedDs.variables.at("crossline");
+  ASSERT_TRUE(xlineVarRes.status().ok()) << xlineVarRes.status();
+  samples = xlineVarRes.value().num_samples();
+  EXPECT_EQ(samples, 15) << "Expected 15 samples for crossline but got "
+                         << samples;
+
+  auto depthVarRes = slicedDs.variables.at("depth");
+  ASSERT_TRUE(depthVarRes.status().ok()) << depthVarRes.status();
+  samples = depthVarRes.value().num_samples();
+  EXPECT_EQ(samples, 20) << "Expected 20 samples for depth but got " << samples;
+
+  auto dataVarRes = slicedDs.variables.at("data");
+  ASSERT_TRUE(dataVarRes.status().ok()) << dataVarRes.status();
+  samples = dataVarRes.value().num_samples();
+  EXPECT_EQ(samples, 1 * 15 * 20)
+      << "Expected 1*15*20 samples for data but got " << samples;
+}
+
+TEST(Dataset, selIndex) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  // Attempt to get the 0th dimension from the dataset (illegal)
+  mdio::RangeDescriptor<mdio::dtypes::int32_t> ilRange = {0, 2, 5, 1};
+
+  auto sliceRes = ds.sel(ilRange);
+  ASSERT_FALSE(sliceRes.ok());
+}
+
+TEST(Dataset, selRepeatedValue) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  mdio::ValueDescriptor<mdio::dtypes::int32_t> ilValue = {"inline", 3};
+
+  auto sliceRes = ds.sel(ilValue);
+  ASSERT_TRUE(sliceRes.status().ok()) << sliceRes.status();
+  auto slicedDs = sliceRes.value();
+
+  auto inlineVarRes = slicedDs.variables.at("inline");
+  ASSERT_TRUE(inlineVarRes.status().ok()) << inlineVarRes.status();
+  auto samples = inlineVarRes.value().num_samples();
+  EXPECT_EQ(samples, 2) << "Expected 1 sample for inline but got " << samples;
+
+  auto xlineVarRes = slicedDs.variables.at("crossline");
+  ASSERT_TRUE(xlineVarRes.status().ok()) << xlineVarRes.status();
+  samples = xlineVarRes.value().num_samples();
+  EXPECT_EQ(samples, 15) << "Expected 15 samples for crossline but got "
+                         << samples;
+
+  auto depthVarRes = slicedDs.variables.at("depth");
+  ASSERT_TRUE(depthVarRes.status().ok()) << depthVarRes.status();
+  samples = depthVarRes.value().num_samples();
+  EXPECT_EQ(samples, 20) << "Expected 20 samples for depth but got " << samples;
+
+  auto dataVarRes = slicedDs.variables.at("data");
+  ASSERT_TRUE(dataVarRes.status().ok()) << dataVarRes.status();
+  samples = dataVarRes.value().num_samples();
+  EXPECT_EQ(samples, 2 * 15 * 20)
+      << "Expected 2*15*20 samples for data but got " << samples;
+}
+
+TEST(Dataset, selMultipleValues) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  mdio::ValueDescriptor<mdio::dtypes::int32_t> ilValue = {"inline", 1};
+  mdio::ValueDescriptor<mdio::dtypes::int32_t> xlValue = {"crossline", 20};
+
+  auto sliceRes = ds.sel(ilValue, xlValue);
+  ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
+  auto slicedDs = sliceRes.value();
+
+  auto inlineVarRes = slicedDs.variables.at("inline");
+  ASSERT_TRUE(inlineVarRes.status().ok()) << inlineVarRes.status();
+  auto samples = inlineVarRes.value().num_samples();
+  EXPECT_EQ(samples, 1) << "Expected 1 sample for inline but got " << samples;
+
+  auto xlineVarRes = slicedDs.variables.at("crossline");
+  ASSERT_TRUE(xlineVarRes.status().ok()) << xlineVarRes.status();
+  samples = xlineVarRes.value().num_samples();
+  EXPECT_EQ(samples, 1) << "Expected 1 sample for crossline but got "
+                        << samples;
+
+  auto depthVarRes = slicedDs.variables.at("depth");
+  ASSERT_TRUE(depthVarRes.status().ok()) << depthVarRes.status();
+  samples = depthVarRes.value().num_samples();
+  EXPECT_EQ(samples, 20) << "Expected 20 sample for depth but got " << samples;
+
+  auto dataVarRes = slicedDs.variables.at("data");
+  ASSERT_TRUE(dataVarRes.status().ok()) << dataVarRes.status();
+  samples = dataVarRes.value().num_samples();
+  EXPECT_EQ(samples, 1 * 1 * 20)
+      << "Expected 1*1*20 samples for data but got " << samples;
+}
+
+TEST(Dataset, selRepeated) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  mdio::ValueDescriptor<mdio::dtypes::int32_t> ilValue1 = {"inline", 3};
+  mdio::ValueDescriptor<mdio::dtypes::int32_t> ilValue2 = {"inline", 4};
+
+  auto sliceRes = ds.sel(ilValue1, ilValue2);
+  EXPECT_FALSE(sliceRes.status().ok())
+      << "Descriptor with repeated labels are expressly forbidden, but passed "
+         "anyway";
+}
+
+TEST(Dataset, selList) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  std::vector<mdio::dtypes::int32_t> selCoords = {2, 1, 5, 7};
+  mdio::ListDescriptor<mdio::dtypes::int32_t> ilValues = {"inline", selCoords};
+
+  auto sliceRes = ds.sel(ilValues);
+  ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
+}
+
+TEST(Dataset, selListMissingCoord) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  std::vector<mdio::dtypes::int32_t> selCoords = {2, 1, 5, 7, 9};
+  mdio::ListDescriptor<mdio::dtypes::int32_t> ilValues = {"inline", selCoords};
+
+  auto sliceRes = ds.sel(ilValues);
+  ASSERT_FALSE(sliceRes.ok()) << sliceRes.status();
+}
+
+TEST(Dataset, selRange) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  mdio::RangeDescriptor<mdio::dtypes::int32_t> ilRange = {"inline", 2, 5, 1};
+
+  auto sliceRes = ds.sel(ilRange);
+  ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
+}
+
+TEST(Dataset, selRangeFlippedStartStop) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  mdio::RangeDescriptor<mdio::dtypes::int32_t> ilRange = {"inline", 5, 2, 1};
+
+  auto sliceRes = ds.sel(ilRange);
+  ASSERT_FALSE(sliceRes.status().ok());
+}
+
+TEST(Dataset, selRepeatedListSingleton) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  mdio::ListDescriptor<mdio::dtypes::int32_t> ilValues = {"inline", {3}};
+
+  auto sliceRes = ds.sel(ilValues);
+  ASSERT_FALSE(sliceRes.ok()) << sliceRes.status();
+}
+
+TEST(Dataset, selRepeatedListMulti) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  mdio::ListDescriptor<mdio::dtypes::int32_t> ilValues = {"inline", {3, 4, 5}};
+
+  auto sliceRes = ds.sel(ilValues);
+  ASSERT_FALSE(sliceRes.ok()) << sliceRes.status();
+}
+
+TEST(Dataset, selRepeatedRangeStart) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  mdio::RangeDescriptor<mdio::dtypes::int32_t> ilRange = {"inline", 3, 5, 1};
+
+  auto sliceRes = ds.sel(ilRange);
+  ASSERT_FALSE(sliceRes.status().ok());
+}
+
+TEST(Dataset, selRepeatedRangeStop) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  mdio::RangeDescriptor<mdio::dtypes::int32_t> ilRange = {"inline", 5, 3, 1};
+
+  auto sliceRes = ds.sel(ilRange);
+  ASSERT_FALSE(sliceRes.status().ok());
 }
 
 TEST(Dataset, fromConsolidatedMeta) {
@@ -493,8 +839,8 @@ TEST(Dataset, slicedIntervals) {
 
   ASSERT_TRUE(datasetFut.status().ok()) << datasetFut.status();
   auto dataset = datasetFut.value();
-  mdio::SliceDescriptor desc1 = {"inline", 0, 5, 1};
-  mdio::SliceDescriptor desc2 = {"crossline", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> desc1 = {"inline", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> desc2 = {"crossline", 0, 5, 1};
   auto sliceRes = dataset.isel(desc1, desc2);
   ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
   auto slice = sliceRes.value();
@@ -599,8 +945,8 @@ TEST(Dataset, commitSlicedMetadata) {
   ASSERT_TRUE(datasetRes.status().ok()) << datasetRes.status();
   auto dataset = datasetRes.value();
 
-  mdio::SliceDescriptor desc1 = {"inline", 0, 5, 1};
-  mdio::SliceDescriptor desc2 = {"crossline", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> desc1 = {"inline", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> desc2 = {"crossline", 0, 5, 1};
 
   auto sliceRes = dataset.isel(desc1, desc2);
 

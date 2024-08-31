@@ -344,8 +344,8 @@ TEST(Variable, open) {
       mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean).value();
 
   // compile time example
-  mdio::SliceDescriptor desc1 = {"x", 0, 5, 1};
-  mdio::SliceDescriptor desc2 = {"y", 5, 11, 1};
+  mdio::RangeDescriptor<mdio::Index> desc1 = {"x", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> desc2 = {"y", 5, 11, 1};
 
   auto result = variable.slice(desc2, desc1);
   ASSERT_TRUE(result.ok());
@@ -531,8 +531,8 @@ TEST(Variable, slice) {
       mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean).value();
 
   // compile time example
-  mdio::SliceDescriptor desc1 = {"x", 0, 5, 1};
-  mdio::SliceDescriptor desc2 = {"y", 5, 11, 1};
+  mdio::RangeDescriptor<mdio::Index> desc1 = {"x", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> desc2 = {"y", 5, 11, 1};
 
   auto result = variable.slice(desc2, desc1);
   ASSERT_TRUE(result.ok());
@@ -567,8 +567,8 @@ TEST(Variable, labeledArray) {
   auto labeled_array = mdio::LabeledArray{domain, array};
 
   // compile time example
-  mdio::SliceDescriptor desc1 = {"x", 0, 5, 1};
-  mdio::SliceDescriptor desc2 = {"y", 5, 10, 1};
+  mdio::RangeDescriptor<mdio::Index> desc1 = {"x", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> desc2 = {"y", 5, 10, 1};
 
   auto result = labeled_array.slice(desc1, desc2).value();
 
@@ -606,8 +606,8 @@ TEST(Variable, userAttributes) {
   EXPECT_EQ(var2.GetAttributes()["attributes"]["new_attr"], "new_value")
       << var2.getMetadata().dump(4);
 
-  mdio::SliceDescriptor desc1 = {"x", 0, 5, 1};
-  mdio::SliceDescriptor desc2 = {"y", 5, 10, 1};
+  mdio::RangeDescriptor<mdio::Index> desc1 = {"x", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> desc2 = {"y", 5, 10, 1};
   auto var2Sliced = var2.slice(desc1, desc2).value();
 
   EXPECT_FALSE(var2.was_updated())
@@ -635,9 +635,9 @@ TEST(Variable, outOfBoundsSlice) {
   ASSERT_TRUE(var.ok());
   EXPECT_THAT(var->dimensions().shape(), ::testing::ElementsAre(500, 500));
 
-  mdio::SliceDescriptor x_inbounds = {"x", 100, 250, 1};
-  mdio::SliceDescriptor y_inbounds = {"y", 0, 500, 1};
-  mdio::SliceDescriptor x_outbounds = {"x", 250, 1000, 1};
+  mdio::RangeDescriptor<mdio::Index> x_inbounds = {"x", 100, 250, 1};
+  mdio::RangeDescriptor<mdio::Index> y_inbounds = {"y", 0, 500, 1};
+  mdio::RangeDescriptor<mdio::Index> x_outbounds = {"x", 250, 1000, 1};
 
   auto inbounds = var.value().slice(x_inbounds, y_inbounds);
   EXPECT_TRUE(inbounds.status().ok()) << inbounds.status();
@@ -649,33 +649,34 @@ TEST(Variable, outOfBoundsSlice) {
   EXPECT_THAT(badDomain.dimensions().shape(), ::testing::ElementsAre(250, 500))
       << badDomain.dimensions();
 
-  mdio::SliceDescriptor illegal_step = {"x", 0, 500, 2};
+  mdio::RangeDescriptor<mdio::Index> illegal_step = {"x", 0, 500, 2};
   // var = mdio::Variable<>::Open(json_good,
   // mdio::constants::kCreateClean).result(); auto illegal =
   // var.value().slice(illegal_step); EXPECT_FALSE(illegal.status().ok()) <<
   // "Step precondition was violated but still sliced";
 
-  // mdio::SliceDescriptor illegal_start_stop = {"x", 500, 0, 1};
+  // mdio::RangeDescriptor<mdio::Index> illegal_start_stop = {"x", 500, 0, 1};
   // illegal = var.value().slice(illegal_start_stop);
   // EXPECT_FALSE(illegal.status().ok()) << "Start stop precondition was
   // violated but still sliced";
 
-  // mdio::SliceDescriptor same_idx = {"x", 1, 1, 1};
+  // mdio::RangeDescriptor<mdio::Index> same_idx = {"x", 1, 1, 1};
   // auto legal = var.value().slice(same_idx);
-  // EXPECT_TRUE(legal.status().ok()) << legal.status();mdio::SliceDescriptor
-  // illegal_step = {"x", 0, 500, 2};
+  // EXPECT_TRUE(legal.status().ok()) <<
+  // legal.status();mdio::RangeDescriptor<mdio::Index> illegal_step = {"x", 0,
+  // 500, 2};
   auto var1 =
       mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean).result();
   auto illegal = var1.value().slice(illegal_step);
   EXPECT_FALSE(illegal.status().ok())
       << "Step precondition was violated but still sliced";
 
-  mdio::SliceDescriptor illegal_start_stop = {"x", 500, 0, 1};
+  mdio::RangeDescriptor<mdio::Index> illegal_start_stop = {"x", 500, 0, 1};
   illegal = var1.value().slice(illegal_start_stop);
   EXPECT_FALSE(illegal.status().ok())
       << "Start stop precondition was violated but still sliced";
 
-  mdio::SliceDescriptor same_idx = {"x", 1, 1, 1};
+  mdio::RangeDescriptor<mdio::Index> same_idx = {"x", 1, 1, 1};
   auto legal = var1.value().slice(same_idx);
   EXPECT_TRUE(legal.status().ok()) << legal.status();
 }
@@ -735,7 +736,7 @@ TEST(Variable, slicedIntervals) {
   auto intervalRes = var.get_intervals();
   ASSERT_TRUE(intervalRes.status().ok()) << intervalRes.status();
   auto intervals = intervalRes.value();
-  mdio::SliceDescriptor desc1, desc2;
+  mdio::RangeDescriptor<mdio::Index> desc1, desc2;
 
   for (auto& interval : intervals) {
     if (interval.label.label() == "x") {
@@ -777,18 +778,18 @@ TEST(VariableData, outOfBoundsSlice) {
   ASSERT_TRUE(varDataRes.ok());
 
   auto varData = varDataRes.value();
-  mdio::SliceDescriptor x_inbounds = {"x", 100, 250, 1};
-  mdio::SliceDescriptor y_inbounds = {"y", 0, 500, 1};
+  mdio::RangeDescriptor<mdio::Index> x_inbounds = {"x", 100, 250, 1};
+  mdio::RangeDescriptor<mdio::Index> y_inbounds = {"y", 0, 500, 1};
 
   auto inbounds = varData.slice(x_inbounds, y_inbounds);
   EXPECT_TRUE(inbounds.status().ok()) << inbounds.status();
 
-  mdio::SliceDescriptor x_outbounds = {"x", 250, 1000, 1};
+  mdio::RangeDescriptor<mdio::Index> x_outbounds = {"x", 250, 1000, 1};
   auto outbounds = varData.slice(x_outbounds, y_inbounds);
   EXPECT_FALSE(outbounds.status().ok())
       << "Slicing out of bounds should fail but did not";
 
-  mdio::SliceDescriptor illegal_step = {"x", 0, 500, 2};
+  mdio::RangeDescriptor<mdio::Index> illegal_step = {"x", 0, 500, 2};
   auto illegal = varData.slice(illegal_step);
   EXPECT_FALSE(illegal.status().ok())
       << "Step precondition was violated but still sliced";
@@ -914,9 +915,9 @@ TEST(VariableSpec, sliceVariable) {
 
   EXPECT_EQ(result->get_variable_name(), "name");
 
-  mdio::SliceDescriptor desc1 = {"x", 0, 5, 1};
-  mdio::SliceDescriptor desc2 = {"y", 5, 10, 1};
-  mdio::SliceDescriptor descInvalid = {"z", 0, 500, 1};
+  mdio::RangeDescriptor<mdio::Index> desc1 = {"x", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> desc2 = {"y", 5, 10, 1};
+  mdio::RangeDescriptor<mdio::Index> descInvalid = {"z", 0, 500, 1};
 
   auto result3 = result.value().slice(desc1, desc2);
   EXPECT_EQ(result3.status().ok(), true);
@@ -983,8 +984,8 @@ TEST(VariableData, inMemoryEdits) {
   auto variableObject = mdio::Variable<>::Open(json).result();
   EXPECT_TRUE(variableObject.ok());
 
-  mdio::SliceDescriptor desc1 = {"x", 0, 100, 1};
-  mdio::SliceDescriptor desc2 = {"y", 0, 100, 1};
+  mdio::RangeDescriptor<mdio::Index> desc1 = {"x", 0, 100, 1};
+  mdio::RangeDescriptor<mdio::Index> desc2 = {"y", 0, 100, 1};
   variableObject = variableObject.value().slice(desc1, desc2);
 
   auto variableDataFuture = variableObject->Read();
@@ -1026,8 +1027,8 @@ TEST(VariableData, checkInMemoryEdits) {
   auto variableObject = mdio::Variable<>::Open(json).result();
   EXPECT_TRUE(variableObject.ok());
 
-  mdio::SliceDescriptor desc1 = {"x", 0, 100, 1};
-  mdio::SliceDescriptor desc2 = {"y", 0, 100, 1};
+  mdio::RangeDescriptor<mdio::Index> desc1 = {"x", 0, 100, 1};
+  mdio::RangeDescriptor<mdio::Index> desc2 = {"y", 0, 100, 1};
   variableObject = variableObject.value().slice(desc1, desc2);
 
   auto variableDataFuture = variableObject->Read();
@@ -1063,8 +1064,8 @@ TEST(VariableData, nonOriginSlice) {
   auto variableObject = mdio::Variable<>::Open(json).result();
   EXPECT_TRUE(variableObject.ok());
 
-  mdio::SliceDescriptor desc1 = {"x", 100, 110, 1};
-  mdio::SliceDescriptor desc2 = {"y", 100, 110, 1};
+  mdio::RangeDescriptor<mdio::Index> desc1 = {"x", 100, 110, 1};
+  mdio::RangeDescriptor<mdio::Index> desc2 = {"y", 100, 110, 1};
 
   auto slicedVariableObject = variableObject.value().slice(desc1, desc2);
   auto variableDataFuture = slicedVariableObject->Read();
@@ -1086,8 +1087,8 @@ TEST(VariableData, writeTest) {
   auto variableObject = mdio::Variable<>::Open(json).result();
   EXPECT_TRUE(variableObject.ok());
 
-  mdio::SliceDescriptor desc1 = {"x", 0, 100, 1};
-  mdio::SliceDescriptor desc2 = {"y", 0, 100, 1};
+  mdio::RangeDescriptor<mdio::Index> desc1 = {"x", 0, 100, 1};
+  mdio::RangeDescriptor<mdio::Index> desc2 = {"y", 0, 100, 1};
   variableObject = variableObject.value().slice(desc1, desc2);
 
   auto variableDataFuture = variableObject->Read();

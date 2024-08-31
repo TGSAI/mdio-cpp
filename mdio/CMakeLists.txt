@@ -24,6 +24,9 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/Findnlohmann_json_schema_validator.
 # Create mdio target as an interface library
 add_library(mdio INTERFACE)
 
+# Propagate the MAX_NUM_SLICES definition to any consumers of mdio
+target_compile_definitions(mdio INTERFACE MAX_NUM_SLICES=${MAX_NUM_SLICES})
+
 # Include directories for the mdio target
 target_include_directories(mdio INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
@@ -100,6 +103,7 @@ mdio_cc_test(
     tensorstore::driver_zarr
     tensorstore::driver_json
     tensorstore::kvstore_file
+    tensorstore::stack
     tensorstore::tensorstore
     tensorstore::index_space_dim_expression
     tensorstore::index_space_index_transform
@@ -123,6 +127,7 @@ mdio_cc_test(
     tensorstore::driver_zarr
     tensorstore::driver_json
     tensorstore::kvstore_file
+    tensorstore::stack
     tensorstore::tensorstore
     tensorstore::index_space_dim_expression
     tensorstore::index_space_index_transform
@@ -146,6 +151,7 @@ mdio_cc_test(
     tensorstore::driver_zarr
     tensorstore::driver_json
     tensorstore::kvstore_file
+    tensorstore::stack
     tensorstore::tensorstore
     tensorstore::index_space_dim_expression
     tensorstore::index_space_index_transform
@@ -182,6 +188,7 @@ mdio_cc_test(
     tensorstore::driver_zarr
     tensorstore::driver_json
     tensorstore::kvstore_file
+    tensorstore::stack
     tensorstore::tensorstore
     tensorstore::index_space_dim_expression
     tensorstore::index_space_index_transform
@@ -204,6 +211,7 @@ mdio_cc_test(
     tensorstore::driver_zarr
     tensorstore::driver_json
     tensorstore::kvstore_file
+    tensorstore::stack
     tensorstore::tensorstore
     tensorstore::index_space_dim_expression
     tensorstore::index_space_index_transform
@@ -227,6 +235,7 @@ mdio_cc_test(
     tensorstore::driver_json
     tensorstore::kvstore_file
     tensorstore::tensorstore
+    tensorstore::stack
     tensorstore::index_space_dim_expression
     tensorstore::index_space_index_transform
     tensorstore::util_status_testutil
@@ -248,6 +257,7 @@ mdio_cc_test(
     tensorstore::driver_zarr
     tensorstore::driver_json
     tensorstore::kvstore_file
+    tensorstore::stack
     tensorstore::tensorstore
     tensorstore::index_space_dim_expression
     tensorstore::index_space_index_transform
@@ -269,6 +279,7 @@ mdio_cc_test(
     tensorstore::driver_zarr
     tensorstore::driver_json
     tensorstore::kvstore_file
+    tensorstore::stack
     tensorstore::tensorstore
     tensorstore::index_space_dim_expression
     tensorstore::index_space_index_transform
@@ -292,6 +303,7 @@ mdio_cc_test(
     tensorstore::driver_zarr
     tensorstore::driver_json
     tensorstore::kvstore_file
+    tensorstore::stack
     tensorstore::tensorstore
     tensorstore::index_space_dim_expression
     tensorstore::index_space_index_transform

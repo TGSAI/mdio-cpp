@@ -18,6 +18,7 @@
 #include <filesystem>
 #include <memory>
 #include <queue>
+#include <set>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -35,6 +36,7 @@
 #include "tensorstore/kvstore/kvstore.h"
 #include "tensorstore/kvstore/operations.h"
 #include "tensorstore/open.h"
+#include "tensorstore/stack.h"
 #include "tensorstore/tensorstore.h"
 #include "tensorstore/util/future.h"
 
@@ -54,6 +56,12 @@ struct VariableData;
 template <typename T, DimensionIndex R, ArrayOriginKind OriginKind>
 struct LabeledArray;
 
+template <typename T>
+struct extract_descriptor_Ttype;
+
+template <typename T>
+struct outer_type;
+
 /**
  * @brief A descriptor for slicing a Variable.
  * A struct representing how to slice a Variable or Dataset.
@@ -71,6 +79,9 @@ struct LabeledArray;
  * mdio::SliceDescriptor desc1 = {"inline", 0, 100, 1};
  * mdio::SliceDescriptor desc2 = {"crossline", 0, 200, 1};
  * @endcode
+ *
+ * @deprecated This struct is deprecated in favor of using the
+ * `mdio::RangeDescriptor` struct.
  */
 struct SliceDescriptor {
   DimensionIdentifier label;
@@ -79,7 +90,112 @@ struct SliceDescriptor {
   Index step;
 };
 
+/**
+ * @brief A descriptor for slicing a Variable or Dataset.
+ * @tparam T The type of the range. Default is `Index` for `isel` based slicing.
+ * @param label The label of the dimension to slice. The recommended is to use a
+ * label instead of an index.
+ * @param start The start index or value of the slice.
+ * @param stop The stop index or value of the slice.
+ * @param step The step index or value of the slice. Default is 1.
+ */
+template <typename T = Index>
+struct RangeDescriptor {
+  using type = T;
+  DimensionIdentifier label;
+  T start;
+  T stop;
+  Index step = 1;
+};
+
+/**
+ * @brief A descriptor for slicing a single dimension value from a Dataset.
+ * This structure is not supported for index-based slicing.
+ * @tparam T The type of the value.
+ * @param label The label of the dimension to slice.
+ * @param value The value to slice.
+ */
+template <typename T>
+struct ValueDescriptor {
+  using type = T;
+  DimensionIdentifier label;
+  T value;
+};
+
+/**
+ * @brief A descriptor for slicing a list of values from a Dataset.
+ * This structure is not supported for index-based slicing.
+ * @tparam T The type of the values.
+ * @param label The label of the dimension to slice.
+ * @param values The vector of values to slice.
+ */
+template <typename T>
+struct ListDescriptor {
+  using type = T;
+  DimensionIdentifier label;
+  std::vector<T> values;
+};
+
+template <typename T>
+struct outer_type {
+  using type = T;
+};
+
+template <template <typename> class Outer, typename T>
+struct outer_type<Outer<T>> {
+  using type = Outer<T>;
+};
+
+// Specialization for lvalue references
+template <typename T>
+struct outer_type<T&> {
+  using type = typename outer_type<std::remove_reference_t<T>>::type;
+};
+
+// Specialization for rvalue references
+template <typename T>
+struct outer_type<T&&> {
+  using type = typename outer_type<std::remove_reference_t<T>>::type;
+};
+
+template <typename T>
+struct extract_descriptor_Ttype {
+  using type = T;
+};
+
+template <typename T>
+struct extract_descriptor_Ttype<RangeDescriptor<T>> {
+  using type = T;
+};
+
+template <typename T>
+struct extract_descriptor_Ttype<ValueDescriptor<T>> {
+  using type = T;
+};
+
+template <typename T>
+struct extract_descriptor_Ttype<ListDescriptor<T>> {
+  using type = T;
+};
+
+// Specialization for lvalue references
+template <typename T>
+struct extract_descriptor_Ttype<T&> {
+  using type =
+      typename extract_descriptor_Ttype<std::remove_reference_t<T>>::type;
+};
+
+// Specialization for rvalue references
+template <typename T>
+struct extract_descriptor_Ttype<T&&> {
+  using type =
+      typename extract_descriptor_Ttype<std::remove_reference_t<T>>::type;
+};
+
 namespace internal {
+
+constexpr std::string_view kInertSliceKey =
+    "MDIO_INERT_SLICE_KEY_CONSTANT_NO_USE";
 
 /**
  * @brief Checks a status for a missing driver message and returns an MDIO
@@ -785,7 +901,8 @@ class Variable {
    * @return A slice descriptor that will not go out-of-bounds for the given
    * Variable.
    */
-  SliceDescriptor sliceInRange(const SliceDescriptor& desc) const {
+  RangeDescriptor<Index> sliceInRange(
+      const RangeDescriptor<Index>& desc) const {
     auto domain = dimensions();
     const auto labels = domain.labels();
 
@@ -819,8 +936,8 @@ class Variable {
    * This provides an example of slicing the Variable along the inline and
    * crossline dimensions.
    * @code
-   * mdio::SliceDescriptor desc1 = {"inline", 0, 100, 1};
-   * mdio::SliceDescriptor desc2 = {"crossline", 0, 200, 1};
+   * mdio::RangeDescriptor<Index> desc1 = {"inline", 0, 100, 1};
+   * mdio::RangeDescriptor<Index> desc2 = {"crossline", 0, 200, 1};
    * MDIO_ASSIGN_OR_RETURN(auto sliced_velocity, velocity.slice(desc1, desc2));
    * @endcode
    * @return An `mdio::Result` object containing the resulting sub-Variable.
@@ -875,7 +992,7 @@ class Variable {
       return absl::InvalidArgumentError(
           "Only step 1 is supported for slicing.");
     } else if (preconditionStatus >= 0) {
-      mdio::SliceDescriptor err;
+      mdio::RangeDescriptor<Index> err;
       std::apply(
           [&](const auto&... desc) {
             size_t idx = 0;
@@ -896,17 +1013,71 @@ class Variable {
           std::to_string(err.stop) + "'.");
     }
 
-    if (labels.size()) {
-      MDIO_ASSIGN_OR_RETURN(auto slice_store,
-                            store | tensorstore::Dims(labels).HalfOpenInterval(
-                                        start, stop, step));
-      // return a new variable with the sliced store
-      return Variable{variableName, longName, metadata, slice_store,
-                      attributes};
-    } else {
-      // the slice didn't change anything in the variables dimensions.
-      return *this;
+    auto labelSize = labels.size();
+    if (labelSize) {
+      std::set<std::string_view> labelSet;
+      std::set<DimensionIndex> indexSet;
+      for (const auto& label : labels) {
+        labelSet.insert(label.label());
+        indexSet.insert(label.index());
+      }
+
+      if (labelSet.size() == labelSize || indexSet.size() == labelSize) {
+        MDIO_ASSIGN_OR_RETURN(
+            auto slice_store,
+            store |
+                tensorstore::Dims(labels).HalfOpenInterval(start, stop, step));
+        // return a new variable with the sliced store
+        return Variable{variableName, longName, metadata, slice_store,
+                        attributes};
+      } else if (labelSet.size() != labelSize) {
+        // Concat the sliced Variable together if there are duplicate
+        // labels(dimensions)
+        std::vector<Variable> fragments;
+        absl::Status trueStatus = absl::OkStatus();
+        auto fragmentStore = [&](auto& descriptor) -> absl::Status {
+          if (descriptor.label.label() == internal::kInertSliceKey) {
+            // pass on kInertSliceKey
+            return absl::OkStatus();
+          }
+          auto sliceRes = slice(descriptor);
+          if (!sliceRes.status().ok()) {
+            trueStatus = sliceRes.status();
+            return trueStatus;
+          }
+          fragments.push_back(sliceRes.value());
+          return absl::OkStatus();
+        };
+
+        auto status = (fragmentStore(descriptors).ok() && ...);
+        if (!status) {
+          return trueStatus;
+        }
+
+        tensorstore::TensorStore<T, R, M> catStore;
+        if (!fragments.empty()) {
+          // Initialize catStore with the first fragment's store
+          catStore = fragments.front().get_store();
+
+          // Concatenate remaining fragments
+          for (size_t i = 1; i < fragments.size(); ++i) {
+            MDIO_ASSIGN_OR_RETURN(
+                catStore,
+                tensorstore::Concat({catStore, fragments[i].get_store()},
+                                    /*axis=*/0));
+          }
+          // Return a new Variable with the concatenated store
+          return Variable{variableName, longName, metadata, catStore,
+                          attributes};
+        }
+        return absl::InternalError("No fragments to concatenate.");
+      }
+
+      return absl::InvalidArgumentError(
+          "Unexpected error occured while trying to slice the Variable.");
     }
+    // the slice didn't change anything in the variables dimensions.
+    return *this;
   }
 
   Result<nlohmann::json> get_spec() const {
@@ -928,8 +1099,9 @@ class Variable {
    * @code
    *  MDIO_ASSIGN_OR_RETURN(auto chunkShape, velocity.get_chunk_shape());
    *  // Build descriptors to slice out a swath, here we will get every chunk in
-   * the z-direction mdio::SliceDescriptor desc1 = {"inline", chunkShape[0],
-   * chunkShape[0] * 2, 1}; mdio::SliceDescriptor desc2 = {"crossline",
+   *  // the z-direction
+   * mdio::RangeDescriptor<Index> desc1 = {"inline", chunkShape[0],
+   * chunkShape[0] * 2, 1}; mdio::RangeDescriptor<Index> desc2 = {"crossline",
    * chunkShape[1], chunkShape[1] * 2, 1};
    * @endcode
    * @return An NotFoundError if the chunk shape could not be retrieved,
@@ -1475,7 +1647,7 @@ struct VariableData {
    * @return The offset of the flattened data.
    * @code
    * // "my_variable" has dimension "Dimension_0" which has shape [10]
-   * mdio::SliceDescriptor dim_zero_slice = {"Dimension_0", 4, 10, 1};
+   * mdio::RangeDescriptor<Index> dim_zero_slice = {"Dimension_0", 4, 10, 1};
    * MDIO_ASSIGN_OR_RETURN(auto sliced_dataset, dataset.isel(dim_zero_slice));
    * MDIO_ASSIGN_OR_RETURN(auto sliced_variable,
    * sliced_dataset.variables.get<mdio::dtypes::float32>("my_variable"));
