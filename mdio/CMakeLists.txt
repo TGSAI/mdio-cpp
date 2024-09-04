@@ -221,6 +221,29 @@ mdio_cc_test(
 
 mdio_cc_test(
   NAME
+    view_test
+  SRCS
+    view_test.cc
+  COPTS
+    ${mdio_DEFAULT_COPTS} 
+  LINKOPTS
+    ${mdio_DEFAULT_LINKOPTS}
+  DEPS
+    GTest::gmock_main
+    tensorstore::driver_array
+    tensorstore::driver_zarr
+    tensorstore::driver_json
+    tensorstore::kvstore_file
+    tensorstore::tensorstore
+    tensorstore::stack
+    tensorstore::index_space_dim_expression
+    tensorstore::index_space_index_transform
+    tensorstore::util_status_testutil
+    nlohmann_json_schema_validator
+)
+
+mdio_cc_test(
+  NAME
     dataset_test
   SRCS
     dataset_test.cc

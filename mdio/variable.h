@@ -1430,6 +1430,16 @@ class Variable {
     return intervals;
   }
 
+  std::vector<std::string> get_coordinate_labels() const {
+    nlohmann::json meta = getMetadata();
+    if (!meta.contains("dimension_names")) {
+      return {};
+    }
+    std::string coords = meta["dimension_names"].get<std::string>();
+    std::vector<std::string> labels = absl::StrSplit(coords, ' ');
+    return labels;
+  }
+
   // ===========================Member data getters===========================
   const std::string& get_variable_name() const { return variableName; }
 
