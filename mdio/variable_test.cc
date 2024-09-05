@@ -555,8 +555,7 @@ TEST(Variable, sliceVector) {
   // compile time example
   mdio::RangeDescriptor<mdio::Index> desc1 = {"x", 0, 5, 1};
   mdio::RangeDescriptor<mdio::Index> desc2 = {"y", 5, 11, 1};
-  std::vector<mdio::RangeDescriptor<mdio::Index>> descriptors = {desc1,
-                                                                  desc2};
+  std::vector<mdio::RangeDescriptor<mdio::Index>> descriptors = {desc1, desc2};
 
   auto result = variable.slice(descriptors);
   ASSERT_TRUE(result.ok());
@@ -591,7 +590,7 @@ TEST(Variable, sliceOverfullVector) {
   // compile time example
   mdio::RangeDescriptor<mdio::Index> desc1 = {"x", 0, 5, 1};
   std::vector<mdio::RangeDescriptor<mdio::Index>> descriptors;
-  for (int i=0; i<33; ++i) {
+  for (int i = 0; i < 33; ++i) {
     descriptors.push_back(desc1);
   }
 
