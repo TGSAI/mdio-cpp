@@ -43,9 +43,6 @@
 namespace mdio {
 namespace internal {
 
-// Gets set by -DMAX_NUM_SLICES cmake flag or defaults to 32
-constexpr std::size_t kMaxNumSlices = MAX_NUM_SLICES;
-
 /**
  * @brief Retrieves the .zarray JSON metadata from the given `metadata`.
  *
