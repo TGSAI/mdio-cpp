@@ -922,6 +922,52 @@ class Variable {
     return desc;
   }
 
+  template <size_t... I>
+  struct index_sequence {};
+
+  template <size_t N, size_t... I>
+  struct make_index_sequence : make_index_sequence<N - 1, N - 1, I...> {};
+
+  template <size_t... I>
+  struct make_index_sequence<0, I...> : index_sequence<I...> {};
+
+  template<std::size_t... I>
+  Result<Variable> call_slice_with_vector_impl(
+      const std::vector<RangeDescriptor<Index>>& slices,
+      std::index_sequence<I...>) {
+    return slice(slices[I]...);
+  }
+
+  /**
+   * @brief An overload of the `slice` method that takes a vector of RangeDescriptors.
+   * This method is limited to `internal::kMaxNumSlices` slices.
+   * This overload should only ever be used when a runtime number of slices must be generated.
+  */
+  Result<Variable> slice(
+      const std::vector<RangeDescriptor<Index>>& slices) {
+    if (slices.empty()) {
+      return absl::InvalidArgumentError("No slices provided.");
+    }
+
+    if (slices.size() > internal::kMaxNumSlices) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Too many slices provided or implicitly generated. "
+                       "Maximum number of slices is ",
+                       internal::kMaxNumSlices, " but ", slices.size(),
+                       " were provided.\n\tUse -DMAX_NUM_SLICES cmake flag to "
+                       "increase the maximum number of slices."));
+    }
+
+    std::vector<RangeDescriptor<Index>> slicesCopy = slices;
+    for (int i=slices.size(); i<internal::kMaxNumSlices; ++i) {
+      slicesCopy.emplace_back(
+        RangeDescriptor<Index>({internal::kInertSliceKey, 0, 1, 1}));
+    }
+
+    return call_slice_with_vector_impl(slicesCopy,
+                                       std::make_index_sequence<internal::kMaxNumSlices>{});
+  }
+
   /**
    * @brief Slices the Variable along the specified dimensions and returns the
    * resulting sub-Variable. This slice is performed as a half open interval.
