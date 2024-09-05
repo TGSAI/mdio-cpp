@@ -248,7 +248,8 @@ public:
    * @param descriptors The descriptors of the coordinates to search
   */
   template <typename... Descriptors>
-  Result<Extentanator> LinearSearch(const Variable<>& var, const Index chunkID, Descriptors... descriptors) {
+  Result<Extentanator> LinearSearch(const Variable<>& var, const std::vector<mdio::RangeDescriptor<>>& chunkDescriptor, Descriptors... descriptors) {
+    if constexpr ((std::is_same_v))
     return absl::UnimplementedError("Not yet implemented.");
   }
 
@@ -262,10 +263,8 @@ public:
    * @param chunkID The ID of the chunk to search
    * @param descriptors The descriptors of the coordinates to search
   */
-  // template <typename... Descriptors, typename CoordType, typename DataType>
-  // Result<Extentanator<CoordType, DataType>> BinarySearch(const Variable& var, const Index chunkID, Descriptors... descriptors) {
   template <typename... Descriptors>
-  Result<Extentanator> BinarySearch(const Variable<>& var, const Index chunkID, Descriptors... descriptors) {
+  Result<Extentanator> BinarySearch(const Variable<>& var, const std::vector<mdio::RangeDescriptor<>>& chunkDescriptor, Descriptors... descriptors) {
     return absl::UnimplementedError("Not yet implemented.");
   }
 
@@ -308,28 +307,32 @@ public:
   template <typename... Descriptors>
   Result<Extentanator> linear_search(const Variable<>& var, Descriptors... descriptors) {
     // TODO(BrianMichell): Update to a parallel search using LinearSearch
-    // Calculate chunkID
-    // Call LinearSearch with chunkID
-    // Append to Extentanator
-    // Return merged extentanator
+
+    // Get the intervals and chunk shapes for the Variable
     std::vector<Extentanator> extentanators;
-    // std::cout << var << std::endl;
     MDIO_ASSIGN_OR_RETURN(auto dataIntervals, var.get_intervals());
     MDIO_ASSIGN_OR_RETURN(auto chunkShapes, var.get_chunk_shape());
-    // auto dataIntervals = var.get_intervals().value();
     auto numChunkedDims = chunkShapes.size();
     if (dataIntervals.size() != numChunkedDims) {
       return absl::InvalidArgumentError("Data intervals and chunk shapes do not match.");
     }
+
+    // Build out all the data chunks
+    std::vector<RangeDescriptor<>> dsRanges;
     for (size_t i=0; i<numChunkedDims; ++i) {
       std::cout << dataIntervals[i] << std::endl;
       std::cout << chunkShapes[i] << std::endl;
+      RangeDescriptor<> range = {dataIntervals[i].label, dataIntervals[i].inclusive_min, dataIntervals[i].inclusive_min + chunkShapes[i], 1};
     }
-    // for (const auto& interval : dataIntervals) {
-    //   std::cout << interval << std::endl;
-    // }
 
-    return absl::UnimplementedError("Not yet implemented.");
+    // Perform the linear search on each chunk
+    for (const auto& range : dsRanges) {
+      MDIO_ASSIGN_OR_RETURN(auto extentanator, LinearSearch(var, range, descriptors...));
+      extentanators.push_back(extentanator);
+    }
+
+    // Merge the Extentanators for the final result
+    return Extentanator::MergeExtents(extentanators);
   }
 
   /**
