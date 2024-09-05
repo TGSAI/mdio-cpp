@@ -43,9 +43,6 @@
 namespace mdio {
 namespace internal {
 
-// Gets set by -DMAX_NUM_SLICES cmake flag or defaults to 32
-constexpr std::size_t kMaxNumSlices = MAX_NUM_SLICES;
-
 /**
  * @brief Retrieves the .zarray JSON metadata from the given `metadata`.
  *
@@ -608,8 +605,7 @@ class Dataset {
    * Limited to `internal::kMaxNumSlices` slices which may not be equal to the
    * number of descriptors.
    */
-  Result<Dataset> call_isel_with_vector(
-      const std::vector<RangeDescriptor<Index>>& slices) {
+  Result<Dataset> isel(const std::vector<RangeDescriptor<Index>>& slices) {
     if (slices.empty()) {
       return absl::InvalidArgumentError("No slices provided.");
     }
@@ -840,7 +836,7 @@ class Dataset {
       // The map 'label_to_indices' is now populated with all the relevant
       // indices. You can now proceed with further processing based on this map.
 
-      return call_isel_with_vector(slices);
+      return isel(slices);
     } else if constexpr ((std::is_same_v</*NOLINT: readability/braces*/
                                          Descriptors,
                                          ListDescriptor<
@@ -870,7 +866,7 @@ class Dataset {
       // The map 'label_to_indices' is now populated with all the relevant
       // indices. You can now proceed with further processing based on this map.
 
-      return call_isel_with_vector(slices);
+      return isel(slices);
     } else {
       std::map<std::string_view, std::pair<Index, Index>>
           label_to_range;  // pair.first = start, pair.second = stop
@@ -967,7 +963,7 @@ class Dataset {
             "No slices could be made from the given descriptors.");
       }
 
-      return call_isel_with_vector(slices);
+      return isel(slices);
     }
 
     return absl::OkStatus();

@@ -132,6 +132,13 @@ constexpr auto kComplex128 = tensorstore::dtype_v<mdio::dtypes::complex128_t>;
 constexpr auto kByte = tensorstore::dtype_v<mdio::dtypes::byte_t>;
 }  // namespace constants
 
+namespace internal {
+// Gets set by -DMAX_NUM_SLICES cmake flag or defaults to 32
+constexpr std::size_t kMaxNumSlices = MAX_NUM_SLICES;
+constexpr std::string_view kInertSliceKey =
+    "MDIO_INERT_SLICE_KEY_CONSTANT_NO_USE";
+}  // namespace internal
+
 }  // namespace mdio
 
 #endif  // MDIO_IMPL_H_
