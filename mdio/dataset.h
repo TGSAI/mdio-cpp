@@ -605,7 +605,7 @@ class Dataset {
    * Limited to `internal::kMaxNumSlices` slices which may not be equal to the
    * number of descriptors.
    */
-  Result<Dataset> call_isel_with_vector(
+  Result<Dataset> isel(
       const std::vector<RangeDescriptor<Index>>& slices) {
     if (slices.empty()) {
       return absl::InvalidArgumentError("No slices provided.");
@@ -837,7 +837,7 @@ class Dataset {
       // The map 'label_to_indices' is now populated with all the relevant
       // indices. You can now proceed with further processing based on this map.
 
-      return call_isel_with_vector(slices);
+      return isel(slices);
     } else if constexpr ((std::is_same_v</*NOLINT: readability/braces*/
                                          Descriptors,
                                          ListDescriptor<
@@ -867,7 +867,7 @@ class Dataset {
       // The map 'label_to_indices' is now populated with all the relevant
       // indices. You can now proceed with further processing based on this map.
 
-      return call_isel_with_vector(slices);
+      return isel(slices);
     } else {
       std::map<std::string_view, std::pair<Index, Index>>
           label_to_range;  // pair.first = start, pair.second = stop
@@ -964,7 +964,7 @@ class Dataset {
             "No slices could be made from the given descriptors.");
       }
 
-      return call_isel_with_vector(slices);
+      return isel(slices);
     }
 
     return absl::OkStatus();
