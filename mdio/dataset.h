@@ -605,8 +605,7 @@ class Dataset {
    * Limited to `internal::kMaxNumSlices` slices which may not be equal to the
    * number of descriptors.
    */
-  Result<Dataset> isel(
-      const std::vector<RangeDescriptor<Index>>& slices) {
+  Result<Dataset> isel(const std::vector<RangeDescriptor<Index>>& slices) {
     if (slices.empty()) {
       return absl::InvalidArgumentError("No slices provided.");
     }
