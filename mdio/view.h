@@ -64,14 +64,14 @@ class CoordinateView {
   /**
    * @brief Constructs a CoordinateView from a JSON specification.
   */
-  Result<CoordinateView> FromJson(const nlohmann::json& json) {
+  static Result<CoordinateView> FromJson(const nlohmann::json& json) {
     return absl::UnimplementedError("Not yet implemented.");
   }
 
   /**
    * @brief Gets the data accessor for the CoordinateView.
   */
-  SharedArray<void, dynamic_rank, ArrayOriginKind> get_data_accessor() {
+  SharedArray<void, dynamic_rank, offset_origin> get_data_accessor() {
     return data;
   }
 
@@ -85,19 +85,19 @@ class CoordinateView {
   /**
    * @brief Gets the data type of the CoordinateView.
   */
-  DataType dtype() const {
-    return data.dtype();
-  }
+  // DataType dtype() const {
+  //   return data.dtype();
+  // }
 
-  /**
-   * @brief Gets the dimensions of the CoordinateView.
-  */
-  IndexDomainView<dynamic_rank> dimensions() const {
-    return data.domain();
-  }
+  // /**
+  //  * @brief Gets the dimensions of the CoordinateView.
+  // */
+  // IndexDomainView<dynamic_rank> dimensions() const {
+  //   return data.domain();
+  // }
 
   private:
-  tensorstore::TensorStore<void, dynamic_rank, tensorstore::ReadWriteMode::dynamic> data;
+  SharedArray<void, dynamic_rank, offset_origin> data;
 };
 
 /**
@@ -146,7 +146,7 @@ class Extentanator {
  * For dimension coordinate based views, use the `sel` method on the Dataset.
  */
 class DatasetView {
-
+public:
   /**
    * @brief Constructs a DatasetView from an MDIO Dataset.
    * @param dataset The Dataset to be viewed
@@ -171,6 +171,7 @@ class DatasetView {
       auto coordSize = value.size();
       for (size_t i=0; i<coordSize; ++i) {
         MDIO_ASSIGN_OR_RETURN(auto coordVar, dataset.variables.get<>(value[i]));
+        coordinates[value[i]] = coordVar;
       }
     }
 
@@ -179,7 +180,6 @@ class DatasetView {
       case OpenMode::kEager:          // fallthrough
       case OpenMode::kLazy:           // fallthrough
       case OpenMode::kNoIndex:        // fallthrough
-        // std::cout << "Mode: " << mode << std::endl;
         break;
     }
 
@@ -212,14 +212,25 @@ class DatasetView {
       if (!willBinSearch) break;
     }
 
+    if (!dataVars.count(label)) {
+      return absl::InvalidArgumentError("The provided label did not have coordinates attached to it.");
+    }
+
     Extentanator extentanator;
-    // Result<Extentanator> searchRes;
     if (willBinSearch) {
-      MDIO_ASSIGN_OR_RETURN(extentanator, binary_search(label, descriptors...));
-      // searchRes = binary_search(label, descriptors...);
+      auto res = binary_search(dataVars[label], descriptors...);
+      if (!res.status().ok()) {
+        return res.status();
+      }
+      extentanator = res.value();
+      // MDIO_ASSIGN_OR_RETURN(extentanator, binary_search(label, descriptors...));
     } else {
-      MDIO_ASSIGN_OR_RETURN(extentanator, linear_search(label, descriptors...));
-      // searchRes = linear_search(label, descriptors...);
+      auto res = linear_search(dataVars[label], descriptors...);
+      if (!res.status().ok()) {
+        return res.status();
+      }
+      extentanator = res.value();
+      // MDIO_ASSIGN_OR_RETURN(extentanator, linear_search(label, descriptors...));
     }
 
     MDIO_ASSIGN_OR_RETURN(auto json, makeJson(extentanator));
@@ -236,8 +247,6 @@ class DatasetView {
    * @param chunkID The ID of the chunk to search
    * @param descriptors The descriptors of the coordinates to search
   */
-  // template <typename... Descriptors, typename CoordType, typename DataType>
-  // Result<Extentanator<CoordType, DataType>> LinearSearch(const Variable& var, const Index chunkID, Descriptors... descriptors) {
   template <typename... Descriptors>
   Result<Extentanator> LinearSearch(const Variable<>& var, const Index chunkID, Descriptors... descriptors) {
     return absl::UnimplementedError("Not yet implemented.");
@@ -269,7 +278,9 @@ class DatasetView {
   }
 
   private:
-  DatasetView(std::map<std::string, Variable<>> coordinates, std::map<std::string, Variable<>> dataVars, std::map<std::string, internal::sort_order> sortOrders, OpenMode mode, std::map<std::string, VariableData<>> coordinatesData) : coordinates(coordinates), dataVars(dataVars), sortOrders(sortOrders), mode(mode), coordinatesData(coordinatesData) {}
+  DatasetView(std::map<std::string, Variable<>> coordinates, std::map<std::string, Variable<>> dataVars, std::map<std::string, internal::sort_order> sortOrders, OpenMode mode, std::map<std::string, VariableData<>> coordinatesData) : coordinates(coordinates), dataVars(dataVars), sortOrders(sortOrders), mode(mode), coordinatesData(coordinatesData) {
+    set_sort_order();
+  }
 
   /**
    * @brief Constructor helper method for setting the sort order of the coordinates.
@@ -296,11 +307,27 @@ class DatasetView {
   */
   template <typename... Descriptors>
   Result<Extentanator> linear_search(const Variable<>& var, Descriptors... descriptors) {
+    // TODO(BrianMichell): Update to a parallel search using LinearSearch
     // Calculate chunkID
     // Call LinearSearch with chunkID
     // Append to Extentanator
     // Return merged extentanator
     std::vector<Extentanator> extentanators;
+    // std::cout << var << std::endl;
+    MDIO_ASSIGN_OR_RETURN(auto dataIntervals, var.get_intervals());
+    MDIO_ASSIGN_OR_RETURN(auto chunkShapes, var.get_chunk_shape());
+    // auto dataIntervals = var.get_intervals().value();
+    auto numChunkedDims = chunkShapes.size();
+    if (dataIntervals.size() != numChunkedDims) {
+      return absl::InvalidArgumentError("Data intervals and chunk shapes do not match.");
+    }
+    for (size_t i=0; i<numChunkedDims; ++i) {
+      std::cout << dataIntervals[i] << std::endl;
+      std::cout << chunkShapes[i] << std::endl;
+    }
+    // for (const auto& interval : dataIntervals) {
+    //   std::cout << interval << std::endl;
+    // }
 
     return absl::UnimplementedError("Not yet implemented.");
   }
@@ -344,7 +371,7 @@ class DatasetView {
     DataType dtype;
     bool flag = false;
     for (auto coord : coords_vec) {
-      if (!coordinates.contains(coord)) {
+      if (!coordinates.count(coord)) {
         return absl::InvalidArgumentError(absl::StrCat("Variable ", var.get_variable_name(), " was expected to have coordinate ", coord, " but it was not found!"));
       }
       if (!flag) {
@@ -362,25 +389,25 @@ class DatasetView {
   */
   Result<void> isSameDimensions(const Variable<>& var, const std::vector<std::string>& coords_vec) {
     MDIO_ASSIGN_OR_RETURN(auto dataIntervals, var.get_intervals());
-    std::map<DimensionIdentifier, Variable<>::Interval> intervalMap;
+    std::map<std::string_view, Variable<>::Interval> intervalMap;
     for (auto& interval : dataIntervals) {
-      intervalMap[interval.label] = interval;
+      intervalMap[interval.label.label()] = interval;
     }
 
     // Get all of the coordinate intervals
     for (const auto& coord : coords_vec) {
-      if (!coordinates.contains(coord)) {
+      if (!coordinates.count(coord)) {
         return absl::InvalidArgumentError(absl::StrCat("Variable ", var.get_variable_name(), " was expected to have coordinate ", coord, " but it was not found!"));
       }
       MDIO_ASSIGN_OR_RETURN(auto coordIntervals, coordinates[coord].get_intervals());
       for (const auto& interval : coordIntervals) {
-        if (intervalMap.count(interval.label) == 0) {
+        if (intervalMap.count(interval.label.label()) == 0) {
           return absl::InvalidArgumentError(absl::StrCat("Variable ", var.get_variable_name(), " was expected to have coordinate ", coord, " but it was not found!"));
         }
-        if (intervalMap[interval.label].inclusive_min != interval.inclusive_min) {
+        if (intervalMap[interval.label.label()].inclusive_min != interval.inclusive_min) {
           return absl::InvalidArgumentError("Mismatch between data Variable and coordinate Variable intervals detected.");
         }
-        if (intervalMap[interval.label].exclusive_max != interval.exclusive_max) {
+        if (intervalMap[interval.label.label()].exclusive_max != interval.exclusive_max) {
           return absl::InvalidArgumentError("Mismatch between data Variable and coordinate Variable intervals detected.");
         }
       }
@@ -394,7 +421,8 @@ class DatasetView {
   std::map<std::string, internal::sort_order> sortOrders;
   OpenMode mode;
 
-  std::optional<std::map<std::string, VariableData<>>> coordinateData;
+  std::optional<std::map<std::string, VariableData<>>> coordinatesData;
+  // std::map<std::string, VariableData<>> coordinatesData;
 
 };
 
