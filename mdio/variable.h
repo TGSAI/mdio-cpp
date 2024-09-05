@@ -194,9 +194,6 @@ struct extract_descriptor_Ttype<T&&> {
 
 namespace internal {
 
-constexpr std::string_view kInertSliceKey =
-    "MDIO_INERT_SLICE_KEY_CONSTANT_NO_USE";
-
 /**
  * @brief Checks a status for a missing driver message and returns an MDIO
  * specific error message.
