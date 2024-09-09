@@ -548,6 +548,29 @@ TEST(Variable, slice) {
   std::filesystem::remove_all("name");
 }
 
+TEST(Variable, sliceTyped) {
+  auto variable = mdio::Variable<mdio::dtypes::int16_t>::Open(
+                      json_good, mdio::constants::kCreateClean)
+                      .value();
+
+  // compile time example
+  mdio::RangeDescriptor<mdio::Index> desc1 = {"x", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> desc2 = {"y", 5, 11, 1};
+
+  auto result = variable.slice(desc2, desc1);
+  ASSERT_TRUE(result.ok());
+
+  auto domain = result->dimensions();
+
+  EXPECT_THAT(domain.labels(), ::testing::ElementsAre("x", "y"));
+
+  EXPECT_THAT(domain.origin(), ::testing::ElementsAre(0, 5));
+
+  EXPECT_THAT(domain.shape(), ::testing::ElementsAre(5, 6));
+
+  std::filesystem::remove_all("name");
+}
+
 TEST(Variable, sliceVector) {
   auto variable =
       mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean).value();
