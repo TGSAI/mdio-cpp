@@ -1097,8 +1097,10 @@ class Variable {
           return trueStatus;
         }
 
-        tensorstore::TensorStore<T, R, M> catStore;
         if (!fragments.empty()) {
+          // Concat appears to only work with void types, so we'll strip the
+          // type away
+          tensorstore::TensorStore<void, R, M> catStore;
           // Initialize catStore with the first fragment's store
           catStore = fragments.front().get_store();
 
@@ -1109,8 +1111,12 @@ class Variable {
                 tensorstore::Concat({catStore, fragments[i].get_store()},
                                     /*axis=*/0));
           }
+          // Recast to the original type
+          tensorstore::TensorStore<T, R, M> typedCatStore =
+              tensorstore::TensorStore<T, R, M>(tensorstore::unchecked,
+                                                catStore);
           // Return a new Variable with the concatenated store
-          return Variable{variableName, longName, metadata, catStore,
+          return Variable{variableName, longName, metadata, typedCatStore,
                           attributes};
         }
         return absl::InternalError("No fragments to concatenate.");
