@@ -788,28 +788,23 @@ class Variable {
   template <ArrayOriginKind OriginKind = offset_origin>
   Future<VariableData<T, R, OriginKind>> Read() {
     auto data = tensorstore::Read(store);
-    // Capture the metadata to avoid shared_ptr issues
-    auto meta = getMetadata();
-    std::string vName = variableName;
-    std::string lName = longName;
-    auto dims = dimensions();
+    // We need to capture this to ensure the Variable doesn't get prematurely
+    // destoryed if its parent goes out of scope before the future resolves.
+    auto thisVar = std::make_shared<Variable<T, R, M>>(*this);
     auto pair =
         tensorstore::PromiseFuturePair<VariableData<T, R, OriginKind>>::Make();
-    // TODO(BrianMichell): If the Variable goes out of scope before the promise completes a segfault will occur due to the shared_ptr metadata
     data.ExecuteWhenReady(
-        [meta, vName, lName, dims, attributes_ptr = this->attributes, promise = pair.promise](
+        [thisVar, promise = pair.promise](
             tensorstore::ReadyFuture<SharedArray<T, R, OriginKind>> readyFut) {
-          // We capture the attribures to ensure the refcount is correct.
-          // If the Variable goes out of scope before the promise completes a segcault will occur.
           auto ready_result = readyFut.result();
           if (!ready_result.ok()) {
             promise.SetResult(ready_result.status());
           } else {
-            LabeledArray<T, R, OriginKind> labeledArray{dims,
+            LabeledArray<T, R, OriginKind> labeledArray{thisVar->dimensions(),
                                                         ready_result.value()};
             VariableData<T, R, OriginKind> variableData{
-                vName, lName, meta,
-                labeledArray};
+                thisVar->variableName, thisVar->longName,
+                thisVar->getMetadata(), labeledArray};
             promise.SetResult(variableData);
           }
         });
