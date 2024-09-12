@@ -177,14 +177,14 @@ mdio::Future<mdio::Dataset> SETUP(const std::string& path) {
 
 TEST(TrimDataset, noop) {
   ASSERT_TRUE(SETUP(kTestPath).status().ok());
-  auto res = mdio::utils::TrimDataset(kTestPath);
+  auto res = mdio::utils::TrimDataset(kTestPath, false);
   EXPECT_TRUE(res.status().ok()) << res.status();
 }
 
 TEST(TrimDataset, oneSlice) {
   ASSERT_TRUE(SETUP(kTestPath).status().ok());
   mdio::RangeDescriptor<mdio::Index> slice = {"inline", 0, 128, 1};
-  auto res = mdio::utils::TrimDataset(kTestPath, slice);
+  auto res = mdio::utils::TrimDataset(kTestPath, true, slice);
   ASSERT_TRUE(res.status().ok()) << res.status();
   auto dsRes = mdio::Dataset::Open(kTestPath, mdio::constants::kOpen);
   ASSERT_TRUE(dsRes.status().ok()) << dsRes.status();
@@ -217,7 +217,7 @@ TEST(TrimDataset, oneSliceData) {
 
   // Trim outside of a chunk boundry
   mdio::RangeDescriptor<mdio::Index> slice = {"inline", 0, 128, 1};
-  auto res = mdio::utils::TrimDataset(kTestPath, slice);
+  auto res = mdio::utils::TrimDataset(kTestPath, true, slice);
   ASSERT_TRUE(res.status().ok()) << res.status();
 
   auto newDsRes = mdio::Dataset::Open(kTestPath, mdio::constants::kOpen);

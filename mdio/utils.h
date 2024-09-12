@@ -36,12 +36,16 @@ namespace utils {
  *
  * @tparam ...Descriptors Expects an mdio::RangeDescriptor<mdio::Index>
  * @param dataset_path The path to the dataset to trim.
+ * @param delete_sliced_out_chunks If true, chunks that fall completely outside
+ * the slice descriptors will be deleted. If false, chunks that fall completely
+ * outside the slice descriptors will remain untouched but inaccessable.
  * @param descriptors The descriptors to use for the slice. Only considers the
  * label and stop value.
  * @return A future of the trim operation.
  */
 template <typename... Descriptors>
 Future<void> TrimDataset(std::string dataset_path,
+                         bool delete_sliced_out_chunks,
                          const Descriptors&... descriptors) {
   // Open the dataset
   auto dsRes = mdio::Dataset::Open(dataset_path, mdio::constants::kOpen);
@@ -101,11 +105,16 @@ Future<void> TrimDataset(std::string dataset_path,
       }
     }
 
+    tensorstore::ResizeOptions resizeOptions;
+    if (delete_sliced_out_chunks) {
+      resizeOptions.mode = tensorstore::ResizeMode::resize_tied_bounds;
+    } else {
+      resizeOptions.mode = tensorstore::ResizeMode::resize_metadata_only;
+    }
+
     auto resizedStatus = tensorstore::Resize(
         varStore, tensorstore::span<const tensorstore::Index>(implicitDims),
-        tensorstore::span<const tensorstore::Index>(newShape),
-        tensorstore::ResizeOptions{
-            tensorstore::ResizeMode::resize_tied_bounds});
+        tensorstore::span<const tensorstore::Index>(newShape), resizeOptions);
 
     if (!resizedStatus.status().ok()) {
       return resizedStatus.status();
