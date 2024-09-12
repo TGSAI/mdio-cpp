@@ -1054,6 +1054,25 @@ TEST(VariableData, writeChunkedData) {
   std::filesystem::remove_all("name");
 }
 
+TEST(VariableData, flattenedOffset) {
+  auto json = PopulateStore(json_good).value();
+  auto variableObject = mdio::Variable<>::Open(json).result();
+  EXPECT_TRUE(variableObject.ok());
+
+  mdio::RangeDescriptor<mdio::Index> desc1 = {"x", 50, 100, 1};
+  mdio::RangeDescriptor<mdio::Index> desc2 = {"y", 0, 100, 1};
+  variableObject = variableObject.value().slice(desc1, desc2);
+
+  auto variableDataFuture = variableObject->Read();
+
+  auto variableDataObject = variableDataFuture.result();
+  EXPECT_TRUE(variableDataObject.ok());
+
+  auto varData = variableDataObject.value();
+
+  EXPECT_EQ(varData.get_flattened_offset(), 5000);
+}
+
 TEST(VariableData, inMemoryEdits) {
   auto json = PopulateStore(json_good).value();
   auto variableObject = mdio::Variable<>::Open(json).result();
