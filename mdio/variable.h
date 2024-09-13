@@ -787,16 +787,29 @@ class Variable {
    */
   template <ArrayOriginKind OriginKind = offset_origin>
   Future<VariableData<T, R, OriginKind>> Read() {
-    // FIXME - add async
-    auto data = tensorstore::Read(store).value();
+    auto data = tensorstore::Read(store);
+    // We need to capture this to ensure the Variable doesn't get prematurely
+    // destoryed if its parent goes out of scope before the future resolves.
+    auto thisVar = std::make_shared<Variable<T, R, M>>(*this);
+    auto pair =
+        tensorstore::PromiseFuturePair<VariableData<T, R, OriginKind>>::Make();
+    data.ExecuteWhenReady(
+        [thisVar, promise = pair.promise](
+            tensorstore::ReadyFuture<SharedArray<T, R, OriginKind>> readyFut) {
+          auto ready_result = readyFut.result();
+          if (!ready_result.ok()) {
+            promise.SetResult(ready_result.status());
+          } else {
+            LabeledArray<T, R, OriginKind> labeledArray{thisVar->dimensions(),
+                                                        ready_result.value()};
+            VariableData<T, R, OriginKind> variableData{
+                thisVar->variableName, thisVar->longName,
+                thisVar->getMetadata(), labeledArray};
+            promise.SetResult(variableData);
+          }
+        });
 
-    LabeledArray<T, R, OriginKind> labeledArray(dimensions(), data);
-
-    VariableData<T, R, OriginKind> variableData{variableName, longName,
-                                                getMetadata(), labeledArray};
-
-    return tensorstore::MakeReadyFuture<VariableData<T, R, OriginKind>>(
-        variableData);
+    return pair.future;
   }
 
   /**
