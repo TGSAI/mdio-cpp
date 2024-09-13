@@ -1726,18 +1726,16 @@ struct VariableData {
    * @endcode
    */
   ptrdiff_t get_flattened_offset() {
-    // TODO(BrianMichell): Implement unit test
     auto accessor = get_data_accessor();
-    auto origin_ptr =
-        accessor.data();  // The raw pointer to the data. May not start at 0.
-    auto offset_ptr =
-        accessor.byte_strided_origin_pointer();  // The raw pointer to the first
-                                                 // element of the data.
+    // The raw pointer to the data. May not start at 0.
+    auto origin_ptr = accessor.data();
+    // The raw pointer to the first element of the data.
+    auto offset_ptr = accessor.byte_strided_origin_pointer();
     char* origin_addr = reinterpret_cast<char*>(origin_ptr);
-    char* offset_addr = reinterpret_cast<char*>(
-        offset_ptr.get());  // We have to get the raw pointer
+    // We have to get the raw pointer
+    char* offset_addr = reinterpret_cast<char*>(offset_ptr.get());
     ptrdiff_t byte_diff = offset_addr - origin_addr;
-    return byte_diff / sizeof(T);
+    return byte_diff / dtype().size();
   }
 
   // An identifier for the variable.
