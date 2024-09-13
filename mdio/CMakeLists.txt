@@ -266,9 +266,33 @@ mdio_cc_test(
 
 mdio_cc_test(
   NAME
-    utils_test
+    utils_trim_test
   SRCS
-    utils_test.cc
+    utils/trim_test.cc
+  COPTS
+    ${mdio_DEFAULT_COPTS} 
+  LINKOPTS
+    ${mdio_DEFAULT_LINKOPTS}
+  DEPS
+    GTest::gmock_main
+    tensorstore::driver_array
+    tensorstore::driver_zarr
+    tensorstore::driver_json
+    tensorstore::kvstore_file
+    tensorstore::stack
+    tensorstore::tensorstore
+    tensorstore::index_space_dim_expression
+    tensorstore::index_space_index_transform
+    tensorstore::util_status_testutil
+    tensorstore::kvstore_gcs
+    nlohmann_json_schema_validator
+)
+
+mdio_cc_test(
+  NAME
+    utils_delete_test
+  SRCS
+    utils/delete_test.cc
   COPTS
     ${mdio_DEFAULT_COPTS} 
   LINKOPTS

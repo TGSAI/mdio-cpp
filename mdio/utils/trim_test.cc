@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "mdio/utils.h"
+#include "mdio/utils/trim.h"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -23,12 +23,7 @@
 #include <nlohmann/json.hpp>  // NOLINT
 // clang-format on
 
-#define RUN_CLOUD false
-
 namespace {
-
-// TODO(End user): User should point to their own GCS bucket here.
-/*NOLINT*/ const std::string GCS_PATH = "gs://USER_BUCKET";
 
 /*NOLINT*/ const std::string kTestPath = "zarrs/testing/utils.mdio";
 
@@ -177,14 +172,14 @@ mdio::Future<mdio::Dataset> SETUP(const std::string& path) {
 
 TEST(TrimDataset, noop) {
   ASSERT_TRUE(SETUP(kTestPath).status().ok());
-  auto res = mdio::utils::TrimDataset(kTestPath);
+  auto res = mdio::utils::TrimDataset(kTestPath, false);
   EXPECT_TRUE(res.status().ok()) << res.status();
 }
 
 TEST(TrimDataset, oneSlice) {
   ASSERT_TRUE(SETUP(kTestPath).status().ok());
   mdio::RangeDescriptor<mdio::Index> slice = {"inline", 0, 128, 1};
-  auto res = mdio::utils::TrimDataset(kTestPath, slice);
+  auto res = mdio::utils::TrimDataset(kTestPath, true, slice);
   ASSERT_TRUE(res.status().ok()) << res.status();
   auto dsRes = mdio::Dataset::Open(kTestPath, mdio::constants::kOpen);
   ASSERT_TRUE(dsRes.status().ok()) << dsRes.status();
@@ -217,7 +212,7 @@ TEST(TrimDataset, oneSliceData) {
 
   // Trim outside of a chunk boundry
   mdio::RangeDescriptor<mdio::Index> slice = {"inline", 0, 128, 1};
-  auto res = mdio::utils::TrimDataset(kTestPath, slice);
+  auto res = mdio::utils::TrimDataset(kTestPath, true, slice);
   ASSERT_TRUE(res.status().ok()) << res.status();
 
   auto newDsRes = mdio::Dataset::Open(kTestPath, mdio::constants::kOpen);
@@ -237,27 +232,6 @@ TEST(TrimDataset, oneSliceData) {
   for (int i = 0; i < 128; ++i) {
     EXPECT_EQ(varDataAccessor[i], i + 256) << "i: " << i;
   }
-}
-
-TEST(DeleteDataset, delLocal) {
-  ASSERT_TRUE(SETUP(kTestPath).status().ok());
-  auto res = mdio::utils::DeleteDataset(kTestPath);
-  ASSERT_TRUE(res.status().ok()) << res.status();
-  auto dsRes = mdio::Dataset::Open(kTestPath, mdio::constants::kOpen);
-  EXPECT_FALSE(dsRes.status().ok()) << dsRes.status();
-}
-
-TEST(DeleteDataset, delGCS) {
-  if (GCS_PATH == "gs://USER_BUCKET") {
-    GTEST_SKIP() << "Skipping GCS deletion test.\nTo enable, please update the "
-                    "GCS_PATH variable in the utils_test.cc file.";
-  }
-  auto setupStatus = SETUP(GCS_PATH);
-  ASSERT_TRUE(setupStatus.status().ok()) << setupStatus.status();
-  auto res = mdio::utils::DeleteDataset(GCS_PATH);
-  ASSERT_TRUE(res.status().ok()) << res.status();
-  auto dsRes = mdio::Dataset::Open(GCS_PATH, mdio::constants::kOpen);
-  EXPECT_FALSE(dsRes.status().ok()) << dsRes.status();
 }
 
 }  // namespace
