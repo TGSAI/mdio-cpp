@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef MDIO_UTILS_H_
-#define MDIO_UTILS_H_
+#ifndef MDIO_UTILS_TRIM_H_
+#define MDIO_UTILS_TRIM_H_
 
 #include <string>
 #include <unordered_map>
@@ -30,9 +30,7 @@ namespace utils {
  * DANGER: This operation will mutate the dataset on disk. Use caution when
  * calling this method! This function is not part of the Dataset class to avoid
  * accidental data destruction. Additionally this function should only be used
- * on a fully written dataset to avoid race conditions and data corruption. This
- * may make writing generalized functions more difficult, but we elected to err
- * on the side of caution.
+ * on a fully written dataset to avoid race conditions and data corruption.
  *
  * @tparam ...Descriptors Expects an mdio::RangeDescriptor<mdio::Index>
  * @param dataset_path The path to the dataset to trim.
@@ -124,58 +122,7 @@ Future<void> TrimDataset(std::string dataset_path,
   return ds.CommitMetadata();
 }
 
-/**
- * @brief A utility to delete an MDIO dataset
- * It will first be checked that the dataset is a valid MDIO dataset before
- * deletion. This is intended to provide a safe interface to delete MDIO
- * datasets.
- * @param dataset_path The path to the dataset
- * @return OK result if the dataset was valid and deleted successfully,
- * otherwise an error result
- */
-Result<void> DeleteDataset(const std::string dataset_path) {
-  // Open the dataset
-  // This is to ensure that what is getting deleted by MDIO is a valid MDIO
-  // dataset itself.
-  auto dsRes = mdio::Dataset::Open(dataset_path, mdio::constants::kOpen);
-  if (!dsRes.status().ok()) {
-    return dsRes.status();
-  }
-  auto ds = dsRes.value();
-
-  // Pick the arbitrarially first Variable in the dataset as the base KVStore
-  // template
-  MDIO_ASSIGN_OR_RETURN(auto var,
-                        ds.variables.at(ds.variables.get_keys().front()))
-  MDIO_ASSIGN_OR_RETURN(auto spec, var.get_spec())
-  nlohmann::json kvs = spec["kvstore"];
-
-  // Drop the Variable path from the KVStore path. This is will leave us with
-  // the full Dataset
-  std::size_t pos =
-      kvs["path"].get<std::string>().rfind(var.get_variable_name());
-  std::string path = kvs["path"].get<std::string>().substr(0, pos - 1);
-  if (path.back() == '/') {
-    // Handle case where the variable is double slashed
-    path.pop_back();
-  }
-  kvs["path"] = path;
-
-  auto kvsFuture = tensorstore::kvstore::Open(kvs);
-  if (!kvsFuture.status().ok()) {
-    return kvsFuture.status();
-  }
-  auto kvstore = kvsFuture.value();
-
-  auto deleteRes = tensorstore::kvstore::DeleteRange(kvstore, {});
-  if (!deleteRes.status().ok()) {
-    return deleteRes.status();
-  }
-
-  return absl::OkStatus();
-}
-
 }  // namespace utils
 }  // namespace mdio
 
-#endif  // MDIO_UTILS_H_
+#endif  // MDIO_UTILS_TRIM_H_

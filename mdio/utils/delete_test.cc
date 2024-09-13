@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "mdio/utils.h"
+#include "mdio/utils/delete.h"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -23,8 +23,6 @@
 #include <nlohmann/json.hpp>  // NOLINT
 // clang-format on
 
-#define RUN_CLOUD false
-
 namespace {
 
 // TODO(End user): User should point to their own GCS bucket here.
@@ -34,7 +32,7 @@ namespace {
 
 /**
  * Sets up an inert dataset for testing destructive operations
- */
+*/
 mdio::Future<mdio::Dataset> SETUP(const std::string& path) {
   std::string datasetManifest = R"(
 {
@@ -173,70 +171,6 @@ mdio::Future<mdio::Dataset> SETUP(const std::string& path) {
   auto j = nlohmann::json::parse(datasetManifest);
   auto dsRes = mdio::Dataset::from_json(j, path, mdio::constants::kCreateClean);
   return dsRes;
-}
-
-TEST(TrimDataset, noop) {
-  ASSERT_TRUE(SETUP(kTestPath).status().ok());
-  auto res = mdio::utils::TrimDataset(kTestPath, false);
-  EXPECT_TRUE(res.status().ok()) << res.status();
-}
-
-TEST(TrimDataset, oneSlice) {
-  ASSERT_TRUE(SETUP(kTestPath).status().ok());
-  mdio::RangeDescriptor<mdio::Index> slice = {"inline", 0, 128, 1};
-  auto res = mdio::utils::TrimDataset(kTestPath, true, slice);
-  ASSERT_TRUE(res.status().ok()) << res.status();
-  auto dsRes = mdio::Dataset::Open(kTestPath, mdio::constants::kOpen);
-  ASSERT_TRUE(dsRes.status().ok()) << dsRes.status();
-}
-
-TEST(TrimDataset, oneSliceData) {
-  // Set up the dataset
-  ASSERT_TRUE(SETUP(kTestPath).status().ok());
-  auto dsRes = mdio::Dataset::Open(kTestPath, mdio::constants::kOpen);
-  ASSERT_TRUE(dsRes.status().ok()) << dsRes.status();
-  auto ds = dsRes.value();
-
-  // Write some data to the inline variable
-  auto inlineVarRes = ds.variables.get<mdio::dtypes::uint32_t>("inline");
-  ASSERT_TRUE(inlineVarRes.status().ok()) << inlineVarRes.status();
-  auto inlineVar = inlineVarRes.value();
-
-  auto inlineVarFuture = inlineVar.Read();
-  ASSERT_TRUE(inlineVarFuture.status().ok()) << inlineVarFuture.status();
-  auto inlineVarData = inlineVarFuture.value();
-
-  auto inlineDataAccessor = inlineVarData.get_data_accessor();
-
-  for (int i = 0; i < 256; ++i) {
-    inlineDataAccessor({i}) = i + 256;
-  }
-
-  auto writeFuture = inlineVar.Write(inlineVarData);
-  ASSERT_TRUE(writeFuture.status().ok()) << writeFuture.status();
-
-  // Trim outside of a chunk boundry
-  mdio::RangeDescriptor<mdio::Index> slice = {"inline", 0, 128, 1};
-  auto res = mdio::utils::TrimDataset(kTestPath, true, slice);
-  ASSERT_TRUE(res.status().ok()) << res.status();
-
-  auto newDsRes = mdio::Dataset::Open(kTestPath, mdio::constants::kOpen);
-  ASSERT_TRUE(newDsRes.status().ok()) << newDsRes.status();
-  auto newDs = newDsRes.value();
-
-  std::string name = "inline";
-  auto varRes = newDs.get_variable(name);
-  ASSERT_TRUE(varRes.status().ok()) << varRes.status();
-  auto var = varRes.value();
-  auto varFuture = var.Read();
-  ASSERT_TRUE(varFuture.status().ok()) << varFuture.status();
-  auto varData = varFuture.value();
-
-  auto varDataAccessor = reinterpret_cast<mdio::dtypes::uint32_t*>(
-      varData.get_data_accessor().data());
-  for (int i = 0; i < 128; ++i) {
-    EXPECT_EQ(varDataAccessor[i], i + 256) << "i: " << i;
-  }
 }
 
 TEST(DeleteDataset, delLocal) {

@@ -44,5 +44,6 @@ jobs:
           && ./mdio_dataset_factory_test \
           && ./mdio_dataset_validator_test \
           && ./mdio_stats_test \
-          && ./mdio_utils_test \
+          && ./mdio_utils_trim_test \
+          && ./mdio_utils_delete_test \
           && ./mdio_variable_collection_test
