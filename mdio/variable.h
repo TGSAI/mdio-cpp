@@ -1735,11 +1735,7 @@ struct VariableData {
     // We have to get the raw pointer
     char* offset_addr = reinterpret_cast<char*>(offset_ptr.get());
     ptrdiff_t byte_diff = offset_addr - origin_addr;
-    if constexpr (std::is_same_v<T, void>) {
-      return byte_diff / dtype().size();
-    } else {
-      return byte_diff / sizeof(T);
-    }
+    return byte_diff / dtype().size();
   }
 
   // An identifier for the variable.
