@@ -29,7 +29,7 @@ namespace {
 
 /**
  * Sets up an inert dataset for testing destructive operations
-*/
+ */
 mdio::Future<mdio::Dataset> SETUP(const std::string& path) {
   std::string datasetManifest = R"(
 {
