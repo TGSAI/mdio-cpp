@@ -1266,6 +1266,10 @@ class Variable {
         output_json["attributes"]["long_name"] = output_json["long_name"];
         output_json.erase("long_name");
       }
+      if (output_json.contains("coordinates")) {
+        output_json["attributes"]["coordinates"] = output_json["coordinates"];
+        output_json.erase("coordinates");
+      }
       std::string outpath = "/.zattrs";
       if (isCloudStore) {
         outpath = ".zattrs";
