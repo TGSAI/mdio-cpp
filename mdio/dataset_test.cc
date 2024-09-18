@@ -583,6 +583,19 @@ TEST(Dataset, selRange) {
   ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
 }
 
+TEST(Dataset, legacySliceDescriptor) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  mdio::SliceDescriptor ilRange = {"inline", 2, 5, 1};
+
+  // ds.sel does not, and will not, support the legacy slice descriptor
+  auto sliceRes = ds.isel(ilRange);
+  ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
+}
+
 TEST(Dataset, selRangeFlippedStartStop) {
   std::string path = "zarrs/selTester.mdio";
   auto dsRes = makePopulated(path);
