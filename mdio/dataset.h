@@ -220,7 +220,7 @@ Future<void> write_zmetadata(
       tensorstore::InlineExecutor{},
       [zattrs = std::move(zattrs)](const tensorstore::KvStore& kvstore) {
         return tensorstore::kvstore::Write(kvstore, "/.zattrs",
-                                           absl::Cord(zattrs.dump()));
+                                           absl::Cord(zattrs.dump(4)));
       },
       kvs_future);
 
@@ -228,7 +228,7 @@ Future<void> write_zmetadata(
       tensorstore::InlineExecutor{},
       [zmetadata = std::move(zmetadata)](const tensorstore::KvStore& kvstore) {
         return tensorstore::kvstore::Write(kvstore, "/.zmetadata",
-                                           absl::Cord(zmetadata.dump()));
+                                           absl::Cord(zmetadata.dump(4)));
       },
       kvs_future);
 
@@ -236,7 +236,7 @@ Future<void> write_zmetadata(
       tensorstore::InlineExecutor{},
       [zgroup = std::move(zgroup)](const tensorstore::KvStore& kvstore) {
         return tensorstore::kvstore::Write(kvstore, "/.zgroup",
-                                           absl::Cord(zgroup.dump()));
+                                           absl::Cord(zgroup.dump(4)));
       },
       kvs_future);
 
@@ -409,7 +409,7 @@ class Dataset {
 
   friend std::ostream& operator<<(std::ostream& os, const Dataset& dataset) {
     // Output metadata
-    os << "Metadata: " << dataset.metadata.dump() << "\n";
+    os << "Metadata: " << dataset.metadata.dump(4) << "\n";
 
     // Output variables
     const auto keys = dataset.variables.get_iterable_accessor();

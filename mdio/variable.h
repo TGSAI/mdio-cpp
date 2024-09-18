@@ -454,7 +454,7 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
     // It's important to use the store's kvstore or else we get a race condition
     // on "mkdir".
     return tensorstore::kvstore::Write(store.kvstore(), outpath,
-                                       absl::Cord(output_json.dump()));
+                                       absl::Cord(output_json.dump(4)));
   };
 
   // this is intended to handle the struct array where we "reopen" the store
@@ -681,7 +681,7 @@ Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
           } else if (value != currentAttributes[key]) {
             return absl::InvalidArgumentError(absl::StrCat(
                 "Conflicting values for field: ", key, ". ", "Expected: ",
-                value.dump(), ", but got: ", currentAttributes[key].dump()));
+                value.dump(4), ", but got: ", currentAttributes[key].dump(4)));
           }
         }
       }
@@ -1282,7 +1282,7 @@ class Variable {
 
       return tensorstore::kvstore::Write(
           store.kvstore(), outpath,
-          absl::Cord(output_json["attributes"].dump()));
+          absl::Cord(output_json["attributes"].dump(4)));
     };
 
     bool isCloudStore = false;
