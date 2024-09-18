@@ -777,7 +777,7 @@ class Dataset {
 
       MDIO_ASSIGN_OR_RETURN(
           auto var, variables.at(std::string(descriptor.label.label())));
-      if (!var.dimensions().rank() == 1) {
+      if (var.dimensions().rank() != 1) {
         return absl::InvalidArgumentError("Label must be 1D.");
       }
 
