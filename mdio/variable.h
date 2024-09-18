@@ -108,9 +108,7 @@ struct SliceDescriptor {
   Index step;
 
   // Implicit conversion to RangeDescriptor
-  operator RangeDescriptor<Index>() const {
-    return {label, start, stop, step};
-  }
+  operator RangeDescriptor<Index>() const { return {label, start, stop, step}; }
 };
 
 /**

@@ -549,25 +549,25 @@ TEST(Variable, slice) {
 }
 
 TEST(Variable, legacySliceDescriptor) {
-    auto variable =
-        mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean).value();
+  auto variable =
+      mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean).value();
 
-    // compile time example
-    mdio::SliceDescriptor desc1 = {"x", 0, 5, 1};
-    mdio::SliceDescriptor desc2 = {"y", 5, 11, 1};
+  // compile time example
+  mdio::SliceDescriptor desc1 = {"x", 0, 5, 1};
+  mdio::SliceDescriptor desc2 = {"y", 5, 11, 1};
 
-    auto result = variable.slice(desc2, desc1);
-    ASSERT_TRUE(result.ok());
+  auto result = variable.slice(desc2, desc1);
+  ASSERT_TRUE(result.ok());
 
-    auto domain = result->dimensions();
-    
-    EXPECT_THAT(domain.labels(), ::testing::ElementsAre("x", "y"));
+  auto domain = result->dimensions();
 
-    EXPECT_THAT(domain.origin(), ::testing::ElementsAre(0, 5));
+  EXPECT_THAT(domain.labels(), ::testing::ElementsAre("x", "y"));
 
-    EXPECT_THAT(domain.shape(), ::testing::ElementsAre(5, 6));
+  EXPECT_THAT(domain.origin(), ::testing::ElementsAre(0, 5));
 
-    std::filesystem::remove_all("name");
+  EXPECT_THAT(domain.shape(), ::testing::ElementsAre(5, 6));
+
+  std::filesystem::remove_all("name");
 }
 
 TEST(Variable, sliceTyped) {
