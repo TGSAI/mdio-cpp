@@ -919,20 +919,22 @@ TEST(Dataset, commitMetadata) {
   ASSERT_TRUE(newImageRes.ok()) << newImageRes.status();
 
   nlohmann::json metadata = newImageRes.value().getMetadata();
-  ASSERT_TRUE(metadata.contains("statsV1"))
+  ASSERT_TRUE(metadata.contains("metadata")) << metadata;
+  ASSERT_TRUE(metadata["metadata"].contains("statsV1"))
       << "Did not find statsV1 in metadata";
-  ASSERT_TRUE(metadata["statsV1"].contains("histogram"))
+  ASSERT_TRUE(metadata["metadata"]["statsV1"].contains("histogram"))
       << "Did not find histogram in statsV1";
-  ASSERT_TRUE(metadata["statsV1"]["histogram"].contains("binCenters"))
+  ASSERT_TRUE(
+      metadata["metadata"]["statsV1"]["histogram"].contains("binCenters"))
       << "Did not find binCenters in histogram";
-  EXPECT_TRUE(metadata["statsV1"]["histogram"]["binCenters"] ==
+  EXPECT_TRUE(metadata["metadata"]["statsV1"]["histogram"]["binCenters"] ==
               std::vector<float>({2, 4, 6}))
       << "Expected binCenters to be [2, 4, 6] but got "
-      << metadata["statsV1"]["histogram"]["binCenters"];
-  EXPECT_TRUE(metadata["statsV1"]["histogram"]["counts"] ==
+      << metadata["metadata"]["statsV1"]["histogram"]["binCenters"];
+  EXPECT_TRUE(metadata["metadata"]["statsV1"]["histogram"]["counts"] ==
               std::vector<float>({10, 15, 20}))
       << "Expected counts to be [10, 15, 20] but got "
-      << metadata["statsV1"]["histogram"]["counts"];
+      << metadata["metadata"]["statsV1"]["histogram"]["counts"];
 }
 
 TEST(Dataset, commitSlicedMetadata) {

@@ -165,17 +165,21 @@ Future<void> write_zmetadata(
     MDIO_ASSIGN_OR_RETURN(zmetadata["metadata"][zarray_key], get_zarray(json))
 
     nlohmann::json fixedJson = json["attributes"];
-    fixedJson["_ARRAY_DIMENSIONS"] = json["attributes"]["dimension_names"];
+    fixedJson["_ARRAY_DIMENSIONS"] = fixedJson["dimension_names"];
     fixedJson.erase("dimension_names");
     // We do not want to be seralizing the variable_name. It should be
     // self-describing
-    fixedJson.erase("variable_name");
+    if (fixedJson.contains("variable_name")) {
+      fixedJson.erase("variable_name");
+    }
     if (fixedJson.contains("long_name") &&
         fixedJson["long_name"].get<std::string>() == "") {
       fixedJson.erase("long_name");
     }
     if (fixedJson.contains("metadata")) {
-      fixedJson["metadata"].erase("chunkGrid");
+      if (fixedJson["metadata"].contains("chunkGrid")) {
+        fixedJson["metadata"].erase("chunkGrid");
+      }
       for (auto& item : fixedJson["metadata"].items()) {
         fixedJson[item.key()] = std::move(item.value());
       }
@@ -1329,7 +1333,9 @@ class Dataset {
         meta.erase("long_name");
       }
       if (meta.contains("metadata")) {
-        meta["metadata"].erase("chunkGrid");  // We never serialize this
+        if (meta["metadata"].contains("chunkGrid")) {
+          meta["metadata"].erase("chunkGrid");  // We never serialize this
+        }
         if (!meta.contains("attributes")) {
           meta["attributes"] = nlohmann::json::object();
         }
