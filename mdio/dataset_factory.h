@@ -260,7 +260,7 @@ inline absl::Status transform_metadata(const std::string& path,
  * @param dimensionMap A map of dimension names to sizes
  * @return A Variable spec or an error if the Variable spec is invalid
  */
-tensorstore::Result<nlohmann::json> from_json_to_spec(
+inline tensorstore::Result<nlohmann::json> from_json_to_spec(
     nlohmann::json& json /*NOLINT*/,
     std::unordered_map<std::string, int>& dimensionMap /*NOLINT*/,
     const std::string& path) {
@@ -432,7 +432,7 @@ inline tensorstore::Result<std::unordered_map<std::string, int>> get_dimensions(
  * @return A vector of Variable specs or an error if the Dataset spec is invalid
  */
 tensorstore::Result<std::tuple<nlohmann::json, std::vector<nlohmann::json>>>
-Construct(nlohmann::json& spec /*NOLINT*/, const std::string& path) {
+inline Construct(nlohmann::json& spec /*NOLINT*/, const std::string& path) {
   // Validation should only return status codes. If it returns data then it
   // should be a "constructor"
   auto status = validate_dataset(spec);
