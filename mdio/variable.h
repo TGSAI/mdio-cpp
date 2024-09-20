@@ -201,7 +201,7 @@ namespace internal {
  * @return A driver specific message if the status is a missing driver message,
  * otherwise the original status.
  */
-absl::Status CheckMissingDriverStatus(const absl::Status& status) {
+inline absl::Status CheckMissingDriverStatus(const absl::Status& status) {
   std::string error(status.message());
   if (error.find("Error parsing object member \"driver\"") !=
       std::string::npos) {

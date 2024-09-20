@@ -52,7 +52,7 @@ namespace internal {
  * @return An `mdio::Result` containing the .zarray JSON metadata on success, or
  * an error on failure.
  */
-Result<nlohmann::json> get_zarray(const ::nlohmann::json metadata) {
+inline Result<nlohmann::json> get_zarray(const ::nlohmann::json metadata) {
   // derive .zarray json metadata (without reading it).
   auto json =
       metadata;  // Why am I doing this? It's an extra copy that does nothing!
@@ -124,7 +124,7 @@ Result<nlohmann::json> get_zarray(const ::nlohmann::json metadata) {
  * @param json_variables The JSON variables.
  * @return An `mdio::Future<void>` representing the asynchronous write.
  */
-Future<void> write_zmetadata(
+inline Future<void> write_zmetadata(
     const ::nlohmann::json& dataset_metadata,
     const std::vector<::nlohmann::json>& json_variables) {
   // header material at the root of the dataset ...
@@ -251,7 +251,7 @@ Future<void> write_zmetadata(
  * It will default to the "file" driver if no prefix is found.
  * @param dataset_path The path to the dataset.
  */
-Future<tensorstore::KvStore> dataset_kvs_store(
+inline Future<tensorstore::KvStore> dataset_kvs_store(
     const std::string& dataset_path) {
   // the tensorstore driver needs a bucket field
   ::nlohmann::json kvstore;
@@ -298,7 +298,7 @@ Future<tensorstore::KvStore> dataset_kvs_store(
  * error on failure.
  */
 Future<std::tuple<::nlohmann::json, std::vector<::nlohmann::json>>>
-from_zmetadata(const std::string& dataset_path) {
+inline from_zmetadata(const std::string& dataset_path) {
   // e.g. dataset_path = "zarrs/acceptance/";
   //  FIXME - enable async
   auto kvs_future = mdio::internal::dataset_kvs_store(dataset_path).result();

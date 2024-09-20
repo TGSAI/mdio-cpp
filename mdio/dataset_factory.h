@@ -49,7 +49,7 @@ std::string encode_base64(const std::string raw) {
  * @return A string representing the dtype in numpy format limited to the dtypes
  * supported by MDIO Dataset
  */
-tensorstore::Result<std::string> to_zarr_dtype(const std::string dtype) {
+inline tensorstore::Result<std::string> to_zarr_dtype(const std::string dtype) {
   // Convert the input dtype to Zarr dtype
   if (dtype == "int8") {
     return "<i1";
@@ -92,7 +92,7 @@ tensorstore::Result<std::string> to_zarr_dtype(const std::string dtype) {
  * @return OkStatus if successful, InvalidArgumentError if dtype is not
  * supported
  */
-absl::Status transform_dtype(nlohmann::json& input /*NOLINT*/,
+inline absl::Status transform_dtype(nlohmann::json& input /*NOLINT*/,
                              nlohmann::json& variable /*NOLINT*/) {
   if (input["dataType"].contains("fields")) {
     nlohmann::json dtypeFields = nlohmann::json::array();
@@ -123,7 +123,7 @@ absl::Status transform_dtype(nlohmann::json& input /*NOLINT*/,
  * @return OkStatus if successful, InvalidArgumentError if compressor is invalid
  * for MDIO
  */
-absl::Status transform_compressor(nlohmann::json& input /*NOLINT*/,
+inline absl::Status transform_compressor(nlohmann::json& input /*NOLINT*/,
                                   nlohmann::json& variable /*NOLINT*/) {
   if (input.contains("compressor")) {
     if (input["compressor"].contains("name")) {
@@ -181,7 +181,7 @@ absl::Status transform_compressor(nlohmann::json& input /*NOLINT*/,
  * before this step This presumes that the user does not attempt to use these
  * functions directly
  */
-void transform_shape(
+inline void transform_shape(
     nlohmann::json& input /*NOLINT*/, nlohmann::json& variable /*NOLINT*/,
     std::unordered_map<std::string, int>& dimensionMap /*NOLINT*/) {
   if (input["dimensions"][0].is_object()) {
@@ -207,7 +207,7 @@ void transform_shape(
  * @param variable A Variable stub (Will be modified)
  * @return OkStatus if successful, InvalidArgumentError if the path is invalid
  */
-absl::Status transform_metadata(const std::string& path,
+inline absl::Status transform_metadata(const std::string& path,
                                 nlohmann::json& variable /*NOLINT*/) {
   std::string bucket =
       "NULL";  // Default value, if is NULL don't add a bucket field
@@ -403,7 +403,7 @@ tensorstore::Result<nlohmann::json> from_json_to_spec(
  * @return A map of dimension names to sizes or error if the dimensions are not
  * consistently sized
  */
-tensorstore::Result<std::unordered_map<std::string, int>> get_dimensions(
+inline tensorstore::Result<std::unordered_map<std::string, int>> get_dimensions(
     nlohmann::json& spec /*NOLINT*/) {
   std::unordered_map<std::string, int> dimensions;
   for (auto& variable : spec["variables"]) {
