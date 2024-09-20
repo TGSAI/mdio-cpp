@@ -35,7 +35,7 @@
  * @param raw A string to be encoded
  * @return A string encoded in base64
  */
-std::string encode_base64(const std::string raw) {
+inline std::string encode_base64(const std::string raw) {
   std::string encoded = absl::Base64Escape(raw);
   return encoded;
 }
