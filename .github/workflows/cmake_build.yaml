@@ -37,8 +37,8 @@ jobs:
           sudo apt install -y python3.10 python3.10-venv python3.10-dev
       - name: Install test dependencies
         run: |
-          python3.10 -m pip install --upgrade pip --no-input
-          python3.10 -m pip install wheel yapf cpplint zarr xarray --no-input
+          python3.10 -m pip install --upgrade pip setuptools wheel --no-input
+          python3.10 -m pip install yapf cpplint zarr xarray --no-input
       - name: Run tests
         run: |
           cd build/mdio/ \
