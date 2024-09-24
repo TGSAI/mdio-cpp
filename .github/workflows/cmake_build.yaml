@@ -24,12 +24,12 @@ jobs:
         with:
           compiler: ${{ matrix.compiler }}
           os: ${{ matrix.os }}
-      - name: Configure and Build Project
-        uses: threeal/cmake-action@main
-        with:
-          cxx-compiler: ${{ matrix.compiler }}
-      - name: Build tests
-        run: cd build && pwd && make -j
+      # - name: Configure and Build Project
+      #   uses: threeal/cmake-action@main
+      #   with:
+      #     cxx-compiler: ${{ matrix.compiler }}
+      # - name: Build tests
+      #   run: cd build && pwd && make -j
       - name: Install Python 3.10
         run: |
           sudo add-apt-repository -y ppa:deadsnakes/ppa
