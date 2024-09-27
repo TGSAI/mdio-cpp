@@ -9,7 +9,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest] # [ubuntu-latest, macos-latest]
+        os: [ubuntu-24.04] # [ubuntu-latest, macos-latest]
         compiler: [g++]
     runs-on: ${{ matrix.os }}
     permissions:
