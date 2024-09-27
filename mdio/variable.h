@@ -638,31 +638,24 @@ Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
       // specifies a different chunkGrid, it will not be used and should
       // actually fail here.
       nlohmann::json correctedSuppliedAttrs = suppliedAttributes;
-      if (correctedSuppliedAttrs["attributes"].contains("metadata")) {
-        if (correctedSuppliedAttrs["attributes"]["metadata"].contains(
-                "chunkGrid")) {
-          correctedSuppliedAttrs["attributes"]["metadata"].erase("chunkGrid");
+      if (correctedSuppliedAttrs.contains("attributes")) {
+        if (correctedSuppliedAttrs["attributes"].contains("metadata")) {
+          if (correctedSuppliedAttrs["attributes"]["metadata"].contains(
+                  "chunkGrid")) {
+            correctedSuppliedAttrs["attributes"]["metadata"].erase("chunkGrid");
+          }
         }
-        for (auto& item :
-             correctedSuppliedAttrs["attributes"]["metadata"].items()) {
-          correctedSuppliedAttrs["attributes"][item.key()] =
-              std::move(item.value());
+        auto savedAttrs = correctedSuppliedAttrs["attributes"];
+        correctedSuppliedAttrs.erase("attributes");
+        for (auto& item : savedAttrs.items()) {
+          correctedSuppliedAttrs[item.key()] = std::move(item.value());
         }
-        correctedSuppliedAttrs["attributes"].erase("metadata");
       }
       // BFS to make sure supplied attributes match stored attributes
       nlohmann::json searchableMetadata = new_metadata;
-      if (searchableMetadata["attributes"].contains("variable_name")) {
+      if (searchableMetadata.contains("variable_name")) {
         // Since we don't actually want to have to specify the variable name
-        searchableMetadata["attributes"].erase("variable_name");
-      }
-      if (searchableMetadata["attributes"].contains("metadata")) {
-        for (auto& item :
-             searchableMetadata["attributes"]["metadata"].items()) {
-          searchableMetadata["attributes"][item.key()] =
-              std::move(item.value());
-        }
-        searchableMetadata["attributes"].erase("metadata");
+        searchableMetadata.erase("variable_name");
       }
       std::queue<std::pair<nlohmann::json, nlohmann::json>> queue;
       queue.push({searchableMetadata, correctedSuppliedAttrs});
