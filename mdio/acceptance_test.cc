@@ -461,8 +461,6 @@ TEST(Variable, optionalAttrs) {
   ASSERT_TRUE(f8.status().ok()) << f8.status();
   ASSERT_TRUE(voided.status().ok()) << voided.status();
 
-  std::cout << i2.value().GetAttributes().dump(4) << std::endl;
-
   EXPECT_EQ(i2.value().GetAttributes()["attributes"]["foo"], "bar")
       << i2.value().GetAttributes();
   EXPECT_EQ(i4.value().GetAttributes()["attributes"]["foo"], "bar")
