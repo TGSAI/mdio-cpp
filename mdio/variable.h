@@ -63,6 +63,24 @@ template <typename T>
 struct outer_type;
 
 /**
+ * @brief A descriptor for slicing a Variable or Dataset.
+ * @tparam T The type of the range. Default is `Index` for `isel` based slicing.
+ * @param label The label of the dimension to slice. The recommended is to use a
+ * label instead of an index.
+ * @param start The start index or value of the slice.
+ * @param stop The stop index or value of the slice.
+ * @param step The step index or value of the slice. Default is 1.
+ */
+template <typename T = Index>
+struct RangeDescriptor {
+  using type = T;
+  DimensionIdentifier label;
+  T start;
+  T stop;
+  Index step = 1;
+};
+
+/**
  * @brief A descriptor for slicing a Variable.
  * A struct representing how to slice a Variable or Dataset.
  * All slices using this will be performed as half open intervals.
@@ -88,24 +106,9 @@ struct SliceDescriptor {
   Index start;
   Index stop;
   Index step;
-};
 
-/**
- * @brief A descriptor for slicing a Variable or Dataset.
- * @tparam T The type of the range. Default is `Index` for `isel` based slicing.
- * @param label The label of the dimension to slice. The recommended is to use a
- * label instead of an index.
- * @param start The start index or value of the slice.
- * @param stop The stop index or value of the slice.
- * @param step The step index or value of the slice. Default is 1.
- */
-template <typename T = Index>
-struct RangeDescriptor {
-  using type = T;
-  DimensionIdentifier label;
-  T start;
-  T stop;
-  Index step = 1;
+  // Implicit conversion to RangeDescriptor
+  operator RangeDescriptor<Index>() const { return {label, start, stop, step}; }
 };
 
 /**
