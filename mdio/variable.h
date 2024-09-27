@@ -308,7 +308,13 @@ Result<Variable<T, R, M>> from_json(
 
   nlohmann::json scrubbed_spec = attributes;
   scrubbed_spec.erase("variable_name");
-  auto attrsRes = UserAttributes::FromVariableJson(spec);
+  auto specWithoutChunkgrid = spec;
+  if (specWithoutChunkgrid.contains("metadata")) {
+    if (specWithoutChunkgrid["metadata"].contains("chunkGrid")) {
+      specWithoutChunkgrid["metadata"].erase("chunkGrid");
+    }
+  }
+  auto attrsRes = UserAttributes::FromVariableJson(specWithoutChunkgrid);
   if (!attrsRes.ok()) {
     return attrsRes.status();
   }
@@ -328,8 +334,15 @@ Result<Variable<T, R, M>> from_json(
   // These live in our `UserAttributes` object and are technically mutable. The
   // best kind of mutable!
   if (scrubbed_spec.contains("metadata")) {
-    scrubbed_spec["metadata"].erase("attributes");
-    scrubbed_spec["metadata"].erase("statsV1");
+    if (scrubbed_spec["metadata"].contains("attributes")) {
+      scrubbed_spec["metadata"].erase("attributes");
+    }
+    if (scrubbed_spec["metadata"].contains("statsV1")) {
+      scrubbed_spec["metadata"].erase("statsV1");
+    }
+    if (scrubbed_spec["metadata"].contains("unitsV1")) {
+      scrubbed_spec["metadata"].erase("unitsV1");
+    }
   }
 
   std::shared_ptr<std::shared_ptr<UserAttributes>> attrs =
@@ -441,7 +454,7 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
     // It's important to use the store's kvstore or else we get a race condition
     // on "mkdir".
     return tensorstore::kvstore::Write(store.kvstore(), outpath,
-                                       absl::Cord(output_json.dump()));
+                                       absl::Cord(output_json.dump(4)));
   };
 
   // this is intended to handle the struct array where we "reopen" the store
@@ -584,19 +597,18 @@ Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
 
     // Create a new JSON object with "attributes" as the parent key
     ::nlohmann::json new_metadata;
-    new_metadata["attributes"] = updated_metadata;
-    new_metadata["attributes"]["variable_name"] = variable_name;
+    new_metadata = updated_metadata;
+    new_metadata["variable_name"] = variable_name;
 
-    if (new_metadata["attributes"].contains("_ARRAY_DIMENSIONS")) {
+    if (new_metadata.contains("_ARRAY_DIMENSIONS")) {
       // Move "_ARRAY_DIMENSIONS" to "dimension_names"
-      new_metadata["attributes"]["dimension_names"] =
-          new_metadata["attributes"]["_ARRAY_DIMENSIONS"];
-      new_metadata["attributes"].erase("_ARRAY_DIMENSIONS");
+      new_metadata["dimension_names"] = new_metadata["_ARRAY_DIMENSIONS"];
+      new_metadata.erase("_ARRAY_DIMENSIONS");
     }
 
-    if (new_metadata["attributes"].contains("dimension_names")) {
-      auto dimension_names = new_metadata["attributes"]["dimension_names"]
-                                 .get<std::vector<std::string>>();
+    if (new_metadata.contains("dimension_names")) {
+      auto dimension_names =
+          new_metadata["dimension_names"].get<std::vector<std::string>>();
       for (DimensionIndex i = 0; i < dimension_names.size(); ++i) {
         MDIO_ASSIGN_OR_RETURN(
             labeled_store,
@@ -607,33 +619,43 @@ Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
           absl::StrCat("Field not found in JSON: ", "metadata"));
     }
 
+    if (new_metadata.contains("attributes")) {
+      new_metadata["metadata"]["attributes"] = new_metadata["attributes"];
+      new_metadata.erase("attributes");
+    }
+    if (new_metadata.contains("statsV1")) {
+      new_metadata["metadata"]["statsV1"] = new_metadata["statsV1"];
+      new_metadata.erase("statsV1");
+    }
+    if (new_metadata.contains("unitsV1")) {
+      new_metadata["metadata"]["unitsV1"] = new_metadata["unitsV1"];
+      new_metadata.erase("unitsV1");
+    }
+
     if (!suppliedAttributes.is_null()) {
       // The supplied attributes contain some things that we do not serialize.
       // We need to remove them. This could cause confusion. If the user
       // specifies a different chunkGrid, it will not be used and should
       // actually fail here.
       nlohmann::json correctedSuppliedAttrs = suppliedAttributes;
-      if (correctedSuppliedAttrs["attributes"].contains("metadata")) {
-        correctedSuppliedAttrs["attributes"]["metadata"].erase("chunkGrid");
-        for (auto& item :
-             correctedSuppliedAttrs["attributes"]["metadata"].items()) {
-          correctedSuppliedAttrs["attributes"][item.key()] =
-              std::move(item.value());
+      if (correctedSuppliedAttrs.contains("attributes")) {
+        if (correctedSuppliedAttrs["attributes"].contains("metadata")) {
+          if (correctedSuppliedAttrs["attributes"]["metadata"].contains(
+                  "chunkGrid")) {
+            correctedSuppliedAttrs["attributes"]["metadata"].erase("chunkGrid");
+          }
         }
-        correctedSuppliedAttrs["attributes"].erase("metadata");
+        auto savedAttrs = correctedSuppliedAttrs["attributes"];
+        correctedSuppliedAttrs.erase("attributes");
+        for (auto& item : savedAttrs.items()) {
+          correctedSuppliedAttrs[item.key()] = std::move(item.value());
+        }
       }
       // BFS to make sure supplied attributes match stored attributes
       nlohmann::json searchableMetadata = new_metadata;
-      searchableMetadata["attributes"].erase(
-          "variable_name");  // Since we don't actually want to have to specify
-                             // the variable name
-      if (searchableMetadata["attributes"].contains("metadata")) {
-        for (auto& item :
-             searchableMetadata["attributes"]["metadata"].items()) {
-          searchableMetadata["attributes"][item.key()] =
-              std::move(item.value());
-        }
-        searchableMetadata["attributes"].erase("metadata");
+      if (searchableMetadata.contains("variable_name")) {
+        // Since we don't actually want to have to specify the variable name
+        searchableMetadata.erase("variable_name");
       }
       std::queue<std::pair<nlohmann::json, nlohmann::json>> queue;
       queue.push({searchableMetadata, correctedSuppliedAttrs});
@@ -652,7 +674,7 @@ Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
           } else if (value != currentAttributes[key]) {
             return absl::InvalidArgumentError(absl::StrCat(
                 "Conflicting values for field: ", key, ". ", "Expected: ",
-                value.dump(), ", but got: ", currentAttributes[key].dump()));
+                value.dump(4), ", but got: ", currentAttributes[key].dump(4)));
           }
         }
       }
@@ -1235,21 +1257,25 @@ class Variable {
       output_json.erase("dimension_names");
       if (output_json.contains("long_name")) {
         output_json["attributes"]["long_name"] = output_json["long_name"];
+        output_json.erase("long_name");
+      }
+      if (output_json.contains("coordinates")) {
+        output_json["attributes"]["coordinates"] = output_json["coordinates"];
+        output_json.erase("coordinates");
       }
       std::string outpath = "/.zattrs";
       if (isCloudStore) {
         outpath = ".zattrs";
       }
 
-      if (output_json["attributes"].contains("metadata")) {
-        auto metadata = output_json["attributes"]["metadata"];
-        output_json["attributes"].erase("metadata");
-        output_json["attributes"].merge_patch(metadata);
+      if (output_json.contains("metadata")) {
+        output_json["attributes"]["metadata"] = output_json["metadata"];
+        output_json.erase("metadata");
       }
 
       return tensorstore::kvstore::Write(
           store.kvstore(), outpath,
-          absl::Cord(output_json["attributes"].dump()));
+          absl::Cord(output_json["attributes"].dump(4)));
     };
 
     bool isCloudStore = false;
@@ -1336,7 +1362,10 @@ class Variable {
     auto attrs = GetAttributes();
     // Check for not being a `nlohmann::json::object()`
     if (attrs.is_object() && !attrs.empty()) {
-      ret["attributes"]["metadata"] = attrs;
+      if (!ret.contains("metadata")) {
+        ret["metadata"] = nlohmann::json::object();
+      }
+      ret["metadata"].merge_patch(attrs);
     }
     return ret;
   }

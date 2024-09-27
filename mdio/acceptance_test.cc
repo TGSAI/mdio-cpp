@@ -461,20 +461,20 @@ TEST(Variable, optionalAttrs) {
   ASSERT_TRUE(f8.status().ok()) << f8.status();
   ASSERT_TRUE(voided.status().ok()) << voided.status();
 
-  EXPECT_EQ(i2.value().getMetadata()["attributes"]["foo"], "bar")
-      << i2.value().getMetadata();
-  EXPECT_EQ(i4.value().getMetadata()["attributes"]["foo"], "bar")
-      << i4.value().getMetadata();
-  EXPECT_EQ(i8.value().getMetadata()["attributes"]["foo"], "bar")
-      << i8.value().getMetadata();
-  EXPECT_EQ(f2.value().getMetadata()["attributes"]["foo"], "bar")
-      << f2.value().getMetadata();
-  EXPECT_EQ(f4.value().getMetadata()["attributes"]["foo"], "bar")
-      << f4.value().getMetadata();
-  EXPECT_EQ(f8.value().getMetadata()["attributes"]["foo"], "bar")
-      << f8.value().getMetadata();
-  EXPECT_EQ(voided.value().getMetadata()["attributes"]["foo"], "bar")
-      << voided.value().getMetadata();
+  EXPECT_EQ(i2.value().GetAttributes()["attributes"]["foo"], "bar")
+      << i2.value().GetAttributes();
+  EXPECT_EQ(i4.value().GetAttributes()["attributes"]["foo"], "bar")
+      << i4.value().GetAttributes();
+  EXPECT_EQ(i8.value().GetAttributes()["attributes"]["foo"], "bar")
+      << i8.value().GetAttributes();
+  EXPECT_EQ(f2.value().GetAttributes()["attributes"]["foo"], "bar")
+      << f2.value().GetAttributes();
+  EXPECT_EQ(f4.value().GetAttributes()["attributes"]["foo"], "bar")
+      << f4.value().GetAttributes();
+  EXPECT_EQ(f8.value().GetAttributes()["attributes"]["foo"], "bar")
+      << f8.value().GetAttributes();
+  EXPECT_EQ(voided.value().GetAttributes()["attributes"]["foo"], "bar")
+      << voided.value().GetAttributes();
 }
 
 TEST(Variable, namedDimensions) {
@@ -964,7 +964,7 @@ TEST(VariableData, longName) {
 
 TEST(VariableData, optionalAttrs) {
   auto variableData = getVariable().Read().value();
-  EXPECT_EQ(variableData.metadata["attributes"]["foo"], "bar")
+  EXPECT_EQ(variableData.metadata["metadata"]["attributes"]["foo"], "bar")
       << variableData.metadata.dump(4);
 }
 

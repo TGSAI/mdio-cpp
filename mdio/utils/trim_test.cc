@@ -234,4 +234,25 @@ TEST(TrimDataset, oneSliceData) {
   }
 }
 
+TEST(TrimDataset, metadataConsistency) {
+  ASSERT_TRUE(SETUP(kTestPath).status().ok());
+  nlohmann::json imageData;
+  {
+    auto dsFut = mdio::Dataset::Open(kTestPath, mdio::constants::kOpen);
+    ASSERT_TRUE(dsFut.status().ok()) << dsFut.status();
+    auto ds = dsFut.value();
+    auto imageVarRes = ds.variables.at("image");
+    ASSERT_TRUE(imageVarRes.status().ok()) << imageVarRes.status();
+    imageData = imageVarRes.value().getMetadata();
+  }
+  mdio::RangeDescriptor<mdio::Index> slice = {"inline", 0, 128, 1};
+  auto res = mdio::utils::TrimDataset(kTestPath, true, slice);
+  ASSERT_TRUE(res.status().ok()) << res.status();
+  auto dsRes = mdio::Dataset::Open(kTestPath, mdio::constants::kOpen);
+  ASSERT_TRUE(dsRes.status().ok()) << dsRes.status();
+  auto imageVarRes = dsRes.value().variables.at("image");
+  ASSERT_TRUE(imageVarRes.status().ok()) << imageVarRes.status();
+  EXPECT_EQ(imageVarRes.value().getMetadata(), imageData);
+}
+
 }  // namespace
