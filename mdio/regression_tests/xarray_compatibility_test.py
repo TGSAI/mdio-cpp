@@ -1,6 +1,10 @@
 import argparse
 import sys
-import xarray as xr
+try:
+    import xarray as xr
+except ImportError:
+    print("Failed to import xarray.")
+    sys.exit(0xfd) # 64768
 
 
 def test_xarray_dataset(file_path, consolidated_metadata):

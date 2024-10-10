@@ -566,7 +566,7 @@ TEST(Variable, sliceByDimIdx) {
       << voidedSlice.value().dimensions();
 }
 
-TEST(Variable, xarrayCompatibility) {
+TEST(Variable, zarrCompatibility) {
   const char* basePath = std::getenv("PROJECT_BASE_PATH");
   if (!basePath) {
     std::cout << "PROJECT_BASE_PATH environment variable not set. Expecting to "
@@ -1663,6 +1663,10 @@ TEST(Dataset, xarrayCompatible) {
   std::string datasetPath = "./zarrs/acceptance";
   std::string command = "python3 " + srcPath + " " + datasetPath + " False";
   int status = system(command.c_str());
+  if (status == 0xfd00) {  // 0xfd from Python is 0xfd00 in C++
+    GTEST_SKIP()
+        << "Xarray compatibility skipped due to import error for xarray";
+  }
   ASSERT_TRUE(status == 0)
       << "xarray compatibility test failed without consolidated "
          "metadata\n\tThere was some expected output above...";
