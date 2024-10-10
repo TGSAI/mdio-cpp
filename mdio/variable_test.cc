@@ -361,6 +361,15 @@ TEST(Variable, open) {
   std::filesystem::remove_all("name");
 }
 
+TEST(Variable, rank) {
+  auto variable =
+      mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean);
+  ASSERT_TRUE(variable.status().ok()) << variable.status();
+  auto rank = variable.value().rank();
+  EXPECT_EQ(rank, 2);
+  std::filesystem::remove_all("name");
+}
+
 TEST(Variable, openMetadata) {
   auto json = json_good["metadata"];
 
@@ -1046,6 +1055,19 @@ TEST(VariableData, testConstruction) {
   std::stringstream ss;
   ss << variableDataObject.value();
   EXPECT_FALSE(ss.fail());
+
+  std::filesystem::remove_all("name");
+}
+
+TEST(VariableData, rank) {
+  auto variableFuture =
+      mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean);
+  ASSERT_TRUE(variableFuture.status().ok()) << variableFuture.status();
+  auto variableObject = variableFuture.value();
+  auto variableDataFuture = variableObject.Read();
+  ASSERT_TRUE(variableDataFuture.status().ok()) << variableDataFuture.status();
+  auto variableDataObject = variableDataFuture.result();
+  EXPECT_EQ(variableDataObject.value().rank(), 2);
 
   std::filesystem::remove_all("name");
 }

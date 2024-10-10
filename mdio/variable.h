@@ -875,6 +875,12 @@ class Variable {
   IndexDomainView<R> dimensions() const { return store.domain(); }
 
   /**
+   * @brief Gets the rank of the variable.
+   * @return std::size_t The rank of the variable.
+   */
+  std::size_t rank() const { return store.rank(); }
+
+  /**
    * @brief Returns the number of samples in the variable.
    * @return Index The number of samples in the variable.
    */
@@ -1686,6 +1692,12 @@ struct VariableData {
    * @return mdio::IndexDomainView<R> The dimensions of the variable.
    */
   IndexDomainView<R> dimensions() const { return data.domain; }
+
+  /**
+   * @brief Gets the rank of the VariableData
+   * @return std::size_t The rank of the VariableData
+   */
+  std::size_t rank() const { return data.data.rank(); }
 
   /**
    * @brief Returns the number of samples in the variable.
