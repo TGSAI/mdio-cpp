@@ -14,7 +14,11 @@
 
 import argparse
 import sys
-import zarr
+try:
+    import zarr
+except ImportError:
+    print("Failed to import zarr.")
+    sys.exit(0xfd)
 
 
 def test_zarr_dataset(file_path):

@@ -35,6 +35,7 @@ Welcome to **MDIO** - a descriptive format for energy data that is intended to r
 
 ## Optional tools (Integration)
 - Python module xarray version 2024.6.0 *or better*
+- Python module zarr version 2.18.2 *or better*
 
 # Getting Started
 
