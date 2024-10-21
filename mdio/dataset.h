@@ -1097,69 +1097,67 @@ class Dataset {
     auto all_done_future = tensorstore::WaitAllFuture(futures);
 
     auto pair = tensorstore::PromiseFuturePair<Dataset>::Make();
-    all_done_future.ExecuteWhenReady(
-        [promise = std::move(pair.promise), variables = std::move(variables),
-         metadata](tensorstore::ReadyFuture<void> readyFut) {
-          mdio::VariableCollection collection;
-          mdio::coordinate_map coords;
-          std::unordered_map<std::string, Index> shape_size;
+    all_done_future.ExecuteWhenReady([promise = std::move(pair.promise),
+                                      variables = std::move(variables),
+                                      metadata](tensorstore::ReadyFuture<void>
+                                                    readyFut) {
+      mdio::VariableCollection collection;
+      mdio::coordinate_map coords;
+      std::unordered_map<std::string, Index> shape_size;
 
-          for (const auto& fvar : variables) {
-            // we should have waited for this to be ready so it's not blocking
-            // ...
-            auto _var = fvar.result();
-            if (!_var.ok()) {
-              promise.SetResult(_var.status());
-              continue;
-            }
-            auto var = _var.value();
+      for (const auto& fvar : variables) {
+        // we should have waited for this to be ready so it's not blocking
+        // ...
+        auto _var = fvar.result();
+        if (!_var.ok()) {
+          promise.SetResult(_var.status());
+          continue;
+        }
+        auto var = _var.value();
 
-            collection.add(var.get_variable_name(), std::move(var));
-            // update coordinates if any:
-            auto meta = var.getMetadata();
-            if (meta.contains("coordinates")) {
-              // Because of how Variable is set up, we need to break down a
-              // space delimited string to the vector
-              std::string coords_str = meta["coordinates"].get<std::string>();
-              std::vector<std::string> coords_vec =
-                  absl::StrSplit(coords_str, ' ');
-              coords[var.get_variable_name()] = coords_vec;
-            }
+        collection.add(var.get_variable_name(), std::move(var));
+        // update coordinates if any:
+        auto meta = var.getMetadata();
+        if (meta.contains("coordinates")) {
+          // Because of how Variable is set up, we need to break down a
+          // space delimited string to the vector
+          std::string coords_str = meta["coordinates"].get<std::string>();
+          std::vector<std::string> coords_vec = absl::StrSplit(coords_str, ' ');
+          coords[var.get_variable_name()] = coords_vec;
+        }
 
-            auto domain = var.dimensions();
-            auto shape = domain.shape().cbegin();
-            for (const auto& label : domain.labels()) {
-              // FIXME check that if exists shape is the same ...
-              shape_size[label] = *shape;
-              ++shape;
-            }
-          }
+        auto domain = var.dimensions();
+        auto shape = domain.shape().cbegin();
+        for (const auto& label : domain.labels()) {
+          // FIXME check that if exists shape is the same ...
+          shape_size[label] = *shape;
+          ++shape;
+        }
+      }
 
-          std::vector<std::string> keys;
-          std::vector<Index> values;
+      std::vector<std::string> keys;
+      std::vector<Index> values;
 
-          keys.reserve(shape_size.size());
-          values.reserve(shape_size.size());
-          for (const auto& pair : shape_size) {
-            keys.push_back(std::move(pair.first));
-            values.push_back(pair.second);
-          }
+      keys.reserve(shape_size.size());
+      values.reserve(shape_size.size());
+      for (const auto& pair : shape_size) {
+        keys.push_back(std::move(pair.first));
+        values.push_back(pair.second);
+      }
 
-          auto dataset_domain =
-              tensorstore::IndexDomainBuilder<>(shape_size.size())
-                  .shape(values)
-                  .labels(keys)
-                  .Finalize();
+      auto dataset_domain = tensorstore::IndexDomainBuilder<>(shape_size.size())
+                                .shape(values)
+                                .labels(keys)
+                                .Finalize();
 
-          if (!dataset_domain.ok()) {
-            promise.SetResult(dataset_domain.status());
-            return;
-          }
+      if (!dataset_domain.ok()) {
+        promise.SetResult(dataset_domain.status());
+        return;
+      }
 
-          Dataset new_dataset{metadata, collection, coords,
-                              dataset_domain.value()};
-          promise.SetResult(std::move(new_dataset));
-        });
+      Dataset new_dataset{metadata, collection, coords, dataset_domain.value()};
+      promise.SetResult(std::move(new_dataset));
+    });
     return pair.future;
   }
 
@@ -1174,8 +1172,10 @@ class Dataset {
    * @return An `mdio::Future` if the selection was valid and successful, or an
    * error if the selection was invalid.
    */
-  Future<Variable<>> SelectField(const std::string variableName,
-                                 const std::string fieldName) {
+  template <typename T = void, DimensionIndex R = dynamic_rank,
+            ReadWriteMode M = ReadWriteMode::dynamic>
+  Future<Variable<T, R, M>> SelectField(const std::string variableName,
+                                        const std::string fieldName) {
     // Ensure that the variable exists in the Dataset
     if (!variables.contains_key(variableName)) {
       return absl::Status(
@@ -1184,11 +1184,11 @@ class Dataset {
     }
 
     // Grab the Variable from the Dataset
-    auto varRes = variables.get(variableName);
-    if (!varRes.status().ok()) {
-      return varRes.status();
-    }
-    mdio::Variable var = varRes.value();
+    MDIO_ASSIGN_OR_RETURN(auto var, variables.at(variableName));
+    // Preserve the intervals so it can be re-sliced to the same dimensions
+    MDIO_ASSIGN_OR_RETURN(auto intervals, var.get_intervals());
+    intervals.pop_back();  // Remove the byte dimension (Doesn't matter if it
+                           // doesn't exist)
 
     // Ensure that the Variable is of dtype structarray
     auto spec = var.spec();
@@ -1258,18 +1258,33 @@ class Dataset {
       base["kvstore"]["path"] = cloudPath;
     }
 
-    auto fieldedVar = mdio::Variable<>::Open(base, constants::kOpen);
+    auto fieldedVar = mdio::Variable<T, R, M>::Open(base, constants::kOpen);
+    // mdio::Future<mdio::Variable<T, R, M>> fieldedVar = mdio::Variable<T, R,
+    // M>::Open(base, constants::kOpen);
 
-    auto pair = tensorstore::PromiseFuturePair<mdio::Variable<>>::Make();
+    auto pair = tensorstore::PromiseFuturePair<mdio::Variable<T, R, M>>::Make();
     fieldedVar.ExecuteWhenReady(
-        [this, promise = pair.promise,
-         variableName](tensorstore::ReadyFuture<mdio::Variable<>> readyFut) {
+        [this, promise = pair.promise, variableName, intervals](
+            tensorstore::ReadyFuture<mdio::Variable<T, R, M>> readyFut) {
           auto ready_result = readyFut.result();
           if (!ready_result.ok()) {
             promise.SetResult(ready_result.status());
           } else {
-            this->variables.add(variableName, ready_result.value());
-            promise.SetResult(ready_result);
+            // Re-slice the Variable to the same dimensions as the original
+            std::vector<mdio::RangeDescriptor<Index>> slices;
+            slices.reserve(intervals.size() - 1);
+            for (const auto& interval : intervals) {
+              slices.emplace_back(mdio::RangeDescriptor<Index>(
+                  {interval.label, interval.inclusive_min,
+                   interval.exclusive_max, 1}));
+            }
+            auto slicedVarRes = ready_result.value().slice(slices);
+            if (!slicedVarRes.status().ok()) {
+              promise.SetResult(slicedVarRes.status());
+            } else {
+              this->variables.add(variableName, ready_result.value());
+              promise.SetResult(slicedVarRes);
+            }
           }
         });
     return pair.future;
