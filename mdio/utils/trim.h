@@ -67,34 +67,18 @@ Future<void> TrimDataset(std::string dataset_path,
     MDIO_ASSIGN_OR_RETURN(auto var, ds.variables.at(varIdentifier))
     var.set_metadata_publish_flag(true);
 
-    if (var.dimensions().labels().back() == "") {
-      auto spec = var.spec();
-      if (!spec.status().ok()) {
-        // Something went wrong with Tensorstore retrieving the spec
-        return spec.status();
-      }
-      auto specJsonResult = spec.value().ToJson(IncludeDefaults{});
-      if (!specJsonResult.status().ok()) {
-        return specJsonResult.status();
-      }
-      // This will fall over if the first dtype is itself structured data
-      nlohmann::json specJson =
-          specJsonResult.value()["metadata"]["dtype"][0][0];
-      std::string field = specJson.get<std::string>();
-      // If the variable is structured data we will pick the first dimension
-      // arbitrarially
-      auto selection = ds.SelectField(varIdentifier, field);
-      if (!selection.status().ok()) {
-        return selection.status();
-      }
-      MDIO_ASSIGN_OR_RETURN(var, ds.variables.at(varIdentifier))
-    }
+    bool wasStruct = var.dimensions().labels().back() == "";
 
     auto varStore = var.get_store();
     std::vector<tensorstore::Index> implicitDims;
     std::vector<tensorstore::Index> newShape;
 
-    for (size_t i = 0; i < var.dimensions().shape().size(); i++) {
+    auto dims = var.dimensions().shape().size();
+    if (wasStruct) {
+      --dims;
+    }
+
+    for (size_t i = 0; i < dims; i++) {
       implicitDims.push_back(tensorstore::kImplicit);
       if (shapeDescriptors.count(var.dimensions().labels()[i]) > 0) {
         newShape.push_back(shapeDescriptors[var.dimensions().labels()[i]]);
@@ -103,9 +87,16 @@ Future<void> TrimDataset(std::string dataset_path,
       }
     }
 
+    if (wasStruct) {
+      implicitDims.push_back(tensorstore::kImplicit);
+      newShape.push_back(tensorstore::kImplicit);
+    }
+
     tensorstore::ResizeOptions resizeOptions;
     if (delete_sliced_out_chunks) {
       resizeOptions.mode = tensorstore::ResizeMode::resize_tied_bounds;
+    } else if (wasStruct) {
+      resizeOptions.mode = tensorstore::ResizeMode::resize_metadata_only;
     } else {
       resizeOptions.mode = tensorstore::ResizeMode::resize_metadata_only;
     }
