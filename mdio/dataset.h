@@ -1174,8 +1174,10 @@ class Dataset {
    * @return An `mdio::Future` if the selection was valid and successful, or an
    * error if the selection was invalid.
    */
-  Future<Variable<>> SelectField(const std::string variableName,
-                                 const std::string fieldName) {
+  template <typename T = void, DimensionIndex R = dynamic_rank,
+            ReadWriteMode M = ReadWriteMode::dynamic>
+  Future<Variable<T, R, M>> SelectField(const std::string& variableName,
+                                        const std::string& fieldName) {
     // Ensure that the variable exists in the Dataset
     if (!variables.contains_key(variableName)) {
       return absl::Status(
@@ -1184,11 +1186,11 @@ class Dataset {
     }
 
     // Grab the Variable from the Dataset
-    auto varRes = variables.get(variableName);
-    if (!varRes.status().ok()) {
-      return varRes.status();
-    }
-    mdio::Variable var = varRes.value();
+    MDIO_ASSIGN_OR_RETURN(auto var, variables.at(variableName));
+    // Preserve the intervals so it can be re-sliced to the same dimensions
+    MDIO_ASSIGN_OR_RETURN(auto intervals, var.get_intervals());
+    intervals.pop_back();  // Remove the byte dimension (Doesn't matter if it
+                           // doesn't exist)
 
     // Ensure that the Variable is of dtype structarray
     auto spec = var.spec();
@@ -1248,6 +1250,12 @@ class Dataset {
     }
     base["kvstore"]["driver"] = specJson["kvstore"]["driver"];
     base["kvstore"]["path"] = specJson["kvstore"]["path"];
+    // Remove trailing slashes. This causes issue #130
+    while (base["kvstore"]["path"].get<std::string>().back() == '/') {
+      base["kvstore"]["path"] =
+          base["kvstore"]["path"].get<std::string>().substr(
+              0, base["kvstore"]["path"].get<std::string>().size() - 1);
+    }
 
     // Handle cloud stores
     if (specJson["kvstore"].contains("bucket")) {
@@ -1258,18 +1266,31 @@ class Dataset {
       base["kvstore"]["path"] = cloudPath;
     }
 
-    auto fieldedVar = mdio::Variable<>::Open(base, constants::kOpen);
+    auto fieldedVar = mdio::Variable<T, R, M>::Open(base, constants::kOpen);
 
-    auto pair = tensorstore::PromiseFuturePair<mdio::Variable<>>::Make();
+    auto pair = tensorstore::PromiseFuturePair<mdio::Variable<T, R, M>>::Make();
     fieldedVar.ExecuteWhenReady(
-        [this, promise = pair.promise,
-         variableName](tensorstore::ReadyFuture<mdio::Variable<>> readyFut) {
+        [this, promise = pair.promise, variableName, intervals](
+            tensorstore::ReadyFuture<mdio::Variable<T, R, M>> readyFut) {
           auto ready_result = readyFut.result();
           if (!ready_result.ok()) {
             promise.SetResult(ready_result.status());
           } else {
-            this->variables.add(variableName, ready_result.value());
-            promise.SetResult(ready_result);
+            // Re-slice the Variable to the same dimensions as the original
+            std::vector<mdio::RangeDescriptor<Index>> slices;
+            slices.reserve(intervals.size() - 1);
+            for (const auto& interval : intervals) {
+              slices.emplace_back(mdio::RangeDescriptor<Index>(
+                  {interval.label, interval.inclusive_min,
+                   interval.exclusive_max, 1}));
+            }
+            auto slicedVarRes = ready_result.value().slice(slices);
+            if (!slicedVarRes.status().ok()) {
+              promise.SetResult(slicedVarRes.status());
+            } else {
+              this->variables.add(variableName, ready_result.value());
+              promise.SetResult(slicedVarRes);
+            }
           }
         });
     return pair.future;

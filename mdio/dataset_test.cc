@@ -656,6 +656,72 @@ TEST(Dataset, selRepeatedRangeStop) {
   ASSERT_FALSE(sliceRes.status().ok());
 }
 
+TEST(Dataset, selectField) {
+  auto json_var = GetToyExample();
+
+  auto dataset = mdio::Dataset::from_json(json_var, "zarrs/acceptance",
+                                          mdio::constants::kCreateClean);
+
+  ASSERT_TRUE(dataset.status().ok()) << dataset.status();
+  auto ds = dataset.value();
+
+  mdio::RangeDescriptor<mdio::Index> desc1 = {"inline", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> desc2 = {"crossline", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> desc3 = {"depth", 0, 5, 1};
+
+  auto sliceRes = ds.isel(desc1, desc2, desc3);
+  ASSERT_TRUE(sliceRes.status().ok()) << sliceRes.status();
+  auto slicedDs = sliceRes.value();
+
+  auto structImageHeadersRes =
+      slicedDs.variables.get<mdio::dtypes::byte_t>("image_headers");
+  ASSERT_TRUE(structImageHeadersRes.status().ok())
+      << structImageHeadersRes.status();
+  auto structImageHeaders = structImageHeadersRes.value();
+  auto asdf = structImageHeaders.get_intervals();
+  ASSERT_TRUE(asdf.status().ok()) << asdf.status();
+  auto structIntervals = asdf.value();
+  ASSERT_EQ(structIntervals.size(), 3);
+
+  auto selectedVarFut =
+      slicedDs.SelectField<mdio::dtypes::int32_t>("image_headers", "cdp-x");
+  ASSERT_TRUE(selectedVarFut.status().ok()) << selectedVarFut.status();
+
+  auto typedInervalsRes = selectedVarFut.value().get_intervals();
+  ASSERT_TRUE(typedInervalsRes.status().ok()) << typedInervalsRes.status();
+  auto typedIntervals = typedInervalsRes.value();
+  ASSERT_EQ(typedIntervals.size(), 2);
+
+  EXPECT_EQ(typedIntervals[0].label, structIntervals[0].label)
+      << "Dimension 0 labels did not match";
+  EXPECT_EQ(typedIntervals[1].label, structIntervals[1].label)
+      << "Dimension 1 labels did not match";
+  EXPECT_EQ(typedIntervals[0].inclusive_min, structIntervals[0].inclusive_min)
+      << "Dimension 0 min did not match";
+  EXPECT_EQ(typedIntervals[1].inclusive_min, structIntervals[1].inclusive_min)
+      << "Dimension 1 min did not match";
+  EXPECT_EQ(typedIntervals[0].exclusive_max, structIntervals[0].exclusive_max)
+      << "Dimension 0 max did not match";
+  EXPECT_EQ(typedIntervals[1].exclusive_max, structIntervals[1].exclusive_max)
+      << "Dimension 1 max did not match";
+}
+
+TEST(Dataset, selectFieldName) {
+  auto json_var = GetToyExample();
+
+  auto dataset = mdio::Dataset::from_json(json_var, "zarrs/acceptance",
+                                          mdio::constants::kCreateClean);
+
+  ASSERT_TRUE(dataset.status().ok()) << dataset.status();
+  auto ds = dataset.value();
+
+  auto selectedVarFut =
+      ds.SelectField<mdio::dtypes::int32_t>("image_headers", "cdp-x");
+  ASSERT_TRUE(selectedVarFut.status().ok()) << selectedVarFut.status();
+  EXPECT_EQ(selectedVarFut.value().get_variable_name(), "image_headers")
+      << "Expected selected variable to be named image_headers";
+}
+
 TEST(Dataset, fromConsolidatedMeta) {
   auto json_vars = GetToyExample();
 
