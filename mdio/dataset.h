@@ -1176,8 +1176,8 @@ class Dataset {
    */
   template <typename T = void, DimensionIndex R = dynamic_rank,
             ReadWriteMode M = ReadWriteMode::dynamic>
-  Future<Variable<T, R, M>> SelectField(const std::string variableName,
-                                        const std::string fieldName) {
+  Future<Variable<T, R, M>> SelectField(const std::string& variableName,
+                                        const std::string& fieldName) {
     // Ensure that the variable exists in the Dataset
     if (!variables.contains_key(variableName)) {
       return absl::Status(
