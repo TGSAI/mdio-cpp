@@ -16,6 +16,7 @@ ARG POETRY_VERSION=1.2.2
 ARG CMAKE_MAJOR=3.24
 ARG CMAKE_VERSION=3.24.2
 ARG HYPERFINE=1.15.0
+ARG CPPLINT_VERSION=1.6.1
 
 # avoid a torch.distributed error
 # TODO: figure out optimal value
@@ -66,7 +67,7 @@ ENV PATH="/venv/bin:$PATH"
 # FIXME - pip is out of date, find a better way
 RUN pip install --upgrade pip
 
-RUN pip install wheel yapf cpplint zarr xarray
+RUN pip install wheel yapf cpplint==${CPPLINT_VERSION} zarr xarray
 
 RUN pip install \
   "poetry==$POETRY_VERSION" \
