@@ -28,7 +28,7 @@ numpy = "<2"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.0"
-black = "^23.0"
+black = "^24.3"
 mypy = "^1.5"
 isort = "^5.0"
 
