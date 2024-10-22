@@ -1250,6 +1250,11 @@ class Dataset {
     }
     base["kvstore"]["driver"] = specJson["kvstore"]["driver"];
     base["kvstore"]["path"] = specJson["kvstore"]["path"];
+    // Remove trailing slashes. This causes issue #130
+    while (base["kvstore"]["path"].get<std::string>().back() == '/') {
+      base["kvstore"]["path"] = base["kvstore"]["path"].get<std::string>().substr(
+          0, base["kvstore"]["path"].get<std::string>().size() - 1);
+    }
 
     // Handle cloud stores
     if (specJson["kvstore"].contains("bucket")) {
@@ -1261,8 +1266,6 @@ class Dataset {
     }
 
     auto fieldedVar = mdio::Variable<T, R, M>::Open(base, constants::kOpen);
-    // mdio::Future<mdio::Variable<T, R, M>> fieldedVar = mdio::Variable<T, R,
-    // M>::Open(base, constants::kOpen);
 
     auto pair = tensorstore::PromiseFuturePair<mdio::Variable<T, R, M>>::Make();
     fieldedVar.ExecuteWhenReady(
