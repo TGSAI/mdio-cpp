@@ -1252,8 +1252,9 @@ class Dataset {
     base["kvstore"]["path"] = specJson["kvstore"]["path"];
     // Remove trailing slashes. This causes issue #130
     while (base["kvstore"]["path"].get<std::string>().back() == '/') {
-      base["kvstore"]["path"] = base["kvstore"]["path"].get<std::string>().substr(
-          0, base["kvstore"]["path"].get<std::string>().size() - 1);
+      base["kvstore"]["path"] =
+          base["kvstore"]["path"].get<std::string>().substr(
+              0, base["kvstore"]["path"].get<std::string>().size() - 1);
     }
 
     // Handle cloud stores
