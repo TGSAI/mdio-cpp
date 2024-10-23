@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "mdio/dataset_validator.h"
+#include "mdio/impl.h"
 // #include "tensorstore/tensorstore.h"
 
 #include "absl/strings/escaping.h"
