@@ -607,6 +607,31 @@ TEST(Variable, simple) {
   }
 }
 
+TEST(Variable, maxSizeExceeded) {
+  nlohmann::json j = nlohmann::json::parse(manifest);
+  // Set all Variables to exceed the maximum size
+  j["variables"][0]["dimensions"][0]["size"] = 0x7fffffffffffffff;
+  j["variables"][0]["dimensions"][1]["size"] = 0x7fffffffffffffff;
+  j["variables"][1]["dimensions"][0]["size"] = 0x7fffffffffffffff;
+  j["variables"][2]["dimensions"][0]["size"] = 0x7fffffffffffffff;
+
+  auto res = Construct(j, "zarrs/simple_dataset");
+  ASSERT_FALSE(res.status().ok())
+      << "Construction succeeded despite exceeding maximum size";
+}
+
+TEST(Variable, maxSizeReached) {
+  nlohmann::json j = nlohmann::json::parse(manifest);
+  // Set all Variables to reach the maximum size
+  j["variables"][0]["dimensions"][0]["size"] = mdio::constants::kMaxSize;
+  j["variables"][0]["dimensions"][1]["size"] = mdio::constants::kMaxSize;
+  j["variables"][1]["dimensions"][0]["size"] = mdio::constants::kMaxSize;
+  j["variables"][2]["dimensions"][0]["size"] = mdio::constants::kMaxSize;
+
+  auto res = Construct(j, "zarrs/simple_dataset");
+  ASSERT_TRUE(res.status().ok()) << res.status();
+}
+
 TEST(Xarray, open) {
   nlohmann::json j = nlohmann::json::parse(manifest);
   auto res = Construct(j, "zarrs/simple_dataset");

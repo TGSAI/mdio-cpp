@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "mdio/dataset_validator.h"
+#include "mdio/impl.h"
 // #include "tensorstore/tensorstore.h"
 
 #include "absl/strings/escaping.h"
@@ -183,7 +184,7 @@ absl::Status transform_compressor(nlohmann::json& input /*NOLINT*/,
  */
 void transform_shape(
     nlohmann::json& input /*NOLINT*/, nlohmann::json& variable /*NOLINT*/,
-    std::unordered_map<std::string, int>& dimensionMap /*NOLINT*/) {
+    std::unordered_map<std::string, uint64_t>& dimensionMap /*NOLINT*/) {
   if (input["dimensions"][0].is_object()) {
     nlohmann::json shape = nlohmann::json::array();
     for (auto& dimension : input["dimensions"]) {
@@ -262,7 +263,7 @@ absl::Status transform_metadata(const std::string& path,
  */
 tensorstore::Result<nlohmann::json> from_json_to_spec(
     nlohmann::json& json /*NOLINT*/,
-    std::unordered_map<std::string, int>& dimensionMap /*NOLINT*/,
+    std::unordered_map<std::string, uint64_t>& dimensionMap /*NOLINT*/,
     const std::string& path) {
   nlohmann::json variableStub = R"(
         {
@@ -403,12 +404,18 @@ tensorstore::Result<nlohmann::json> from_json_to_spec(
  * @return A map of dimension names to sizes or error if the dimensions are not
  * consistently sized
  */
-tensorstore::Result<std::unordered_map<std::string, int>> get_dimensions(
+tensorstore::Result<std::unordered_map<std::string, uint64_t>> get_dimensions(
     nlohmann::json& spec /*NOLINT*/) {
-  std::unordered_map<std::string, int> dimensions;
+  std::unordered_map<std::string, uint64_t> dimensions;
   for (auto& variable : spec["variables"]) {
     if (variable["dimensions"][0].is_object()) {
       for (auto& dimension : variable["dimensions"]) {
+        if (dimension["size"].get<uint64_t>() > mdio::constants::kMaxSize) {
+          return absl::InvalidArgumentError(
+              "Dimension " + dimension["name"].dump() +
+              " exceeds maximum size of " +
+              std::to_string(mdio::constants::kMaxSize));
+        }
         if (dimensions.count(dimension["name"]) == 0) {
           dimensions[dimension["name"]] = dimension["size"];
         } else {
@@ -447,7 +454,7 @@ Construct(nlohmann::json& spec /*NOLINT*/, const std::string& path) {
     return dimensions.status();
   }
 
-  std::unordered_map<std::string, int> dimensionMap = dimensions.value();
+  std::unordered_map<std::string, uint64_t> dimensionMap = dimensions.value();
 
   std::vector<nlohmann::json> datasetSpec;
   for (auto& variable : spec["variables"]) {

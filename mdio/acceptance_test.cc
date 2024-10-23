@@ -14,6 +14,8 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include <cstdlib>
 #include <filesystem>
@@ -23,6 +25,58 @@
 #include "mdio/dataset_factory.h"
 
 namespace {
+
+constexpr char PYTHON_EXECUTABLE[] = "python3";  // Don't specify absolute path
+constexpr char PROJECT_BASE_PATH_ENV[] = "PROJECT_BASE_PATH";
+constexpr char DEFAULT_BASE_PATH[] = "../..";
+constexpr char ZARR_SCRIPT_RELATIVE_PATH[] =
+    "/mdio/regression_tests/zarr_compatibility.py";
+constexpr char XARRAY_SCRIPT_RELATIVE_PATH[] =
+    "/mdio/regression_tests/xarray_compatibility_test.py";
+constexpr char FILE_PATH_BASE[] = "./zarrs/acceptance/";
+constexpr int ERROR_CODE = EXIT_FAILURE;
+constexpr int SUCCESS_CODE = EXIT_SUCCESS;
+
+/**
+ * @brief Executes the Python regression tests
+ *
+ * @param scriptPath Which script to run, should be either
+ * ZARR_SCRIPT_RELATIVE_PATH or XARRAY_SCRIPT_RELATIVE_PATH
+ * @param arg The argument to pass to the script
+ * @return int The status code of the script execution
+ */
+int executePythonScript(const std::string& scriptPath,
+                        const std::vector<std::string>& args) {
+  // Ensure scriptPath and args are sanitized
+  if (scriptPath.empty() || args.empty()) {
+    std::cerr << "Error: scriptPath or args are empty." << std::endl;
+    return ERROR_CODE;
+  }
+
+  // Ensure the scriptPath is an absolute path or default base path
+  if (scriptPath[0] != '/' && scriptPath.find(DEFAULT_BASE_PATH) != 0) {
+    std::cerr
+        << "Error: PROJECT_BASE_PATH must be an absolute path or not be set."
+        << std::endl;
+    return ERROR_CODE;
+  }
+
+  // Prepare arguments for execvp
+  std::vector<const char*> execArgs = {PYTHON_EXECUTABLE, scriptPath.c_str()};
+  for (const auto& arg : args) {
+    execArgs.push_back(arg.c_str());
+  }
+  execArgs.push_back(nullptr);
+
+  // Execute the Python script
+  if (execvp(execArgs[0], const_cast<char* const*>(execArgs.data())) == -1) {
+    perror("execvp failed");
+    return ERROR_CODE;
+  }
+
+  return SUCCESS_CODE;  // This line will never be reached if execvp is
+                        // successful
+}
 
 namespace VariableTesting {
 
@@ -567,41 +621,63 @@ TEST(Variable, sliceByDimIdx) {
 }
 
 TEST(Variable, zarrCompatibility) {
-  const char* basePath = std::getenv("PROJECT_BASE_PATH");
+  const char* basePath = std::getenv(PROJECT_BASE_PATH_ENV);
   if (!basePath) {
     std::cout << "PROJECT_BASE_PATH environment variable not set. Expecting to "
                  "be in the 'build/mdio' directory."
               << std::endl;
-    basePath = "../..";
+    basePath = DEFAULT_BASE_PATH;
   }
 
-  std::string srcPath =
-      std::string(basePath) + "/mdio/regression_tests/zarr_compatibility.py";
-  std::string filePathBase = "./zarrs/acceptance/";
-  std::string command = "python3 " + srcPath + " " + filePathBase;
+  // Resolve the absolute path for the script
+  std::string srcPath = std::string(basePath) + ZARR_SCRIPT_RELATIVE_PATH;
 
-  std::string i2 = command + "i2";
-  std::string i4 = command + "i4";
-  std::string i8 = command + "i8";
-  std::string f2 = command + "f2";
-  std::string f4 = command + "f4";
-  std::string f8 = command + "f8";
-  std::string voided = command + "voided";
+  // Ensure that srcPath is valid and points to an existing file
+  if (access(srcPath.c_str(), F_OK) == -1) {
+    std::cerr << "Error: Python script not found at " << srcPath << std::endl;
+    FAIL() << "Script not found: " << srcPath;
+  }
 
-  EXPECT_TRUE(std::system(i2.c_str()) == 0)
-      << "Failed to read i2\n\tMore detailed error expected above...";
-  EXPECT_TRUE(std::system(i4.c_str()) == 0)
-      << "Failed to read i4\n\tMore detailed error expected above...";
-  EXPECT_TRUE(std::system(i8.c_str()) == 0)
-      << "Failed to read i8\n\tMore detailed error expected above...";
-  EXPECT_TRUE(std::system(f2.c_str()) == 0)
-      << "Failed to read f2\n\tMore detailed error expected above...";
-  EXPECT_TRUE(std::system(f4.c_str()) == 0)
-      << "Failed to read f4\n\tMore detailed error expected above...";
-  EXPECT_TRUE(std::system(f8.c_str()) == 0)
-      << "Failed to read f8\n\tMore detailed error expected above...";
-  EXPECT_TRUE(std::system(voided.c_str()) == 0)
-      << "Failed to read voided\n\tMore detailed error expected above...";
+  std::vector<std::string> args = {"i2", "i4", "i8",    "f2",
+                                   "f4", "f8", "voided"};
+  std::vector<pid_t> pids;
+
+  for (const auto& arg : args) {
+    pid_t pid = fork();
+    if (pid == 0) {
+      // Child process
+      int result = executePythonScript(srcPath, {FILE_PATH_BASE + arg});
+      if (result == 0xfd00) {  // 0xfd from Python is 0xfd00 in C++
+        GTEST_SKIP() << "Zarr compatibility skipped due to import error for "
+                        "required library";
+        exit(SUCCESS_CODE);
+      }
+      exit(result);
+    } else if (pid > 0) {
+      // Parent process
+      pids.push_back(pid);
+    } else {
+      // Fork failed
+      perror("fork failed");
+      FAIL() << "fork failed";
+    }
+  }
+
+  // Wait for all child processes
+  for (pid_t pid : pids) {
+    int status;
+    if (waitpid(pid, &status, 0) == -1) {
+      perror("waitpid failed");
+      FAIL() << "waitpid failed";
+    }
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0xfd00) {
+      GTEST_SKIP() << "Zarr compatibility skipped due to import error for "
+                      "required library";
+    }
+    EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+        << "Failed to read one of the arguments\n\tMore detailed error "
+           "expected above...";
+  }
 }
 
 TEST(Variable, dimensionUnits) {
@@ -1650,32 +1726,62 @@ TEST(Dataset, isel) {
 }
 
 TEST(Dataset, xarrayCompatible) {
-  const char* basePath = std::getenv("PROJECT_BASE_PATH");
+  const char* basePath = std::getenv(PROJECT_BASE_PATH_ENV);
   if (!basePath) {
     std::cout << "PROJECT_BASE_PATH environment variable not set. Expecting to "
                  "be in the 'build/mdio' directory."
               << std::endl;
-    basePath = "../..";
+    basePath = DEFAULT_BASE_PATH;
   }
 
-  std::string srcPath = std::string(basePath) +
-                        "/mdio/regression_tests/xarray_compatibility_test.py";
-  std::string datasetPath = "./zarrs/acceptance";
-  std::string command = "python3 " + srcPath + " " + datasetPath + " False";
-  int status = system(command.c_str());
-  if (status == 0xfd00) {  // 0xfd from Python is 0xfd00 in C++
-    GTEST_SKIP()
-        << "Xarray compatibility skipped due to import error for xarray";
-  }
-  ASSERT_TRUE(status == 0)
-      << "xarray compatibility test failed without consolidated "
-         "metadata\n\tThere was some expected output above...";
+  // Resolve the absolute path for the script
+  std::string srcPath = std::string(basePath) + XARRAY_SCRIPT_RELATIVE_PATH;
 
-  command = "python3 " + srcPath + " " + datasetPath + " True";
-  status = system(command.c_str());
-  ASSERT_TRUE(status == 0)
-      << "xarray compatibility test failed with consolidated metadata\n\tThere "
-         "was some expected output above...";
+  // Ensure that srcPath is valid and points to an existing file
+  if (access(srcPath.c_str(), F_OK) == -1) {
+    std::cerr << "Error: Python script not found at " << srcPath << std::endl;
+    FAIL() << "Script not found: " << srcPath;
+  }
+
+  std::vector<std::string> metadataOptions = {"False", "True"};
+  std::vector<pid_t> pids;
+
+  for (const auto& option : metadataOptions) {
+    pid_t pid = fork();
+    if (pid == 0) {
+      // Child process
+      int result = executePythonScript(srcPath, {FILE_PATH_BASE, option});
+      if (result == 0xfd00) {  // 0xfd from Python is 0xfd00 in C++
+        GTEST_SKIP()
+            << "Xarray compatibility skipped due to import error for xarray";
+        exit(SUCCESS_CODE);
+      }
+      exit(result);
+    } else if (pid > 0) {
+      // Parent process
+      pids.push_back(pid);
+    } else {
+      // Fork failed
+      perror("fork failed");
+      FAIL() << "fork failed";
+    }
+  }
+
+  // Wait for all child processes
+  for (pid_t pid : pids) {
+    int status;
+    if (waitpid(pid, &status, 0) == -1) {
+      perror("waitpid failed");
+      FAIL() << "waitpid failed";
+    }
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0xfd00) {
+      GTEST_SKIP()
+          << "Xarray compatibility skipped due to import error for xarray";
+    }
+    ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+        << "xarray compatibility test failed with one of the metadata "
+           "options\n\tThere was some expected output above...";
+  }
 }
 
 TEST(Dataset, listVars) {
