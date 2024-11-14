@@ -44,8 +44,6 @@ ABSL_FLAG(std::string, dataset_path,
           "s3://tgs-opendata-poseidon/full_stack_agc.mdio",
           "The path to the dataset");
 
-using Index = mdio::Index;
-
 // Make Run a template function for both the type and descriptors
 template <typename T, typename... Descriptors>
 absl::Status Run(const Descriptors... descriptors) {
