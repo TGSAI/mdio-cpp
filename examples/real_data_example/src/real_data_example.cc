@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include < mdio / mdio.h>
+#include <mdio/mdio.h>
 
 #include <indicators/cursor_control.hpp>
 #include <indicators/indeterminate_progress_bar.hpp>
