@@ -10,7 +10,7 @@ This tool allows users to extract specific slices from 3D seismic data stored in
 
 ## Prerequisites
 
-- C++ compiler with C++17 support
+- GCC 11 *or better* or Clang14 *or better*
 - MDIO library (for reading seismic data)
 - indicators library (for progress bars)
 - CMake (for building)

@@ -81,7 +81,7 @@ absl::Status Run(const Descriptors... descriptors) {
   return absl::OkStatus();
 }
 
-mdio::SliceDescriptor ParseRange(std::string_view range) {
+mdio::RangeDescriptor<> ParseRange(std::string_view range) {
   // Remove leading/trailing whitespace and braces
   if (range.empty()) {
     // FIXME - we need a better way to handle this

@@ -25,6 +25,8 @@
 
 #include "tensorstore/tensorstore.h"
 
+using Index = mdio::Index;
+
 std::string GetNumpyDtypeJson(const tensorstore::DataType& dtype) {
   using namespace tensorstore;
 
@@ -56,14 +58,14 @@ absl::Status WriteNumpy(const mdio::SharedArray<T, R, OriginKind>& accessor,
     return absl::InvalidArgumentError("Expected a 3D array");
   }
 
-  auto inline_inclusive_min = domain[0].inclusive_min();
-  auto inline_exclusive_max = domain[0].exclusive_max();
+  const Index inline_inclusive_min = domain[0].inclusive_min();
+  const Index inline_exclusive_max = domain[0].exclusive_max();
 
-  auto xline_inclusive_min = domain[1].inclusive_min();
-  auto xline_exclusive_max = domain[1].exclusive_max();
+  const Index xline_inclusive_min = domain[1].inclusive_min();
+  const Index xline_exclusive_max = domain[1].exclusive_max();
 
-  auto depth_inclusive_min = domain[2].inclusive_min();
-  auto depth_exclusive_max = domain[2].exclusive_max();
+  const Index depth_inclusive_min = domain[2].inclusive_min();
+  const Index depth_exclusive_max = domain[2].exclusive_max();
 
   const int width = inline_exclusive_max - inline_inclusive_min;
   const int height = xline_exclusive_max - xline_inclusive_min;
@@ -98,9 +100,9 @@ absl::Status WriteNumpy(const mdio::SharedArray<T, R, OriginKind>& accessor,
   outfile.write(header.str().c_str(), header_size);
 
   // Write the data
-  for (int il = inline_inclusive_min; il < inline_exclusive_max; ++il) {
-    for (int xl = xline_inclusive_min; xl < xline_exclusive_max; ++xl) {
-      for (int zl = depth_inclusive_min; zl < depth_exclusive_max; ++zl) {
+  for (Index il = inline_inclusive_min; il < inline_exclusive_max; ++il) {
+    for (Index xl = xline_inclusive_min; xl < xline_exclusive_max; ++xl) {
+      for (Index zl = depth_inclusive_min; zl < depth_exclusive_max; ++zl) {
         T value = accessor(il, xl, zl);
         outfile.write(reinterpret_cast<const char*>(&value), sizeof(T));
       }
