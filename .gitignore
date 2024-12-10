@@ -17,3 +17,9 @@ nano.save
 # Python
 *.pyc
 __pycache__/
+
+# Doxygen
+mdio/html/
+mdio/latex/
+mdio/xml/
+mdio/docs/
