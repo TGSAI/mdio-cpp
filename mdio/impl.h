@@ -17,6 +17,11 @@
 #include "tensorstore/index_space/dimension_identifier.h"
 #include "tensorstore/tensorstore.h"
 
+// Suppress warnings about typedefs in the documentation
+// These typedefs are all self-explanatory and shouldn't require explicit
+// documentation.
+/// @cond SUPPRESS_TYPEDEF_WARNINGS
+
 /**
  * MDIO makes extensive use of the Tensorstore library.
  * Ideally the user should never know that Tensorstore is being used under the
@@ -143,5 +148,7 @@ constexpr std::string_view kInertSliceKey =
 }  // namespace internal
 
 }  // namespace mdio
+
+/// @endcond
 
 #endif  // MDIO_IMPL_H_

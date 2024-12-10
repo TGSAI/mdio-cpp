@@ -24,6 +24,7 @@ RUN apt update \
   build-essential \
   clang-format \
   curl \
+  doxygen \
   gcc \
   git \
   libbz2-dev \

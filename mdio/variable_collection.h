@@ -31,9 +31,13 @@ namespace mdio {
  */
 class VariableCollection {
  public:
-  // Default constructor
+  /// @brief Default constructor
   VariableCollection() = default;
 
+  /**
+   * @brief Constructs a VariableCollection object.
+   * @param list The list of variables to add to the VariableCollection.
+   */
   VariableCollection(
       std::initializer_list<std::pair<const std::string, Variable<>>> list)
       : variables(list) {}

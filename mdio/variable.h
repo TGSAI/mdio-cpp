@@ -73,10 +73,16 @@ struct outer_type;
  */
 template <typename T = Index>
 struct RangeDescriptor {
+  /// @brief The type of the range indices
   using type = T;
+  /// @brief The dimension identifier (name or index) for this range
   DimensionIdentifier label;
+  /// @brief The start index or value of the slice
   T start;
+  /// @brief The stop index or value of the slice
   T stop;
+  /// @brief The step index or value of the slice. Currently only 1 is
+  /// supported.
   Index step = 1;
 };
 
@@ -102,12 +108,16 @@ struct RangeDescriptor {
  * `mdio::RangeDescriptor` struct.
  */
 struct SliceDescriptor {
+  /// @brief The dimension identifier (name or index) for this slice
   DimensionIdentifier label;
+  /// @brief The start index of the slice
   Index start;
+  /// @brief The stop index of the slice
   Index stop;
-  Index step;
+  /// @brief The step index of the slice. Currently only 1 is supported.
+  Index step = 1;
 
-  // Implicit conversion to RangeDescriptor
+  /// @brief Implicit conversion to RangeDescriptor
   operator RangeDescriptor<Index>() const { return {label, start, stop, step}; }
 };
 
@@ -120,8 +130,11 @@ struct SliceDescriptor {
  */
 template <typename T>
 struct ValueDescriptor {
+  /// @brief The type of the value
   using type = T;
+  /// @brief The dimension identifier (name or index) for this value
   DimensionIdentifier label;
+  /// @brief The value to match in the slice operation
   T value;
 };
 
@@ -134,8 +147,11 @@ struct ValueDescriptor {
  */
 template <typename T>
 struct ListDescriptor {
+  /// @brief The type of the values
   using type = T;
+  /// @brief The dimension identifier (name or index) for this list
   DimensionIdentifier label;
+  /// @brief The vector of values to slice
   std::vector<T> values;
 };
 
@@ -745,6 +761,14 @@ class Variable {
  public:
   Variable() = default;
 
+  /**
+   * @brief Constructs a Variable object.
+   * @param variableName The name of the variable.
+   * @param longName The long name of the variable.
+   * @param metdata The metadata of the variable.
+   * @param store The tensorstore of the variable.
+   * @param attributes The attributes of the variable.
+   */
   Variable(const std::string& variableName, const std::string& longName,
            const ::nlohmann::json& metdata,
            const tensorstore::TensorStore<T, R, M>& store,
@@ -759,6 +783,10 @@ class Variable {
 
   // Allows for conversion to compatible types (SourceElement), which should
   // always be possible to void.
+  /**
+   * @brief Constructs a Variable object from another compatible Variable.
+   * @param other The other Variable to copy from.
+   */
   template <typename SourceElement, DimensionIndex SourceRank,
             ReadWriteMode SourceMode>
   Variable(const Variable<SourceElement, SourceRank, SourceMode>& other)
@@ -769,6 +797,12 @@ class Variable {
         attributes(other.attributes),
         attributesAddress(other.get_attributes_address()) {}
 
+  /**
+   * @brief Outputs a string representation of the Variable.
+   * @param os The output stream to write to.
+   * @param obj The Variable object to represent.
+   * @return The output stream.
+   */
   friend std::ostream& operator<<(std::ostream& os, const Variable& obj) {
     os << obj.variableName << "\t" << obj.dimensions() << "\n";
     os << obj.store.dtype() << "\t" << obj.store.rank();
@@ -842,8 +876,6 @@ class Variable {
    * Writes the data from the source variable data to the target variable.
    * @param source A VariableData object with the data to write. This is the
    * in-memory representation of the data.
-   * @param target A Variable object with the target store. This is the
-   * non-volitile representation of the data.
    *
    * @details \b Usage
    * This provides an example of writing the data from the source variable data
@@ -963,6 +995,10 @@ class Variable {
     return desc;
   }
 
+  /// @cond IGNORE_RECURSIVE_TEMPLATES
+  // These internal usecase structs were generating potential recursive class
+  // relation warnings during documentation build, so the warnings are ignored
+  // here.
   template <size_t... I>
   struct index_sequence {};
 
@@ -971,6 +1007,7 @@ class Variable {
 
   template <size_t... I>
   struct make_index_sequence<0, I...> : index_sequence<I...> {};
+  /// @endcond
 
   template <std::size_t... I>
   Result<Variable> call_slice_with_vector_impl(
@@ -1173,6 +1210,10 @@ class Variable {
     return *this;
   }
 
+  /**
+   * @brief Retrieves the specification of the Variable.
+   * @return The specification of the Variable.
+   */
   Result<nlohmann::json> get_spec() const {
     auto spec_res = spec();
     if (!spec_res.ok()) {
@@ -1357,6 +1398,10 @@ class Variable {
     return res;
   }
 
+  /**
+   * @brief Retrieves the user attributes portion of the Variable's metadata.
+   * @return The user attributes portion of the Variable's metadata.
+   */
   nlohmann::json GetAttributes() const {
     // Dereference the outer std::shared_ptr to get the inner std::shared_ptr
     return (*attributes)->ToJson();
@@ -1421,15 +1466,27 @@ class Variable {
     }
   }
 
+  /**
+   * @brief A representation of an element of the domain of the Variable
+   */
   struct Interval {
+    /**
+     * @brief Outputs a string representation of the Interval.
+     * @param os The output stream to write to.
+     * @param obj The Interval object to represent.
+     * @return The output stream.
+     */
     friend std::ostream& operator<<(std::ostream& os, const Interval& obj) {
       os << obj.label.label() << ": [" << obj.inclusive_min << ", "
          << obj.exclusive_max << ")";
       return os;
     }
 
+    /// The identifier label of the dimension
     mdio::DimensionIdentifier label;
+    /// The inclusive minimum of the dimension
     mdio::Index inclusive_min;
+    /// The exclusive maximum of the dimension
     mdio::Index exclusive_max;
   };
 
@@ -1488,13 +1545,26 @@ class Variable {
   }
 
   // ===========================Member data getters===========================
+
+  /**
+   * @brief Retrieves the name of the Variable.
+   * @return The name of the Variable.
+   */
   const std::string& get_variable_name() const { return variableName; }
 
+  /**
+   * @brief Retrieves the long name of the Variable.
+   * @return The long name of the Variable.
+   */
   const std::string& get_long_name() const { return longName; }
 
+  /**
+   * @brief Retrieves the underlying tensorstore of the Variable.
+   * @return The tensorstore of the Variable.
+   */
   const tensorstore::TensorStore<T, R, M>& get_store() const { return store; }
 
-  // The data that should remain static, but MAY need to be updated.
+  /// The data that should remain static, but MAY need to be updated.
   std::shared_ptr<std::shared_ptr<UserAttributes>> attributes;
 
   /**
@@ -1564,10 +1634,16 @@ class Variable {
  */
 template <typename T, DimensionIndex R, ArrayOriginKind OriginKind>
 struct LabeledArray {
+  /// @brief The type of the values
   using shared_array = SharedArray<T, R, OriginKind>;
-
+  /// @brief The type of the values
   using const_shared_array = SharedArray<const T, R, OriginKind>;
 
+  /**
+   * @brief Constructs a LabeledArray object.
+   * @param dom The domain of the LabeledArray.
+   * @param arr The underlying data of the LabeledArray.
+   */
   LabeledArray(const tensorstore::IndexDomain<R>& dom, const shared_array& arr)
       : domain(dom), data(arr) {}
 
@@ -1640,13 +1716,17 @@ struct LabeledArray {
            tensorstore::Materialize(alloc);
   }
 
+  /**
+   * @brief Retrieves the underlying data of the LabeledArray.
+   * @return The underlying data of the LabeledArray.
+   */
   SharedArray<T, R, OriginKind> get_data() { return data; }
 
-  // the domain, can have labels
+  /// The domain, can have labels
   tensorstore::IndexDomain<R> domain;
-  // The actual array data in memory, Shared means that a reference counted
-  // shared_ptr will be copied to make a new array's.
-  // We own the information about the layout, this will be copied.
+  /// The actual array data in memory, Shared means that a reference counted
+  /// shared_ptr will be copied to make a new array's.
+  /// We own the information about the layout, this will be copied.
   SharedArray<T, R, OriginKind> data;
 };
 
@@ -1658,6 +1738,13 @@ struct LabeledArray {
  */
 template <typename T, DimensionIndex R, ArrayOriginKind OriginKind>
 struct VariableData {
+  /**
+   * @brief Constructs a VariableData object.
+   * @param variableName The name of the variable.
+   * @param longName The long name of the variable.
+   * @param metdata The metadata of the variable.
+   * @param data The underlying data of the variable.
+   */
   VariableData(const std::string& variableName, const std::string& longName,
                const ::nlohmann::json& metdata,
                const LabeledArray<T, R, OriginKind>& data)
@@ -1668,6 +1755,11 @@ struct VariableData {
 
   // Allows for conversion to compatible types (SourceElement), which should
   // always be possible to void.
+  /**
+   * @brief Constructs a VariableData object from another compatible
+   * VariableData.
+   * @param other The other VariableData to copy from.
+   */
   template <typename SourceElement, DimensionIndex SourceRank,
             ArrayOriginKind SourceOriginKind>
   VariableData(
@@ -1677,12 +1769,19 @@ struct VariableData {
         metadata(other.metadata),
         data(other.data) {}
 
+  /**
+   * @brief Outputs a string representation of the VariableData.
+   * @param os The output stream to write to.
+   * @param obj The VariableData object to represent.
+   * @return The output stream.
+   */
   friend std::ostream& operator<<(std::ostream& os, const VariableData& obj) {
     os << obj.variableName << "\t" << obj.data.domain << "\n";
     os << obj.dtype() << "\t" << obj.data.data.rank();
     return os;
   }
 
+  /// The type of the shared array
   using const_shared_array = SharedArray<const T, R, OriginKind>;
 
   /**
@@ -1782,13 +1881,13 @@ struct VariableData {
     return byte_diff / dtype().size();
   }
 
-  // An identifier for the variable.
+  /// An identifier for the variable.
   std::string variableName;
-  // optional, default to name
+  /// optional, default to name
   std::string longName;
-  // other metadata
+  /// other metadata
   ::nlohmann::json metadata;
-  // the data
+  /// the data
   LabeledArray<T, R, OriginKind> data;
 };
 
