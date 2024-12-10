@@ -390,6 +390,7 @@ from_zmetadata(const std::string& dataset_path) {
 }
 }  // namespace internal
 
+/// @brief A mapping of coordinates to their Variables
 using coordinate_map =
     std::unordered_map<std::string, std::vector<std::string>>;
 
@@ -399,6 +400,15 @@ using coordinate_map =
  */
 class Dataset {
  public:
+  /**
+   * @brief Constructs a Dataset object. It is recommended to use the
+   * `mdio::Dataset::Open` or `mdio::Dataset::from_json` factory methods to
+   * construct a Dataset.
+   * @param metadata The metadata of the dataset.
+   * @param variables The variables of the dataset.
+   * @param coordinates The coordinates of the dataset.
+   * @param domain The domain of the dataset.
+   */
   Dataset(const nlohmann::json& metadata, const VariableCollection& variables,
           const coordinate_map& coordinates,
           const tensorstore::IndexDomain<>& domain)
@@ -407,6 +417,12 @@ class Dataset {
         coordinates(coordinates),
         domain(domain) {}
 
+  /**
+   * @brief Outputs a string representation of the Dataset.
+   * @param os The output stream to write to.
+   * @param dataset The Dataset object to represent.
+   * @return The output stream.
+   */
   friend std::ostream& operator<<(std::ostream& os, const Dataset& dataset) {
     // Output metadata
     os << "Metadata: " << dataset.metadata.dump(4) << "\n";
@@ -450,6 +466,13 @@ class Dataset {
     return variables.get<T, R, M>(variable_name);
   }
 
+  /**
+   * @brief Retrieves the intervals for the given labels in the dataset.
+   * @param labels The labels to retrieve the intervals for or empty to retrieve
+   * all intervals in the dataset.
+   * @return An `mdio::Result` containing the intervals if successful, or an
+   * error if the labels are not found.
+   */
   template <typename... DimensionIdentifier>
   mdio::Result<std::vector<Variable<>::Interval>> get_intervals(
       const DimensionIdentifier&... labels) const {
@@ -479,6 +502,8 @@ class Dataset {
    * @brief Constructs a Dataset from a JSON schema.
    * This method will validate the JSON schema against the MDIO Dataset schema.
    * @param json_schema The JSON schema to validate.
+   * @param path The path to the dataset.
+   * @param options The open options to use for the dataset.
    * @details \b Usage
    *
    * Create  a dataset given a schema and a path, for a new dataset use options,
@@ -580,6 +605,11 @@ class Dataset {
                                   typename outer_type<Rest>::type>);
   }
 
+  /// @cond IGNORE_RECURSIVE_TEMPLATES
+  // These internal usecase structs were generating potential recursive class
+  // relation warnings during documentation build, so the warnings are ignored
+  // here.
+
   // Generate an index sequence
   template <size_t... I>
   struct index_sequence {};
@@ -589,6 +619,7 @@ class Dataset {
 
   template <size_t... I>
   struct make_index_sequence<0, I...> : index_sequence<I...> {};
+  /// @endcond
 
   // Function to call `isel` with a parameter pack expanded from the vector
   /**
@@ -975,7 +1006,7 @@ class Dataset {
 
   /**
    * @brief Performs a label-based slice on the Dataset
-   * @param descriptors The descriptors to use for the slice.
+   * @param label The label to slice on.
    * @return An `mdio::Result` containing a sliced Dataset if successful, or an
    * error if the slice is invalid.
    */
@@ -1015,6 +1046,7 @@ class Dataset {
    * This method will assume that the Dataset already exists at the specified
    * path.
    * @param dataset_path The path to the dataset.
+   * @param options The open options to use for the dataset.
    * @details \b Usage
    * @code
    * auto existing_dataset = mdio::Dataset::Open(
@@ -1050,6 +1082,7 @@ class Dataset {
    * compliant Variable specs.
    * @param metadata The metadata for the dataset.
    * @param json_variables A vector of correctly constructed Variable specs.
+   * @param options The open options to use for the dataset.
    * @return An `mdio::Result` containing a Dataset if successful, or an error
    * if the schema is invalid.
    */
@@ -1296,6 +1329,11 @@ class Dataset {
     return pair.future;
   }
 
+  /**
+   * @brief Commits updated Variable level metadata to disk.
+   * @return A future that will be ready when the metadata has been committed to
+   * disk.
+   */
   tensorstore::Future<void> CommitMetadata() {
     auto keys = variables.get_iterable_accessor();
 
@@ -1414,19 +1452,23 @@ class Dataset {
     return pair.future;
   }
 
+  /**
+   * @brief Retrieves the dataset level metadata.
+   * @return The dataset level metadata.
+   */
   const nlohmann::json& getMetadata() const { return metadata; }
 
-  // variables contained in the dataset
+  /// variables contained in the dataset
   VariableCollection variables;
 
-  // link a variable name to its coordinates via its name(s)
+  /// link a variable name to its coordinates via its name(s)
   coordinate_map coordinates;
 
-  // enumerate the dimensions
+  /// enumerate the dimensions
   tensorstore::IndexDomain<> domain;
 
  private:
-  // the metadata associated with the dataset (root .zattrs)
+  /// the metadata associated with the dataset (root .zattrs)
   ::nlohmann::json metadata;
 };
 }  // namespace mdio

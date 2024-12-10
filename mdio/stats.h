@@ -80,9 +80,13 @@ namespace internal {
  */
 class Histogram {
  public:
+  /// @brief Destructor
   virtual ~Histogram() = default;
+  /// @brief Retrieves the histogram as a JSON object
   virtual nlohmann::json getHistogram() const = 0;
+  /// @brief Clones the histogram
   virtual std::unique_ptr<const Histogram> clone() const = 0;
+  /// @brief Constructs a Histogram from a JSON object
   virtual mdio::Result<std::unique_ptr<const Histogram>> FromJson(
       const nlohmann::json& j) const = 0;
   /**
@@ -93,6 +97,7 @@ class Histogram {
    */
   virtual bool isBindable() const = 0;
 
+  /// @brief The key for the histogram in the JSON object
   const std::string HIST_KEY = "histogram";
 
  private:
@@ -105,9 +110,18 @@ class Histogram {
   virtual bool isHist(const nlohmann::json& j) const = 0;
 };
 
+/**
+ * @brief A histogram with bin centers and counts
+ * @tparam T The type of the histogram (Default: float)
+ */
 template <typename T = float>
 class CenteredBinHistogram : public Histogram {
  public:
+  /**
+   * @brief Constructs a CenteredBinHistogram object
+   * @param binCenters The centers of the bins
+   * @param counts The counts of the bins
+   */
   CenteredBinHistogram(const std::vector<T>& binCenters,
                        const std::vector<int32_t>& counts)
       : binCenters(binCenters), counts(counts) {
@@ -115,6 +129,13 @@ class CenteredBinHistogram : public Histogram {
                   "Histograms may only be float32 or int32_t.");
   }
 
+  /**
+   * @brief Attempts to construct a new CenteredBinHistogram from a JSON
+   * representation
+   * @param j The JSON representation of the histogram
+   * @return A new CenteredBinHistogram if the input JSON is valid, otherwise an
+   * error
+   */
   mdio::Result<std::unique_ptr<const Histogram>> FromJson(
       const nlohmann::json& j) const override {
     if (isHist(j)) {
@@ -137,6 +158,10 @@ class CenteredBinHistogram : public Histogram {
         HIST_KEY + ";");
   }
 
+  /**
+   * @brief Returns the histogram as a JSON object
+   * @return The histogram as a JSON object
+   */
   nlohmann::json getHistogram() const override {
     nlohmann::json histogram;
     histogram[HIST_KEY]["binCenters"] = this->binCenters;
@@ -144,24 +169,46 @@ class CenteredBinHistogram : public Histogram {
     return histogram;
   }
 
+  /**
+   * @brief Clones the histogram
+   * @return A unique pointer to a new histogram
+   */
   std::unique_ptr<const Histogram> clone() const override {
     return std::make_unique<CenteredBinHistogram>(*this);
   }
 
+  /**
+   * @brief Whether or not the histogram is JSON bindable
+   * @return True if the histogram is JSON bindable, false otherwise
+   */
   bool isBindable() const override { return true; }
 
  private:
   const std::vector<T> binCenters;
   const std::vector<int32_t> counts;
 
+  /**
+   * @brief Whether or not the histogram is JSON bindable
+   * @return True if the histogram is JSON bindable, false otherwise
+   */
   bool isHist(const nlohmann::json& j) const override {
     return j.contains(HIST_KEY);
   }
 };
 
+/**
+ * @brief A histogram with bin edges and widths
+ * @tparam T The type of the histogram (Default: float)
+ */
 template <typename T = float>
 class EdgeDefinedHistogram : public Histogram {
  public:
+  /**
+   * @brief Constructs an EdgeDefinedHistogram object
+   * @param binEdges The edges of the bins
+   * @param binWidths The widths of the bins
+   * @param counts The counts of the bins
+   */
   EdgeDefinedHistogram(const std::vector<T>& binEdges,
                        const std::vector<T>& binWidths,
                        const std::vector<int32_t>& counts)
@@ -201,6 +248,10 @@ class EdgeDefinedHistogram : public Histogram {
         "EdgeDefinedHistogram\n\tMissing parent key: 'histogram'");
   }
 
+  /**
+   * @brief Returns the histogram as a JSON object
+   * @return The histogram as a JSON object
+   */
   nlohmann::json getHistogram() const override {
     nlohmann::json histogram;
     histogram[HIST_KEY]["binEdges"] = this->binEdges;
@@ -209,10 +260,18 @@ class EdgeDefinedHistogram : public Histogram {
     return histogram;
   }
 
+  /**
+   * @brief Clones the histogram
+   * @return A unique pointer to a new histogram
+   */
   std::unique_ptr<const Histogram> clone() const override {
     return std::make_unique<EdgeDefinedHistogram>(*this);
   }
 
+  /**
+   * @brief Whether or not the histogram is JSON bindable
+   * @return True if the histogram is JSON bindable, false otherwise
+   */
   bool isBindable() const override { return true; }
 
  private:
@@ -220,13 +279,25 @@ class EdgeDefinedHistogram : public Histogram {
   const std::vector<T> binWidths;
   const std::vector<int32_t> counts;
 
+  /**
+   * @brief Whether or not the histogram is JSON bindable
+   * @return True if the histogram is JSON bindable, false otherwise
+   */
   bool isHist(const nlohmann::json& j) const override {
     return j.contains(HIST_KEY);
   }
 };
 
+/**
+ * @brief A collection of summary statistics
+ * @tparam T The type of the histogram (Default: float)
+ */
 class SummaryStats {
  public:
+  /**
+   * @brief Constructs a SummaryStats object
+   * @param other The SummaryStats object to copy from
+   */
   SummaryStats(const SummaryStats& other)
       : count(other.count),
         max(other.max),
@@ -235,6 +306,10 @@ class SummaryStats {
         sumSquares(other.sumSquares),
         histogram(other.histogram->clone()) {}
 
+  /**
+   * @brief Returns the statsV1 object as a JSON object
+   * @return The statsV1 object as a JSON object
+   */
   const nlohmann::json getBindable() const {
     nlohmann::json stats = this->histogram->getHistogram();
     stats["count"] = this->count;
@@ -335,6 +410,9 @@ class SummaryStats {
 
 }  // namespace internal
 
+/**
+ * @brief A collection of user defined attributes
+ */
 class UserAttributes {
  public:
   /**
@@ -359,8 +437,8 @@ class UserAttributes {
    * static member function `FromJson(nlohmann::json)`.
    * @tparam T The type of the histogram (May either be flaot or int32_t)
    * (Default: float)
-   * @param j The JSON representation of the dataset
-   * @param varible The name of the Variable which may contain the user
+   * @param dataset The JSON representation of the dataset
+   * @param variable The name of the Variable which may contain the user
    * attributes
    * @return A UserAttributes object if the variable is a Variable in the
    * Dataset, otherwise an error
@@ -384,6 +462,13 @@ class UserAttributes {
                                       " not found in Dataset");
   }
 
+  /**
+   * @brief Constructs a UserAttributes object from the JSON representation of a
+   * Variable
+   * @param variable The JSON representation of the Variable
+   * @return A UserAttributes object if the Variable is valid, otherwise an
+   * error
+   */
   static mdio::Result<UserAttributes> FromVariableJson(
       const nlohmann::json& variable) {
     auto param = variable.contains("metadata") ? variable["metadata"]
