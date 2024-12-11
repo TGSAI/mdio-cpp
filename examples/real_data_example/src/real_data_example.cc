@@ -125,5 +125,11 @@ int main(int argc, char* argv[]) {
   auto desc2 = ParseRange(crossline_range);
   auto desc3 = ParseRange(depth_range);
 
-  return Run<float>(desc1, desc2, desc3).ok() ? 0 : 1;
+  auto runResult = Run<float>(desc1, desc2, desc3);
+  if (!runResult.ok()) {
+    std::cerr << "Error: " << runResult.ToString() << std::endl;
+    return 1;
+  }
+
+  return 0;
 }
