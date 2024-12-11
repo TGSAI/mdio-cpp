@@ -32,6 +32,6 @@ target_link_libraries(real_data_example PRIVATE
   mdio
   ${mdio_INTERNAL_DEPS}
   ${mdio_INTERNAL_S3_DRIVER_DEPS}
-  PNG::PNG
+  ${mdio_INTERNAL_GCS_DRIVER_DEPS}
   indicators
 )

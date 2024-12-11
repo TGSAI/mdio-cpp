@@ -1100,6 +1100,15 @@ class Dataset {
     all_done_future.ExecuteWhenReady(
         [promise = std::move(pair.promise), variables = std::move(variables),
          metadata](tensorstore::ReadyFuture<void> readyFut) {
+          if (metadata.contains("api_version") &&
+              !metadata.contains("apiVersion")) {
+            promise.SetResult(
+                absl::Status(absl::StatusCode::kInvalidArgument,
+                             "Detected MDIO v0 dataset model " +
+                                 metadata["api_version"].get<std::string>() +
+                                 " but expected v1"));
+            return;
+          }
           mdio::VariableCollection collection;
           mdio::coordinate_map coords;
           std::unordered_map<std::string, Index> shape_size;
