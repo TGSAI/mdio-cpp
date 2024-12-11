@@ -24,7 +24,6 @@
 #include "interpolation.h"
 #include "progress.h"
 #include "seismic_numpy.h"
-#include "seismic_png.h"
 #include "tensorstore/tensorstore.h"
 
 #define MDIO_RETURN_IF_ERROR(...) TENSORSTORE_RETURN_IF_ERROR(__VA_ARGS__)
