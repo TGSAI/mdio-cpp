@@ -38,7 +38,7 @@ ABSL_FLAG(std::string, depth_range, "",
           "Optional depth range in format {depth,start,end,step}");
 ABSL_FLAG(std::string, variable_name, "seismic",
           "Name of the seismic variable");
-ABSL_FLAG(bool, print_dataset, false, "Print the dataset URL and return");
+ABSL_FLAG(bool, print_dataset, false, "Print the dataset metadata and return");
 ABSL_FLAG(std::string, dataset_path,
           "s3://tgs-opendata-poseidon/full_stack_agc.mdio",
           "The path to the dataset");
