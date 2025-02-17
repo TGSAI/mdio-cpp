@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['histogram_67',['Histogram',['../classmdio_1_1internal_1_1Histogram.html',1,'mdio::internal']]]
+  ['rangedescriptor_62',['RangeDescriptor',['../structmdio_1_1RangeDescriptor.html',1,'mdio']]]
 ];

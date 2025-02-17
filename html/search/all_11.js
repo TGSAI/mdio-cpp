@@ -1,5 +1,5 @@
 var searchData=
 [
-  ['updateattributes_56',['UpdateAttributes',['../structmdio_1_1Variable.html#aee667e4ed0e628fda1240308a3322f23',1,'mdio::Variable']]],
-  ['userattributes_57',['UserAttributes',['../classmdio_1_1UserAttributes.html',1,'mdio::UserAttributes'],['../classmdio_1_1UserAttributes.html#a39410bb428b5358fdbac926a3c91ff8d',1,'mdio::UserAttributes::UserAttributes()']]]
+  ['was_5fupdated_56',['was_updated',['../structmdio_1_1Variable.html#a09fee24ea3e4445550af3f8019014d63',1,'mdio::Variable']]],
+  ['write_57',['Write',['../structmdio_1_1Variable.html#ab4ba4f463cf01d9b0e410ab21e590a2b',1,'mdio::Variable']]]
 ];

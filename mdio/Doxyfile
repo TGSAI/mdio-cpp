@@ -1008,13 +1008,18 @@ EXCLUDE_SYMBOLS        = *Test *_test *Tests *_tests \
                       mdio::Variable::make_index_sequence* \
                       *make_index_sequence* \
                       call_slice_with_vector_impl \
-                      internal:: \
-                      set_metadata_publish_flag \
-                      should_publish \
-                      index_sequence \
-                      are_same \
-                      call_isel_with_vector_impl \
-                      descriptor_to_index
+                      internal::* \
+                      *internal* \
+                      mdio::Variable::set_metadata_publish_flag \
+                      mdio::Variable::should_publish \
+                      mdio::Variable::index_sequence \
+                      mdio::Dataset::index_sequence \
+                      *are_same* \
+                      *call_isel_with_vector_impl* \
+                      *descriptor_to_index* \
+                      *get_attributes_address* \
+                      *PublishMetadata* \
+                      *set_metadata_publish_flag*
 
 
 # The EXAMPLE_PATH tag can be used to specify one or more files or directories

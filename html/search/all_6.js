@@ -1,5 +1,5 @@
 var searchData=
 [
-  ['haslabel_27',['hasLabel',['../structmdio_1_1Variable.html#a64d2867e2e8586c02199c79ab7b618de',1,'mdio::Variable']]],
-  ['histogram_28',['Histogram',['../classmdio_1_1internal_1_1Histogram.html',1,'mdio::internal']]]
+  ['interval_25',['Interval',['../structmdio_1_1Variable_1_1Interval.html',1,'mdio::Variable']]],
+  ['isel_26',['isel',['../classmdio_1_1Dataset.html#a273fbf7254f4c75effa324a1a531d6c0',1,'mdio::Dataset::isel(Descriptors &amp;... descriptors)'],['../classmdio_1_1Dataset.html#afaf24735691b23748f6d6ae03ac596c6',1,'mdio::Dataset::isel(const std::vector&lt; RangeDescriptor&lt; Index &gt;&gt; &amp;slices)']]]
 ];

@@ -1,5 +1,6 @@
 var searchData=
 [
-  ['open_42',['Open',['../classmdio_1_1Dataset.html#a60effe20b3c7c048d73a71e19f6a80bf',1,'mdio::Dataset::Open(const S &amp;dataset_path, Option &amp;&amp;... options)'],['../classmdio_1_1Dataset.html#a63d915129a1a455006b620c9a794f478',1,'mdio::Dataset::Open(const ::nlohmann::json &amp;metadata, const std::vector&lt;::nlohmann::json &gt; &amp;json_variables, Option &amp;&amp;... options)'],['../structmdio_1_1Variable.html#a83593c8e537a55f715427c2d721b9f20',1,'mdio::Variable::Open()']]],
-  ['operator_5b_5d_43',['operator[]',['../classmdio_1_1Dataset.html#a49cb51eb67d491ae2d0deeea4997b505',1,'mdio::Dataset']]]
+  ['rangedescriptor_39',['RangeDescriptor',['../structmdio_1_1RangeDescriptor.html',1,'mdio']]],
+  ['rank_40',['rank',['../structmdio_1_1Variable.html#a81c303df039cb5b4baa21f1528c58748',1,'mdio::Variable::rank()'],['../structmdio_1_1VariableData.html#a1298198415ed2f1ed33011c84f5551bc',1,'mdio::VariableData::rank()']]],
+  ['read_41',['Read',['../structmdio_1_1Variable.html#af425045bbd682a466383dcb99e244c6e',1,'mdio::Variable']]]
 ];

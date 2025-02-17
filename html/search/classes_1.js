@@ -1,4 +1,4 @@
 var searchData=
 [
-  ['dataset_65',['Dataset',['../classmdio_1_1Dataset.html',1,'mdio']]]
+  ['interval_59',['Interval',['../structmdio_1_1Variable_1_1Interval.html',1,'mdio::Variable']]]
 ];

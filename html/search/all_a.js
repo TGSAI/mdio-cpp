@@ -1,7 +1,4 @@
 var searchData=
 [
-  ['constants_37',['constants',['../namespacemdio_1_1constants.html',1,'mdio']]],
-  ['mdio_38',['mdio',['../namespacemdio.html',1,'']]],
-  ['mdio_2ecc_39',['mdio.cc',['../mdio_8cc.html',1,'']]],
-  ['mdio_2eh_40',['mdio.h',['../mdio_8h.html',1,'']]]
+  ['num_5fsamples_36',['num_samples',['../structmdio_1_1Variable.html#ab189197d3e907621c14018bc5ebedf62',1,'mdio::Variable::num_samples()'],['../structmdio_1_1VariableData.html#a11eb7f1bd4c7ff5ff960772df8bd7402',1,'mdio::VariableData::num_samples()']]]
 ];

@@ -1,4 +1,7 @@
 var searchData=
 [
-  ['tojson_55',['ToJson',['../classmdio_1_1UserAttributes.html#ae143b6efdbe56a9f3a6bfbd60b5a716c',1,'mdio::UserAttributes']]]
+  ['valuedescriptor_52',['ValueDescriptor',['../structmdio_1_1ValueDescriptor.html',1,'mdio']]],
+  ['variable_53',['Variable',['../structmdio_1_1Variable.html',1,'mdio']]],
+  ['variablecollection_54',['VariableCollection',['../classmdio_1_1VariableCollection.html',1,'mdio']]],
+  ['variabledata_55',['VariableData',['../structmdio_1_1VariableData.html',1,'mdio']]]
 ];

@@ -167,9 +167,6 @@ Result&lt; nlohmann::json &gt;&#160;</td><td class="memItemRight" valign="bottom
 <tr class="memitem:a11d38478850049594eb458a3ddd4cb1e"><td class="memItemLeft" align="right" valign="top">Result&lt; std::vector&lt; DimensionIndex &gt; &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#a11d38478850049594eb458a3ddd4cb1e">get_store_shape</a> () const</td></tr>
 <tr class="memdesc:a11d38478850049594eb458a3ddd4cb1e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Retrieves the entire shape of the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> if it exists.  <a href="structmdio_1_1Variable.html#a11d38478850049594eb458a3ddd4cb1e">More...</a><br /></td></tr>
 <tr class="separator:a11d38478850049594eb458a3ddd4cb1e"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:adf1bd6a001ede167be91c489048d7a6d"><td class="memItemLeft" align="right" valign="top">Future&lt; tensorstore::TimestampedStorageGeneration &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#adf1bd6a001ede167be91c489048d7a6d">PublishMetadata</a> ()</td></tr>
-<tr class="memdesc:adf1bd6a001ede167be91c489048d7a6d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Publishes new ".zattrs" metadata to the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a>'s durable storage. This method should not be called independantly as it will result in a mismatch between the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> metadata and <a class="el" href="classmdio_1_1Dataset.html" title="The Dataset class The dataset represents a collection of variables sharing a common grid.">Dataset</a> metadata.  <a href="structmdio_1_1Variable.html#adf1bd6a001ede167be91c489048d7a6d">More...</a><br /></td></tr>
-<tr class="separator:adf1bd6a001ede167be91c489048d7a6d"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:aee667e4ed0e628fda1240308a3322f23"><td class="memTemplParams" colspan="2">template&lt;typename T_attrs  = float&gt; </td></tr>
 <tr class="memitem:aee667e4ed0e628fda1240308a3322f23"><td class="memTemplItemLeft" align="right" valign="top">Result&lt; void &gt;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#aee667e4ed0e628fda1240308a3322f23">UpdateAttributes</a> (const nlohmann::json &amp;newAttrs)</td></tr>
 <tr class="memdesc:aee667e4ed0e628fda1240308a3322f23"><td class="mdescLeft">&#160;</td><td class="mdescRight">Attempts to safely update the user attributes of a <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> (["metadata"]["attributes"] and/or ["metadata"]["statsV1"]).  <a href="structmdio_1_1Variable.html#aee667e4ed0e628fda1240308a3322f23">More...</a><br /></td></tr>
@@ -199,9 +196,9 @@ const std::string &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>ge
 <tr class="memitem:aa094a7e6a0ae874f966c4e39cb121581"><td class="memItemLeft" align="right" valign="top"><a id="aa094a7e6a0ae874f966c4e39cb121581"></a>
 const tensorstore::TensorStore&lt; T, R, M &gt; &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>get_store</b> () const</td></tr>
 <tr class="separator:aa094a7e6a0ae874f966c4e39cb121581"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a2f768e12e6b1c02c74081c79aa8af192"><td class="memItemLeft" align="right" valign="top">const std::uintptr_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#a2f768e12e6b1c02c74081c79aa8af192">get_attributes_address</a> () const</td></tr>
-<tr class="memdesc:a2f768e12e6b1c02c74081c79aa8af192"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the original address of the User Attributes. This method should NEVER be called by the user. It allows for the copy constructor without re-serializing metadata.  <a href="structmdio_1_1Variable.html#a2f768e12e6b1c02c74081c79aa8af192">More...</a><br /></td></tr>
-<tr class="separator:a2f768e12e6b1c02c74081c79aa8af192"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a1b4110cb61acedde49783def9b6f329b"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#a1b4110cb61acedde49783def9b6f329b">should_publish</a> () const</td></tr>
+<tr class="memdesc:a1b4110cb61acedde49783def9b6f329b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets whether the metadata should get republished.  <a href="structmdio_1_1Variable.html#a1b4110cb61acedde49783def9b6f329b">More...</a><br /></td></tr>
+<tr class="separator:a1b4110cb61acedde49783def9b6f329b"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-static-methods"></a>
 Static Public Member Functions</h2></td></tr>
@@ -302,36 +299,6 @@ template&lt;typename T  = void, DimensionIndex R = dynamic_rank, ReadWriteMode M
 
 <p>Get the data type of the tensor store. The type of the store, T ~ void. </p>
 <dl class="section return"><dt>Returns</dt><dd>The data type of the tensor store. </dd></dl>
-
-</div>
-</div>
-<a id="a2f768e12e6b1c02c74081c79aa8af192"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a2f768e12e6b1c02c74081c79aa8af192">&#9670;&nbsp;</a></span>get_attributes_address()</h2>
-
-<div class="memitem">
-<div class="memproto">
-<div class="memtemplate">
-template&lt;typename T  = void, DimensionIndex R = dynamic_rank, ReadWriteMode M = ReadWriteMode::dynamic&gt; </div>
-<table class="mlabels">
-  <tr>
-  <td class="mlabels-left">
-      <table class="memname">
-        <tr>
-          <td class="memname">const std::uintptr_t <a class="el" href="structmdio_1_1Variable.html">mdio::Variable</a>&lt; T, R, M &gt;::get_attributes_address </td>
-          <td>(</td>
-          <td class="paramname"></td><td>)</td>
-          <td> const</td>
-        </tr>
-      </table>
-  </td>
-  <td class="mlabels-right">
-<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
-  </tr>
-</table>
-</div><div class="memdoc">
-
-<p>Gets the original address of the User Attributes. This method should NEVER be called by the user. It allows for the copy constructor without re-serializing metadata. </p>
-<dl class="section return"><dt>Returns</dt><dd>The original address of the User Attributes. </dd></dl>
 
 </div>
 </div>
@@ -628,36 +595,6 @@ template&lt;typename... Option&gt; </div>
 
 </div>
 </div>
-<a id="adf1bd6a001ede167be91c489048d7a6d"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#adf1bd6a001ede167be91c489048d7a6d">&#9670;&nbsp;</a></span>PublishMetadata()</h2>
-
-<div class="memitem">
-<div class="memproto">
-<div class="memtemplate">
-template&lt;typename T  = void, DimensionIndex R = dynamic_rank, ReadWriteMode M = ReadWriteMode::dynamic&gt; </div>
-<table class="mlabels">
-  <tr>
-  <td class="mlabels-left">
-      <table class="memname">
-        <tr>
-          <td class="memname">Future&lt;tensorstore::TimestampedStorageGeneration&gt; <a class="el" href="structmdio_1_1Variable.html">mdio::Variable</a>&lt; T, R, M &gt;::PublishMetadata </td>
-          <td>(</td>
-          <td class="paramname"></td><td>)</td>
-          <td></td>
-        </tr>
-      </table>
-  </td>
-  <td class="mlabels-right">
-<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
-  </tr>
-</table>
-</div><div class="memdoc">
-
-<p>Publishes new ".zattrs" metadata to the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a>'s durable storage. This method should not be called independantly as it will result in a mismatch between the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> metadata and <a class="el" href="classmdio_1_1Dataset.html" title="The Dataset class The dataset represents a collection of variables sharing a common grid.">Dataset</a> metadata. </p>
-<dl class="section return"><dt>Returns</dt><dd></dd></dl>
-
-</div>
-</div>
 <a id="a81c303df039cb5b4baa21f1528c58748"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a81c303df039cb5b4baa21f1528c58748">&#9670;&nbsp;</a></span>rank()</h2>
 
@@ -731,6 +668,36 @@ template&lt;ArrayOriginKind OriginKind = offset_origin&gt; </div>
   </dd>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>A future of <a class="el" href="structmdio_1_1VariableData.html" title="The in-memory representation of the data This object should only be constructed through the Variable:...">VariableData</a> that will be ready when the read is complete. </dd></dl>
+
+</div>
+</div>
+<a id="a1b4110cb61acedde49783def9b6f329b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a1b4110cb61acedde49783def9b6f329b">&#9670;&nbsp;</a></span>should_publish()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T  = void, DimensionIndex R = dynamic_rank, ReadWriteMode M = ReadWriteMode::dynamic&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool <a class="el" href="structmdio_1_1Variable.html">mdio::Variable</a>&lt; T, R, M &gt;::should_publish </td>
+          <td>(</td>
+          <td class="paramname"></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets whether the metadata should get republished. </p>
+<dl class="section return"><dt>Returns</dt><dd>True if the metadata should get republished. </dd></dl>
 
 </div>
 </div>

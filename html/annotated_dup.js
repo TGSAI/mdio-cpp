@@ -1,12 +1,6 @@
 var annotated_dup =
 [
     [ "mdio", "namespacemdio.html", [
-      [ "internal", null, [
-        [ "Histogram", "classmdio_1_1internal_1_1Histogram.html", "classmdio_1_1internal_1_1Histogram" ],
-        [ "CenteredBinHistogram", "classmdio_1_1internal_1_1CenteredBinHistogram.html", "classmdio_1_1internal_1_1CenteredBinHistogram" ],
-        [ "EdgeDefinedHistogram", "classmdio_1_1internal_1_1EdgeDefinedHistogram.html", "classmdio_1_1internal_1_1EdgeDefinedHistogram" ],
-        [ "SummaryStats", "classmdio_1_1internal_1_1SummaryStats.html", "classmdio_1_1internal_1_1SummaryStats" ]
-      ] ],
       [ "Dataset", "classmdio_1_1Dataset.html", "classmdio_1_1Dataset" ],
       [ "UserAttributes", "classmdio_1_1UserAttributes.html", "classmdio_1_1UserAttributes" ],
       [ "Variable", "structmdio_1_1Variable.html", "structmdio_1_1Variable" ],

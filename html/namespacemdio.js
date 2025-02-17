@@ -46,24 +46,6 @@ var namespacemdio =
       [ "uint64_t", "impl_8h.html#a54990848f8aa6273e43e1aca1c32c9ba", null ],
       [ "uint8_t", "impl_8h.html#a939d34053ceb7a80c4c0dd1c2df92dac", null ]
     ] ],
-    [ "internal", null, [
-      [ "Histogram", "classmdio_1_1internal_1_1Histogram.html", "classmdio_1_1internal_1_1Histogram" ],
-      [ "CenteredBinHistogram", "classmdio_1_1internal_1_1CenteredBinHistogram.html", "classmdio_1_1internal_1_1CenteredBinHistogram" ],
-      [ "EdgeDefinedHistogram", "classmdio_1_1internal_1_1EdgeDefinedHistogram.html", "classmdio_1_1internal_1_1EdgeDefinedHistogram" ],
-      [ "SummaryStats", "classmdio_1_1internal_1_1SummaryStats.html", "classmdio_1_1internal_1_1SummaryStats" ],
-      [ "CheckMissingDriverStatus", "variable_8h.html#a75f5e8e761500bf82ea3a42a744cf220", null ],
-      [ "CreateVariable", "variable_8h.html#a983b9469f15682b89421386b5b0a4e59", null ],
-      [ "dataset_kvs_store", "dataset_8h.html#a46f34f27a288bb33e315bf8522433752", null ],
-      [ "from_json", "variable_8h.html#a80f32f8201dac1aed48103dc2732f6e3", null ],
-      [ "from_zmetadata", "dataset_8h.html#a80c7f55569751aadcfdeb55d59d037af", null ],
-      [ "get_zarray", "dataset_8h.html#af66e66e8fdf4100d8825daa415f70fec", null ],
-      [ "Open", "variable_8h.html#a54f94515c3fbd6a49013d3053470f85e", null ],
-      [ "OpenVariable", "variable_8h.html#ac776d61e76c63e7f1fd61e0a851d17f3", null ],
-      [ "ValidateAndProcessJson", "variable_8h.html#aeffd12078062805bed01dddb965b1e3b", null ],
-      [ "write_zmetadata", "dataset_8h.html#af0c988aa1c64c1862752654ac9ac43dd", null ],
-      [ "kInertSliceKey", "impl_8h.html#a3fbed54f81cd99ca36825ad05e0817d6", null ],
-      [ "kMaxNumSlices", "impl_8h.html#acb9741d28ba2beee9a6ff769405c10e0", null ]
-    ] ],
     [ "utils", null, [
       [ "DeleteDataset", "delete_8h.html#a98f22949361e35d6d493f0b5a8fe5ccb", null ],
       [ "TrimDataset", "trim_8h.html#aec1ed7fc565a8c8abc8c971378801a54", null ]

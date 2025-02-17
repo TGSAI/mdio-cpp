@@ -122,14 +122,14 @@ $(document).ready(function(){initNavTree('stats_8h_source.html',''); initResizab
 <div class="line"><a name="l00074"></a><span class="lineno">   74</span>&#160;<span class="keyword">namespace </span><a class="code" href="namespacemdio.html">mdio</a> {</div>
 <div class="line"><a name="l00075"></a><span class="lineno">   75</span>&#160;<span class="keyword">namespace </span>internal {</div>
 <div class="line"><a name="l00076"></a><span class="lineno">   76</span>&#160; </div>
-<div class="line"><a name="l00081"></a><span class="lineno"><a class="line" href="classmdio_1_1internal_1_1Histogram.html">   81</a></span>&#160;<span class="keyword">class </span><a class="code" href="classmdio_1_1internal_1_1Histogram.html">Histogram</a> {</div>
+<div class="line"><a name="l00081"></a><span class="lineno">   81</span>&#160;<span class="keyword">class </span>Histogram {</div>
 <div class="line"><a name="l00082"></a><span class="lineno">   82</span>&#160; <span class="keyword">public</span>:</div>
-<div class="line"><a name="l00083"></a><span class="lineno">   83</span>&#160;  <span class="keyword">virtual</span> ~<a class="code" href="classmdio_1_1internal_1_1Histogram.html">Histogram</a>() = <span class="keywordflow">default</span>;</div>
+<div class="line"><a name="l00083"></a><span class="lineno">   83</span>&#160;  <span class="keyword">virtual</span> ~Histogram() = <span class="keywordflow">default</span>;</div>
 <div class="line"><a name="l00084"></a><span class="lineno">   84</span>&#160;  <span class="keyword">virtual</span> nlohmann::json getHistogram() <span class="keyword">const</span> = 0;</div>
 <div class="line"><a name="l00085"></a><span class="lineno">   85</span>&#160;  <span class="keyword">virtual</span> std::unique_ptr&lt;const Histogram&gt; clone() <span class="keyword">const</span> = 0;</div>
 <div class="line"><a name="l00086"></a><span class="lineno">   86</span>&#160;  <span class="keyword">virtual</span> mdio::Result&lt;std::unique_ptr&lt;const Histogram&gt;&gt; FromJson(</div>
 <div class="line"><a name="l00087"></a><span class="lineno">   87</span>&#160;      <span class="keyword">const</span> nlohmann::json&amp; j) <span class="keyword">const</span> = 0;</div>
-<div class="line"><a name="l00094"></a><span class="lineno"><a class="line" href="classmdio_1_1internal_1_1Histogram.html#a98dc23596c3c4aeeb7a5e8300743c61d">   94</a></span>&#160;  <span class="keyword">virtual</span> <span class="keywordtype">bool</span> <a class="code" href="classmdio_1_1internal_1_1Histogram.html#a98dc23596c3c4aeeb7a5e8300743c61d">isBindable</a>() <span class="keyword">const</span> = 0;</div>
+<div class="line"><a name="l00094"></a><span class="lineno">   94</span>&#160;  <span class="keyword">virtual</span> <span class="keywordtype">bool</span> isBindable() <span class="keyword">const</span> = 0;</div>
 <div class="line"><a name="l00095"></a><span class="lineno">   95</span>&#160; </div>
 <div class="line"><a name="l00096"></a><span class="lineno">   96</span>&#160;  <span class="keyword">const</span> std::string HIST_KEY = <span class="stringliteral">&quot;histogram&quot;</span>;</div>
 <div class="line"><a name="l00097"></a><span class="lineno">   97</span>&#160; </div>
@@ -138,9 +138,9 @@ $(document).ready(function(){initNavTree('stats_8h_source.html',''); initResizab
 <div class="line"><a name="l00106"></a><span class="lineno">  106</span>&#160;};</div>
 <div class="line"><a name="l00107"></a><span class="lineno">  107</span>&#160; </div>
 <div class="line"><a name="l00108"></a><span class="lineno">  108</span>&#160;<span class="keyword">template</span> &lt;<span class="keyword">typename</span> T = <span class="keywordtype">float</span>&gt;</div>
-<div class="line"><a name="l00109"></a><span class="lineno"><a class="line" href="classmdio_1_1internal_1_1CenteredBinHistogram.html">  109</a></span>&#160;<span class="keyword">class </span><a class="code" href="classmdio_1_1internal_1_1CenteredBinHistogram.html">CenteredBinHistogram</a> : <span class="keyword">public</span> <a class="code" href="classmdio_1_1internal_1_1Histogram.html">Histogram</a> {</div>
+<div class="line"><a name="l00109"></a><span class="lineno">  109</span>&#160;<span class="keyword">class </span>CenteredBinHistogram : <span class="keyword">public</span> Histogram {</div>
 <div class="line"><a name="l00110"></a><span class="lineno">  110</span>&#160; <span class="keyword">public</span>:</div>
-<div class="line"><a name="l00111"></a><span class="lineno">  111</span>&#160;  <a class="code" href="classmdio_1_1internal_1_1CenteredBinHistogram.html">CenteredBinHistogram</a>(<span class="keyword">const</span> std::vector&lt;T&gt;&amp; binCenters,</div>
+<div class="line"><a name="l00111"></a><span class="lineno">  111</span>&#160;  CenteredBinHistogram(<span class="keyword">const</span> std::vector&lt;T&gt;&amp; binCenters,</div>
 <div class="line"><a name="l00112"></a><span class="lineno">  112</span>&#160;                       <span class="keyword">const</span> std::vector&lt;int32_t&gt;&amp; counts)</div>
 <div class="line"><a name="l00113"></a><span class="lineno">  113</span>&#160;      : binCenters(binCenters), counts(counts) {</div>
 <div class="line"><a name="l00114"></a><span class="lineno">  114</span>&#160;    static_assert(std::is_same_v&lt;T, float&gt; || std::is_same_v&lt;T, int32_t&gt;,</div>
@@ -180,7 +180,7 @@ $(document).ready(function(){initNavTree('stats_8h_source.html',''); initResizab
 <div class="line"><a name="l00148"></a><span class="lineno">  148</span>&#160;    <span class="keywordflow">return</span> std::make_unique&lt;CenteredBinHistogram&gt;(*<span class="keyword">this</span>);</div>
 <div class="line"><a name="l00149"></a><span class="lineno">  149</span>&#160;  }</div>
 <div class="line"><a name="l00150"></a><span class="lineno">  150</span>&#160; </div>
-<div class="line"><a name="l00151"></a><span class="lineno"><a class="line" href="classmdio_1_1internal_1_1CenteredBinHistogram.html#addf2794f5db95daaeef2c5ee8df03ea1">  151</a></span>&#160;  <span class="keywordtype">bool</span> <a class="code" href="classmdio_1_1internal_1_1CenteredBinHistogram.html#addf2794f5db95daaeef2c5ee8df03ea1">isBindable</a>()<span class="keyword"> const override </span>{ <span class="keywordflow">return</span> <span class="keyword">true</span>; }</div>
+<div class="line"><a name="l00151"></a><span class="lineno">  151</span>&#160;  <span class="keywordtype">bool</span> isBindable()<span class="keyword"> const override </span>{ <span class="keywordflow">return</span> <span class="keyword">true</span>; }</div>
 <div class="line"><a name="l00152"></a><span class="lineno">  152</span>&#160; </div>
 <div class="line"><a name="l00153"></a><span class="lineno">  153</span>&#160; <span class="keyword">private</span>:</div>
 <div class="line"><a name="l00154"></a><span class="lineno">  154</span>&#160;  <span class="keyword">const</span> std::vector&lt;T&gt; binCenters;</div>
@@ -192,9 +192,9 @@ $(document).ready(function(){initNavTree('stats_8h_source.html',''); initResizab
 <div class="line"><a name="l00160"></a><span class="lineno">  160</span>&#160;};</div>
 <div class="line"><a name="l00161"></a><span class="lineno">  161</span>&#160; </div>
 <div class="line"><a name="l00162"></a><span class="lineno">  162</span>&#160;<span class="keyword">template</span> &lt;<span class="keyword">typename</span> T = <span class="keywordtype">float</span>&gt;</div>
-<div class="line"><a name="l00163"></a><span class="lineno"><a class="line" href="classmdio_1_1internal_1_1EdgeDefinedHistogram.html">  163</a></span>&#160;<span class="keyword">class </span><a class="code" href="classmdio_1_1internal_1_1EdgeDefinedHistogram.html">EdgeDefinedHistogram</a> : <span class="keyword">public</span> <a class="code" href="classmdio_1_1internal_1_1Histogram.html">Histogram</a> {</div>
+<div class="line"><a name="l00163"></a><span class="lineno">  163</span>&#160;<span class="keyword">class </span>EdgeDefinedHistogram : <span class="keyword">public</span> Histogram {</div>
 <div class="line"><a name="l00164"></a><span class="lineno">  164</span>&#160; <span class="keyword">public</span>:</div>
-<div class="line"><a name="l00165"></a><span class="lineno">  165</span>&#160;  <a class="code" href="classmdio_1_1internal_1_1EdgeDefinedHistogram.html">EdgeDefinedHistogram</a>(<span class="keyword">const</span> std::vector&lt;T&gt;&amp; binEdges,</div>
+<div class="line"><a name="l00165"></a><span class="lineno">  165</span>&#160;  EdgeDefinedHistogram(<span class="keyword">const</span> std::vector&lt;T&gt;&amp; binEdges,</div>
 <div class="line"><a name="l00166"></a><span class="lineno">  166</span>&#160;                       <span class="keyword">const</span> std::vector&lt;T&gt;&amp; binWidths,</div>
 <div class="line"><a name="l00167"></a><span class="lineno">  167</span>&#160;                       <span class="keyword">const</span> std::vector&lt;int32_t&gt;&amp; counts)</div>
 <div class="line"><a name="l00168"></a><span class="lineno">  168</span>&#160;      : binEdges(binEdges), binWidths(binWidths), counts(counts) {</div>
@@ -202,7 +202,7 @@ $(document).ready(function(){initNavTree('stats_8h_source.html',''); initResizab
 <div class="line"><a name="l00170"></a><span class="lineno">  170</span>&#160;                  <span class="stringliteral">&quot;Histograms may only be float32 or int32_t.&quot;</span>);</div>
 <div class="line"><a name="l00171"></a><span class="lineno">  171</span>&#160;  }</div>
 <div class="line"><a name="l00172"></a><span class="lineno">  172</span>&#160; </div>
-<div class="line"><a name="l00180"></a><span class="lineno"><a class="line" href="classmdio_1_1internal_1_1EdgeDefinedHistogram.html#a4bc63456720b4f023223a48ae641112a">  180</a></span>&#160;  mdio::Result&lt;std::unique_ptr&lt;const Histogram&gt;&gt; <a class="code" href="classmdio_1_1internal_1_1EdgeDefinedHistogram.html#a4bc63456720b4f023223a48ae641112a">FromJson</a>(</div>
+<div class="line"><a name="l00180"></a><span class="lineno">  180</span>&#160;  mdio::Result&lt;std::unique_ptr&lt;const Histogram&gt;&gt; FromJson(</div>
 <div class="line"><a name="l00181"></a><span class="lineno">  181</span>&#160;      <span class="keyword">const</span> nlohmann::json&amp; j)<span class="keyword"> const override </span>{</div>
 <div class="line"><a name="l00182"></a><span class="lineno">  182</span>&#160;    <span class="keywordflow">if</span> (isHist(j)) {</div>
 <div class="line"><a name="l00183"></a><span class="lineno">  183</span>&#160;      <span class="keyword">auto</span> histogram = j[HIST_KEY];</div>
@@ -238,7 +238,7 @@ $(document).ready(function(){initNavTree('stats_8h_source.html',''); initResizab
 <div class="line"><a name="l00213"></a><span class="lineno">  213</span>&#160;    <span class="keywordflow">return</span> std::make_unique&lt;EdgeDefinedHistogram&gt;(*<span class="keyword">this</span>);</div>
 <div class="line"><a name="l00214"></a><span class="lineno">  214</span>&#160;  }</div>
 <div class="line"><a name="l00215"></a><span class="lineno">  215</span>&#160; </div>
-<div class="line"><a name="l00216"></a><span class="lineno"><a class="line" href="classmdio_1_1internal_1_1EdgeDefinedHistogram.html#a79bd1956ff56681fbffad7e3421c556f">  216</a></span>&#160;  <span class="keywordtype">bool</span> <a class="code" href="classmdio_1_1internal_1_1EdgeDefinedHistogram.html#a79bd1956ff56681fbffad7e3421c556f">isBindable</a>()<span class="keyword"> const override </span>{ <span class="keywordflow">return</span> <span class="keyword">true</span>; }</div>
+<div class="line"><a name="l00216"></a><span class="lineno">  216</span>&#160;  <span class="keywordtype">bool</span> isBindable()<span class="keyword"> const override </span>{ <span class="keywordflow">return</span> <span class="keyword">true</span>; }</div>
 <div class="line"><a name="l00217"></a><span class="lineno">  217</span>&#160; </div>
 <div class="line"><a name="l00218"></a><span class="lineno">  218</span>&#160; <span class="keyword">private</span>:</div>
 <div class="line"><a name="l00219"></a><span class="lineno">  219</span>&#160;  <span class="keyword">const</span> std::vector&lt;T&gt; binEdges;</div>
@@ -250,9 +250,9 @@ $(document).ready(function(){initNavTree('stats_8h_source.html',''); initResizab
 <div class="line"><a name="l00225"></a><span class="lineno">  225</span>&#160;  }</div>
 <div class="line"><a name="l00226"></a><span class="lineno">  226</span>&#160;};</div>
 <div class="line"><a name="l00227"></a><span class="lineno">  227</span>&#160; </div>
-<div class="line"><a name="l00228"></a><span class="lineno"><a class="line" href="classmdio_1_1internal_1_1SummaryStats.html">  228</a></span>&#160;<span class="keyword">class </span><a class="code" href="classmdio_1_1internal_1_1SummaryStats.html">SummaryStats</a> {</div>
+<div class="line"><a name="l00228"></a><span class="lineno">  228</span>&#160;<span class="keyword">class </span>SummaryStats {</div>
 <div class="line"><a name="l00229"></a><span class="lineno">  229</span>&#160; <span class="keyword">public</span>:</div>
-<div class="line"><a name="l00230"></a><span class="lineno">  230</span>&#160;  <a class="code" href="classmdio_1_1internal_1_1SummaryStats.html">SummaryStats</a>(<span class="keyword">const</span> <a class="code" href="classmdio_1_1internal_1_1SummaryStats.html">SummaryStats</a>&amp; other)</div>
+<div class="line"><a name="l00230"></a><span class="lineno">  230</span>&#160;  SummaryStats(<span class="keyword">const</span> SummaryStats&amp; other)</div>
 <div class="line"><a name="l00231"></a><span class="lineno">  231</span>&#160;      : count(other.count),</div>
 <div class="line"><a name="l00232"></a><span class="lineno">  232</span>&#160;        max(other.max),</div>
 <div class="line"><a name="l00233"></a><span class="lineno">  233</span>&#160;        min(other.min),</div>
@@ -271,7 +271,7 @@ $(document).ready(function(){initNavTree('stats_8h_source.html',''); initResizab
 <div class="line"><a name="l00246"></a><span class="lineno">  246</span>&#160;  }</div>
 <div class="line"><a name="l00247"></a><span class="lineno">  247</span>&#160; </div>
 <div class="line"><a name="l00256"></a><span class="lineno">  256</span>&#160;  <span class="keyword">template</span> &lt;<span class="keyword">typename</span> T = <span class="keywordtype">float</span>&gt;</div>
-<div class="line"><a name="l00257"></a><span class="lineno"><a class="line" href="classmdio_1_1internal_1_1SummaryStats.html#a83367a750759703ec2a5c038d1a82378">  257</a></span>&#160;  <span class="keyword">static</span> mdio::Result&lt;SummaryStats&gt; <a class="code" href="classmdio_1_1internal_1_1SummaryStats.html#a83367a750759703ec2a5c038d1a82378">FromJson</a>(<span class="keyword">const</span> nlohmann::json j) {</div>
+<div class="line"><a name="l00257"></a><span class="lineno">  257</span>&#160;  <span class="keyword">static</span> mdio::Result&lt;SummaryStats&gt; FromJson(<span class="keyword">const</span> nlohmann::json j) {</div>
 <div class="line"><a name="l00258"></a><span class="lineno">  258</span>&#160;    <span class="keyword">auto</span> histRes = constructHist&lt;T&gt;(j);</div>
 <div class="line"><a name="l00259"></a><span class="lineno">  259</span>&#160;    <span class="keywordflow">if</span> (!histRes.status().ok()) {</div>
 <div class="line"><a name="l00260"></a><span class="lineno">  260</span>&#160;      <span class="keywordflow">return</span> histRes.status();</div>
@@ -286,14 +286,14 @@ $(document).ready(function(){initNavTree('stats_8h_source.html',''); initResizab
 <div class="line"><a name="l00269"></a><span class="lineno">  269</span>&#160;      }</div>
 <div class="line"><a name="l00270"></a><span class="lineno">  270</span>&#160;    }</div>
 <div class="line"><a name="l00271"></a><span class="lineno">  271</span>&#160;    <span class="keyword">auto</span> stats =</div>
-<div class="line"><a name="l00272"></a><span class="lineno">  272</span>&#160;        <a class="code" href="classmdio_1_1internal_1_1SummaryStats.html">SummaryStats</a>(j[<span class="stringliteral">&quot;count&quot;</span>].get&lt;int32_t&gt;(), j[<span class="stringliteral">&quot;max&quot;</span>].get&lt;float&gt;(),</div>
+<div class="line"><a name="l00272"></a><span class="lineno">  272</span>&#160;        SummaryStats(j[<span class="stringliteral">&quot;count&quot;</span>].get&lt;int32_t&gt;(), j[<span class="stringliteral">&quot;max&quot;</span>].get&lt;float&gt;(),</div>
 <div class="line"><a name="l00273"></a><span class="lineno">  273</span>&#160;                     j[<span class="stringliteral">&quot;min&quot;</span>].get&lt;float&gt;(), j[<span class="stringliteral">&quot;sum&quot;</span>].get&lt;float&gt;(),</div>
 <div class="line"><a name="l00274"></a><span class="lineno">  274</span>&#160;                     j[<span class="stringliteral">&quot;sumSquares&quot;</span>].get&lt;float&gt;(), std::move(histogram));</div>
 <div class="line"><a name="l00275"></a><span class="lineno">  275</span>&#160;    <span class="keywordflow">return</span> mdio::Result&lt;SummaryStats&gt;(stats);</div>
 <div class="line"><a name="l00276"></a><span class="lineno">  276</span>&#160;  }</div>
 <div class="line"><a name="l00277"></a><span class="lineno">  277</span>&#160; </div>
 <div class="line"><a name="l00278"></a><span class="lineno">  278</span>&#160; <span class="keyword">private</span>:</div>
-<div class="line"><a name="l00279"></a><span class="lineno">  279</span>&#160;  <a class="code" href="classmdio_1_1internal_1_1SummaryStats.html">SummaryStats</a>(<span class="keyword">const</span> int32_t count, <span class="keyword">const</span> <span class="keywordtype">float</span> max, <span class="keyword">const</span> <span class="keywordtype">float</span> min,</div>
+<div class="line"><a name="l00279"></a><span class="lineno">  279</span>&#160;  SummaryStats(<span class="keyword">const</span> int32_t count, <span class="keyword">const</span> <span class="keywordtype">float</span> max, <span class="keyword">const</span> <span class="keywordtype">float</span> min,</div>
 <div class="line"><a name="l00280"></a><span class="lineno">  280</span>&#160;               <span class="keyword">const</span> <span class="keywordtype">float</span> sum, <span class="keyword">const</span> <span class="keywordtype">float</span> sumSquares,</div>
 <div class="line"><a name="l00281"></a><span class="lineno">  281</span>&#160;               std::unique_ptr&lt;const Histogram&gt; histogram)</div>
 <div class="line"><a name="l00282"></a><span class="lineno">  282</span>&#160;      : count(count),</div>
@@ -497,15 +497,6 @@ $(document).ready(function(){initNavTree('stats_8h_source.html',''); initResizab
 <div class="ttc" id="aclassmdio_1_1UserAttributes_html_a54686e10a9749d0f8bb3427426ef0f10"><div class="ttname"><a href="classmdio_1_1UserAttributes.html#a54686e10a9749d0f8bb3427426ef0f10">mdio::UserAttributes::FromJson</a></div><div class="ttdeci">static mdio::Result&lt; UserAttributes &gt; FromJson(const nlohmann::json &amp;j)</div><div class="ttdoc">Constructs a UserAttributes object from the JSON representation of a UserAttributes.</div><div class="ttdef"><b>Definition:</b> stats.h:407</div></div>
 <div class="ttc" id="aclassmdio_1_1UserAttributes_html_aaa0875514b19a14e10374aae746f2b94"><div class="ttname"><a href="classmdio_1_1UserAttributes.html#aaa0875514b19a14e10374aae746f2b94">mdio::UserAttributes::FromDatasetJson</a></div><div class="ttdeci">static mdio::Result&lt; UserAttributes &gt; FromDatasetJson(const nlohmann::json &amp;dataset, const std::string &amp;variable)</div><div class="ttdoc">Constructs a UserAttributes object from a JSON representation of a Dataset. This is intended to funct...</div><div class="ttdef"><b>Definition:</b> stats.h:370</div></div>
 <div class="ttc" id="aclassmdio_1_1UserAttributes_html_ae143b6efdbe56a9f3a6bfbd60b5a716c"><div class="ttname"><a href="classmdio_1_1UserAttributes.html#ae143b6efdbe56a9f3a6bfbd60b5a716c">mdio::UserAttributes::ToJson</a></div><div class="ttdeci">const nlohmann::json ToJson() const</div><div class="ttdoc">Gets the JSON representation of a UserAttributes object.</div><div class="ttdef"><b>Definition:</b> stats.h:465</div></div>
-<div class="ttc" id="aclassmdio_1_1internal_1_1CenteredBinHistogram_html"><div class="ttname"><a href="classmdio_1_1internal_1_1CenteredBinHistogram.html">mdio::internal::CenteredBinHistogram</a></div><div class="ttdef"><b>Definition:</b> stats.h:109</div></div>
-<div class="ttc" id="aclassmdio_1_1internal_1_1CenteredBinHistogram_html_addf2794f5db95daaeef2c5ee8df03ea1"><div class="ttname"><a href="classmdio_1_1internal_1_1CenteredBinHistogram.html#addf2794f5db95daaeef2c5ee8df03ea1">mdio::internal::CenteredBinHistogram::isBindable</a></div><div class="ttdeci">bool isBindable() const override</div><div class="ttdoc">Notifier for whether or not the histogram is bindable There is an instance where the histogram is not...</div><div class="ttdef"><b>Definition:</b> stats.h:151</div></div>
-<div class="ttc" id="aclassmdio_1_1internal_1_1EdgeDefinedHistogram_html"><div class="ttname"><a href="classmdio_1_1internal_1_1EdgeDefinedHistogram.html">mdio::internal::EdgeDefinedHistogram</a></div><div class="ttdef"><b>Definition:</b> stats.h:163</div></div>
-<div class="ttc" id="aclassmdio_1_1internal_1_1EdgeDefinedHistogram_html_a4bc63456720b4f023223a48ae641112a"><div class="ttname"><a href="classmdio_1_1internal_1_1EdgeDefinedHistogram.html#a4bc63456720b4f023223a48ae641112a">mdio::internal::EdgeDefinedHistogram::FromJson</a></div><div class="ttdeci">mdio::Result&lt; std::unique_ptr&lt; const Histogram &gt; &gt; FromJson(const nlohmann::json &amp;j) const override</div><div class="ttdoc">Attempts to construct a new EdgeDefinedHistogram from a JSON representation.</div><div class="ttdef"><b>Definition:</b> stats.h:180</div></div>
-<div class="ttc" id="aclassmdio_1_1internal_1_1EdgeDefinedHistogram_html_a79bd1956ff56681fbffad7e3421c556f"><div class="ttname"><a href="classmdio_1_1internal_1_1EdgeDefinedHistogram.html#a79bd1956ff56681fbffad7e3421c556f">mdio::internal::EdgeDefinedHistogram::isBindable</a></div><div class="ttdeci">bool isBindable() const override</div><div class="ttdoc">Notifier for whether or not the histogram is bindable There is an instance where the histogram is not...</div><div class="ttdef"><b>Definition:</b> stats.h:216</div></div>
-<div class="ttc" id="aclassmdio_1_1internal_1_1Histogram_html"><div class="ttname"><a href="classmdio_1_1internal_1_1Histogram.html">mdio::internal::Histogram</a></div><div class="ttdoc">A Histogram can be either CenteredBinHistogram or EdgeDefinedHistogram as defined by the MDIO spec.</div><div class="ttdef"><b>Definition:</b> stats.h:81</div></div>
-<div class="ttc" id="aclassmdio_1_1internal_1_1Histogram_html_a98dc23596c3c4aeeb7a5e8300743c61d"><div class="ttname"><a href="classmdio_1_1internal_1_1Histogram.html#a98dc23596c3c4aeeb7a5e8300743c61d">mdio::internal::Histogram::isBindable</a></div><div class="ttdeci">virtual bool isBindable() const =0</div><div class="ttdoc">Notifier for whether or not the histogram is bindable There is an instance where the histogram is not...</div></div>
-<div class="ttc" id="aclassmdio_1_1internal_1_1SummaryStats_html"><div class="ttname"><a href="classmdio_1_1internal_1_1SummaryStats.html">mdio::internal::SummaryStats</a></div><div class="ttdef"><b>Definition:</b> stats.h:228</div></div>
-<div class="ttc" id="aclassmdio_1_1internal_1_1SummaryStats_html_a83367a750759703ec2a5c038d1a82378"><div class="ttname"><a href="classmdio_1_1internal_1_1SummaryStats.html#a83367a750759703ec2a5c038d1a82378">mdio::internal::SummaryStats::FromJson</a></div><div class="ttdeci">static mdio::Result&lt; SummaryStats &gt; FromJson(const nlohmann::json j)</div><div class="ttdoc">Constructs a statsV1 object from JSON It is assumed to be a singleton of a statsV1 object....</div><div class="ttdef"><b>Definition:</b> stats.h:257</div></div>
 <div class="ttc" id="anamespacemdio_html"><div class="ttname"><a href="namespacemdio.html">mdio</a></div><div class="ttdef"><b>Definition:</b> dataset.h:43</div></div>
 </div><!-- fragment --></div><!-- contents -->
 </div><!-- doc-content -->
