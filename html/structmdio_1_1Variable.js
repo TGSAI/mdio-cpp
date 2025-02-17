@@ -1,6 +1,5 @@
 var structmdio_1_1Variable =
 [
-    [ "index_sequence", "structmdio_1_1Variable_1_1index__sequence.html", null ],
     [ "Interval", "structmdio_1_1Variable_1_1Interval.html", "structmdio_1_1Variable_1_1Interval" ],
     [ "Variable", "structmdio_1_1Variable.html#a580e479da0a433afbbef0a071ff55102", null ],
     [ "Variable", "structmdio_1_1Variable.html#a8fee312a59ae060d5946e4b4e3500f82", null ],
@@ -23,8 +22,6 @@ var structmdio_1_1Variable =
     [ "PublishMetadata", "structmdio_1_1Variable.html#adf1bd6a001ede167be91c489048d7a6d", null ],
     [ "rank", "structmdio_1_1Variable.html#a81c303df039cb5b4baa21f1528c58748", null ],
     [ "Read", "structmdio_1_1Variable.html#af425045bbd682a466383dcb99e244c6e", null ],
-    [ "set_metadata_publish_flag", "structmdio_1_1Variable.html#add51f82e7a14ef90aa9e9a520e470c9e", null ],
-    [ "should_publish", "structmdio_1_1Variable.html#a1b4110cb61acedde49783def9b6f329b", null ],
     [ "slice", "structmdio_1_1Variable.html#ae6f8d0b0dd2580e9add2b7b118076aa1", null ],
     [ "slice", "structmdio_1_1Variable.html#a7d25de55e7e7366248c4578d14d2c136", null ],
     [ "sliceInRange", "structmdio_1_1Variable.html#a79f66203aef204badd74daedf0da397c", null ],

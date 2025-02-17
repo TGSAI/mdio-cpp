@@ -1,8 +1,6 @@
 var searchData=
 [
-  ['index_5fsequence_32',['index_sequence',['../structmdio_1_1Dataset_1_1index__sequence.html',1,'mdio::Dataset::index_sequence&lt; I &gt;'],['../structmdio_1_1Variable_1_1index__sequence.html',1,'mdio::Variable&lt; T, R, M &gt;::index_sequence&lt; I &gt;']]],
-  ['index_5fsequence_3c_20i_2e_2e_2e_20_3e_33',['index_sequence&lt; I... &gt;',['../structmdio_1_1Dataset_1_1index__sequence.html',1,'mdio::Dataset']]],
-  ['interval_34',['Interval',['../structmdio_1_1Variable_1_1Interval.html',1,'mdio::Variable']]],
-  ['isbindable_35',['isBindable',['../classmdio_1_1internal_1_1Histogram.html#a98dc23596c3c4aeeb7a5e8300743c61d',1,'mdio::internal::Histogram::isBindable()'],['../classmdio_1_1internal_1_1CenteredBinHistogram.html#addf2794f5db95daaeef2c5ee8df03ea1',1,'mdio::internal::CenteredBinHistogram::isBindable()'],['../classmdio_1_1internal_1_1EdgeDefinedHistogram.html#a79bd1956ff56681fbffad7e3421c556f',1,'mdio::internal::EdgeDefinedHistogram::isBindable()']]],
-  ['isel_36',['isel',['../classmdio_1_1Dataset.html#a273fbf7254f4c75effa324a1a531d6c0',1,'mdio::Dataset::isel(Descriptors &amp;... descriptors)'],['../classmdio_1_1Dataset.html#afaf24735691b23748f6d6ae03ac596c6',1,'mdio::Dataset::isel(const std::vector&lt; RangeDescriptor&lt; Index &gt;&gt; &amp;slices)']]]
+  ['interval_29',['Interval',['../structmdio_1_1Variable_1_1Interval.html',1,'mdio::Variable']]],
+  ['isbindable_30',['isBindable',['../classmdio_1_1internal_1_1Histogram.html#a98dc23596c3c4aeeb7a5e8300743c61d',1,'mdio::internal::Histogram::isBindable()'],['../classmdio_1_1internal_1_1CenteredBinHistogram.html#addf2794f5db95daaeef2c5ee8df03ea1',1,'mdio::internal::CenteredBinHistogram::isBindable()'],['../classmdio_1_1internal_1_1EdgeDefinedHistogram.html#a79bd1956ff56681fbffad7e3421c556f',1,'mdio::internal::EdgeDefinedHistogram::isBindable()']]],
+  ['isel_31',['isel',['../classmdio_1_1Dataset.html#a273fbf7254f4c75effa324a1a531d6c0',1,'mdio::Dataset::isel(Descriptors &amp;... descriptors)'],['../classmdio_1_1Dataset.html#afaf24735691b23748f6d6ae03ac596c6',1,'mdio::Dataset::isel(const std::vector&lt; RangeDescriptor&lt; Index &gt;&gt; &amp;slices)']]]
 ];

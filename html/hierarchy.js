@@ -5,9 +5,6 @@ var hierarchy =
       [ "mdio::internal::CenteredBinHistogram< T >", "classmdio_1_1internal_1_1CenteredBinHistogram.html", null ],
       [ "mdio::internal::EdgeDefinedHistogram< T >", "classmdio_1_1internal_1_1EdgeDefinedHistogram.html", null ]
     ] ],
-    [ "mdio::Dataset::index_sequence< I >", "structmdio_1_1Dataset_1_1index__sequence.html", null ],
-    [ "mdio::Variable< T, R, M >::index_sequence< I >", "structmdio_1_1Variable_1_1index__sequence.html", null ],
-    [ "mdio::Dataset::index_sequence< I... >", "structmdio_1_1Dataset_1_1index__sequence.html", null ],
     [ "mdio::Variable< T, R, M >::Interval", "structmdio_1_1Variable_1_1Interval.html", null ],
     [ "mdio::LabeledArray< T, R, OriginKind >", "structmdio_1_1LabeledArray.html", null ],
     [ "mdio::ListDescriptor< T >", "structmdio_1_1ListDescriptor.html", null ],

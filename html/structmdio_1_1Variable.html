@@ -103,7 +103,7 @@ $(document).ready(function(){initNavTree('structmdio_1_1Variable.html',''); init
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="nested-classes"></a>
 Classes</h2></td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable_1_1index__sequence.html">index_sequence</a></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><b>index_sequence</b></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable_1_1Interval.html">Interval</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -186,9 +186,6 @@ nlohmann::json&#160;</td><td class="memItemRight" valign="bottom"><b>GetAttribut
 <tr class="memitem:a09fee24ea3e4445550af3f8019014d63"><td class="memItemLeft" align="right" valign="top">const bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#a09fee24ea3e4445550af3f8019014d63">was_updated</a> () const</td></tr>
 <tr class="memdesc:a09fee24ea3e4445550af3f8019014d63"><td class="mdescLeft">&#160;</td><td class="mdescRight">Checks if the User Attributes has changed in the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a>.  <a href="structmdio_1_1Variable.html#a09fee24ea3e4445550af3f8019014d63">More...</a><br /></td></tr>
 <tr class="separator:a09fee24ea3e4445550af3f8019014d63"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:add51f82e7a14ef90aa9e9a520e470c9e"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#add51f82e7a14ef90aa9e9a520e470c9e">set_metadata_publish_flag</a> (const bool shouldPublish)</td></tr>
-<tr class="memdesc:add51f82e7a14ef90aa9e9a520e470c9e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Sets the flag whether the metadata should get republished. Intended for internal use with the trimming utility.  <a href="structmdio_1_1Variable.html#add51f82e7a14ef90aa9e9a520e470c9e">More...</a><br /></td></tr>
-<tr class="separator:add51f82e7a14ef90aa9e9a520e470c9e"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a9656b9c6fff49c5dfb066d0fe3cb020e"><td class="memTemplParams" colspan="2">template&lt;typename... DimensionIdentifier&gt; </td></tr>
 <tr class="memitem:a9656b9c6fff49c5dfb066d0fe3cb020e"><td class="memTemplItemLeft" align="right" valign="top">mdio::Result&lt; std::vector&lt; <a class="el" href="structmdio_1_1Variable_1_1Interval.html">Interval</a> &gt; &gt;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#a9656b9c6fff49c5dfb066d0fe3cb020e">get_intervals</a> (const DimensionIdentifier &amp;... labels) const</td></tr>
 <tr class="memdesc:a9656b9c6fff49c5dfb066d0fe3cb020e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the domain of the whole <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> or selected dimensions.  <a href="structmdio_1_1Variable.html#a9656b9c6fff49c5dfb066d0fe3cb020e">More...</a><br /></td></tr>
@@ -205,9 +202,6 @@ const tensorstore::TensorStore&lt; T, R, M &gt; &amp;&#160;</td><td class="memIt
 <tr class="memitem:a2f768e12e6b1c02c74081c79aa8af192"><td class="memItemLeft" align="right" valign="top">const std::uintptr_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#a2f768e12e6b1c02c74081c79aa8af192">get_attributes_address</a> () const</td></tr>
 <tr class="memdesc:a2f768e12e6b1c02c74081c79aa8af192"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the original address of the User Attributes. This method should NEVER be called by the user. It allows for the copy constructor without re-serializing metadata.  <a href="structmdio_1_1Variable.html#a2f768e12e6b1c02c74081c79aa8af192">More...</a><br /></td></tr>
 <tr class="separator:a2f768e12e6b1c02c74081c79aa8af192"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a1b4110cb61acedde49783def9b6f329b"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#a1b4110cb61acedde49783def9b6f329b">should_publish</a> () const</td></tr>
-<tr class="memdesc:a1b4110cb61acedde49783def9b6f329b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets whether the metadata should get republished.  <a href="structmdio_1_1Variable.html#a1b4110cb61acedde49783def9b6f329b">More...</a><br /></td></tr>
-<tr class="separator:a1b4110cb61acedde49783def9b6f329b"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-static-methods"></a>
 Static Public Member Functions</h2></td></tr>
@@ -737,72 +731,6 @@ template&lt;ArrayOriginKind OriginKind = offset_origin&gt; </div>
   </dd>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>A future of <a class="el" href="structmdio_1_1VariableData.html" title="The in-memory representation of the data This object should only be constructed through the Variable:...">VariableData</a> that will be ready when the read is complete. </dd></dl>
-
-</div>
-</div>
-<a id="add51f82e7a14ef90aa9e9a520e470c9e"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#add51f82e7a14ef90aa9e9a520e470c9e">&#9670;&nbsp;</a></span>set_metadata_publish_flag()</h2>
-
-<div class="memitem">
-<div class="memproto">
-<div class="memtemplate">
-template&lt;typename T  = void, DimensionIndex R = dynamic_rank, ReadWriteMode M = ReadWriteMode::dynamic&gt; </div>
-<table class="mlabels">
-  <tr>
-  <td class="mlabels-left">
-      <table class="memname">
-        <tr>
-          <td class="memname">void <a class="el" href="structmdio_1_1Variable.html">mdio::Variable</a>&lt; T, R, M &gt;::set_metadata_publish_flag </td>
-          <td>(</td>
-          <td class="paramtype">const bool&#160;</td>
-          <td class="paramname"><em>shouldPublish</em></td><td>)</td>
-          <td></td>
-        </tr>
-      </table>
-  </td>
-  <td class="mlabels-right">
-<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
-  </tr>
-</table>
-</div><div class="memdoc">
-
-<p>Sets the flag whether the metadata should get republished. Intended for internal use with the trimming utility. </p>
-<dl class="params"><dt>Parameters</dt><dd>
-  <table class="params">
-    <tr><td class="paramname">shouldPublish</td><td>True if the metadata should get republished. </td></tr>
-  </table>
-  </dd>
-</dl>
-
-</div>
-</div>
-<a id="a1b4110cb61acedde49783def9b6f329b"></a>
-<h2 class="memtitle"><span class="permalink"><a href="#a1b4110cb61acedde49783def9b6f329b">&#9670;&nbsp;</a></span>should_publish()</h2>
-
-<div class="memitem">
-<div class="memproto">
-<div class="memtemplate">
-template&lt;typename T  = void, DimensionIndex R = dynamic_rank, ReadWriteMode M = ReadWriteMode::dynamic&gt; </div>
-<table class="mlabels">
-  <tr>
-  <td class="mlabels-left">
-      <table class="memname">
-        <tr>
-          <td class="memname">bool <a class="el" href="structmdio_1_1Variable.html">mdio::Variable</a>&lt; T, R, M &gt;::should_publish </td>
-          <td>(</td>
-          <td class="paramname"></td><td>)</td>
-          <td> const</td>
-        </tr>
-      </table>
-  </td>
-  <td class="mlabels-right">
-<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
-  </tr>
-</table>
-</div><div class="memdoc">
-
-<p>Gets whether the metadata should get republished. </p>
-<dl class="section return"><dt>Returns</dt><dd>True if the metadata should get republished. </dd></dl>
 
 </div>
 </div>

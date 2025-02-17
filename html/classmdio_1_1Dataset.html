@@ -103,7 +103,7 @@ $(document).ready(function(){initNavTree('classmdio_1_1Dataset.html',''); initRe
 <table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="nested-classes"></a>
 Classes</h2></td></tr>
-<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Dataset_1_1index__sequence.html">index_sequence</a></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><b>index_sequence</b></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><b>make_index_sequence</b></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -127,25 +127,10 @@ template&lt;typename... DimensionIdentifier&gt; </td></tr>
 <tr class="memitem:a273fbf7254f4c75effa324a1a531d6c0"><td class="memTemplItemLeft" align="right" valign="top">Result&lt; <a class="el" href="classmdio_1_1Dataset.html">Dataset</a> &gt;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="classmdio_1_1Dataset.html#a273fbf7254f4c75effa324a1a531d6c0">isel</a> (Descriptors &amp;... descriptors)</td></tr>
 <tr class="memdesc:a273fbf7254f4c75effa324a1a531d6c0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Performs an indexed slice on the <a class="el" href="classmdio_1_1Dataset.html" title="The Dataset class The dataset represents a collection of variables sharing a common grid.">Dataset</a>.  <a href="classmdio_1_1Dataset.html#a273fbf7254f4c75effa324a1a531d6c0">More...</a><br /></td></tr>
 <tr class="separator:a273fbf7254f4c75effa324a1a531d6c0"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a911d0bb134b2162620605e6f56e0cb8e"><td class="memTemplParams" colspan="2"><a id="a911d0bb134b2162620605e6f56e0cb8e"></a>
-template&lt;typename First , typename... Rest&gt; </td></tr>
-<tr class="memitem:a911d0bb134b2162620605e6f56e0cb8e"><td class="memTemplItemLeft" align="right" valign="top">constexpr bool&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="classmdio_1_1Dataset.html#a911d0bb134b2162620605e6f56e0cb8e">are_same</a> ()</td></tr>
-<tr class="memdesc:a911d0bb134b2162620605e6f56e0cb8e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Internal use only. <br /></td></tr>
-<tr class="separator:a911d0bb134b2162620605e6f56e0cb8e"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:af829d93e6cf7d4a30c1030e3bd6b3d73"><td class="memTemplParams" colspan="2"><a id="af829d93e6cf7d4a30c1030e3bd6b3d73"></a>
-template&lt;std::size_t... I&gt; </td></tr>
-<tr class="memitem:af829d93e6cf7d4a30c1030e3bd6b3d73"><td class="memTemplItemLeft" align="right" valign="top">Result&lt; <a class="el" href="classmdio_1_1Dataset.html">Dataset</a> &gt;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="classmdio_1_1Dataset.html#af829d93e6cf7d4a30c1030e3bd6b3d73">call_isel_with_vector_impl</a> (const std::vector&lt; <a class="el" href="structmdio_1_1RangeDescriptor.html">RangeDescriptor</a>&lt; Index &gt;&gt; &amp;slices, std::index_sequence&lt; I... &gt;)</td></tr>
-<tr class="memdesc:af829d93e6cf7d4a30c1030e3bd6b3d73"><td class="mdescLeft">&#160;</td><td class="mdescRight">Internal use only. Calls the <code>isel</code> method with a parameter pack expanded from the vector. <br /></td></tr>
-<tr class="separator:af829d93e6cf7d4a30c1030e3bd6b3d73"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:afaf24735691b23748f6d6ae03ac596c6"><td class="memItemLeft" align="right" valign="top"><a id="afaf24735691b23748f6d6ae03ac596c6"></a>
 Result&lt; <a class="el" href="classmdio_1_1Dataset.html">Dataset</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classmdio_1_1Dataset.html#afaf24735691b23748f6d6ae03ac596c6">isel</a> (const std::vector&lt; <a class="el" href="structmdio_1_1RangeDescriptor.html">RangeDescriptor</a>&lt; Index &gt;&gt; &amp;slices)</td></tr>
 <tr class="memdesc:afaf24735691b23748f6d6ae03ac596c6"><td class="mdescLeft">&#160;</td><td class="mdescRight">Internal use only. Calls the <code>isel</code> method with a vector of <code><a class="el" href="structmdio_1_1RangeDescriptor.html" title="A descriptor for slicing a Variable or Dataset.">RangeDescriptor</a></code> objects. Limited to <code>internal::kMaxNumSlices</code> slices which may not be equal to the number of descriptors. <br /></td></tr>
 <tr class="separator:afaf24735691b23748f6d6ae03ac596c6"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:adad3fd2c9282135789b3e4fa24ae1140"><td class="memTemplParams" colspan="2"><a id="adad3fd2c9282135789b3e4fa24ae1140"></a>
-template&lt;typename... Descriptors&gt; </td></tr>
-<tr class="memitem:adad3fd2c9282135789b3e4fa24ae1140"><td class="memTemplItemLeft" align="right" valign="top">Result&lt; std::map&lt; std::string_view, std::vector&lt; Index &gt; &gt; &gt;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="classmdio_1_1Dataset.html#adad3fd2c9282135789b3e4fa24ae1140">descriptor_to_index</a> (Descriptors... descriptors)</td></tr>
-<tr class="memdesc:adad3fd2c9282135789b3e4fa24ae1140"><td class="mdescLeft">&#160;</td><td class="mdescRight">Internal use only. Converts the <code>sel</code> descriptors to their <code>isel</code> equivalents. <br /></td></tr>
-<tr class="separator:adad3fd2c9282135789b3e4fa24ae1140"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ac1baa5daa0223cb4fcd1d74012928ce7"><td class="memTemplParams" colspan="2">template&lt;typename... Descriptors&gt; </td></tr>
 <tr class="memitem:ac1baa5daa0223cb4fcd1d74012928ce7"><td class="memTemplItemLeft" align="right" valign="top">Result&lt; <a class="el" href="classmdio_1_1Dataset.html">Dataset</a> &gt;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="classmdio_1_1Dataset.html#ac1baa5daa0223cb4fcd1d74012928ce7">sel</a> (Descriptors... descriptors)</td></tr>
 <tr class="memdesc:ac1baa5daa0223cb4fcd1d74012928ce7"><td class="mdescLeft">&#160;</td><td class="mdescRight">Performs a label-based slice on the <a class="el" href="classmdio_1_1Dataset.html" title="The Dataset class The dataset represents a collection of variables sharing a common grid.">Dataset</a> This method will slice the <a class="el" href="classmdio_1_1Dataset.html" title="The Dataset class The dataset represents a collection of variables sharing a common grid.">Dataset</a> based on coordinates rather than indicies. It may generate multiple slices depending on the type of descriptors provided.  <a href="classmdio_1_1Dataset.html#ac1baa5daa0223cb4fcd1d74012928ce7">More...</a><br /></td></tr>

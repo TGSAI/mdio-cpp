@@ -19,6 +19,7 @@
 Welcome to **MDIO** - a descriptive format for energy data that is intended to reduce storage costs,  improve the efficiency of I/O and make energy data and workflows understandable and reproducible.
 
 **MDIO** schema definitions [here.](https://mdio-python.readthedocs.io/en/v1-new-schema/data_models/version_1.html)
+**MDIO** C++ API documentation [here.](https://tgsai.github.io/mdio-cpp/html/index.html)
 
 # Requied tools
 - CMake 3.24 *or better*

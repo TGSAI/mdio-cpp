@@ -1,11 +1,7 @@
 var classmdio_1_1Dataset =
 [
-    [ "index_sequence", "structmdio_1_1Dataset_1_1index__sequence.html", null ],
     [ "Dataset", "classmdio_1_1Dataset.html#a57c9595e97c0b5ebced1d46d302f1997", null ],
-    [ "are_same", "classmdio_1_1Dataset.html#a911d0bb134b2162620605e6f56e0cb8e", null ],
-    [ "call_isel_with_vector_impl", "classmdio_1_1Dataset.html#af829d93e6cf7d4a30c1030e3bd6b3d73", null ],
     [ "CommitMetadata", "classmdio_1_1Dataset.html#a22157bcd14ae36f84e985323701daf36", null ],
-    [ "descriptor_to_index", "classmdio_1_1Dataset.html#adad3fd2c9282135789b3e4fa24ae1140", null ],
     [ "get_intervals", "classmdio_1_1Dataset.html#a8da834c09386a5b55b6bf9d032c94569", null ],
     [ "get_variable", "classmdio_1_1Dataset.html#a00b3f4023005865c9e8d721e6ed7ede8", null ],
     [ "getMetadata", "classmdio_1_1Dataset.html#ac664ab0fdc9c9d9e5f4fdace3895d4b2", null ],
