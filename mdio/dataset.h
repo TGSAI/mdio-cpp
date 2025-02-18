@@ -450,6 +450,13 @@ class Dataset {
     return variables.get<T, R, M>(variable_name);
   }
 
+  /**
+   * @brief Gets the intervals of the the dataset.
+   * @param 0 or more dimension labels for the intervals to retrieve.
+   * No labels will return all intervals in the dataset.
+   * @return A vector of intervals or NotFoundError if no intervals could be
+   * found.
+   */
   template <typename... DimensionIdentifier>
   mdio::Result<std::vector<Variable<>::Interval>> get_intervals(
       const DimensionIdentifier&... labels) const {
@@ -604,7 +611,9 @@ class Dataset {
 
   // Wrapper function that generates the index sequence
   /**
-   * @brief Internal use only.
+   * @brief This version of isel is only expected to be used interally.
+   * Documentation is provided for clarity and usage in the case where
+   * the number of descriptors cannot be known at compile time.
    * Calls the `isel` method with a vector of `RangeDescriptor` objects.
    * Limited to `internal::kMaxNumSlices` slices which may not be equal to the
    * number of descriptors.
@@ -1296,6 +1305,11 @@ class Dataset {
     return pair.future;
   }
 
+  /**
+   * @brief Commits changes made to the Variables metadata to durable media.
+   * @return A future representing the completion of the commit or an error if
+   * no changes were made but the commit was requested.
+   */
   tensorstore::Future<void> CommitMetadata() {
     auto keys = variables.get_iterable_accessor();
 
@@ -1414,19 +1428,23 @@ class Dataset {
     return pair.future;
   }
 
+  /**
+   * @brief Gets the Dataset level metadata.
+   * @return A const reference to the Dataset's metadata.
+   */
   const nlohmann::json& getMetadata() const { return metadata; }
 
-  // variables contained in the dataset
+  /// variables contained in the dataset
   VariableCollection variables;
 
-  // link a variable name to its coordinates via its name(s)
+  /// link a variable name to its coordinates via its name(s)
   coordinate_map coordinates;
 
-  // enumerate the dimensions
+  /// enumerate the dimensions
   tensorstore::IndexDomain<> domain;
 
  private:
-  // the metadata associated with the dataset (root .zattrs)
+  /// the metadata associated with the dataset (root .zattrs)
   ::nlohmann::json metadata;
 };
 }  // namespace mdio

@@ -74,9 +74,13 @@ struct outer_type;
 template <typename T = Index>
 struct RangeDescriptor {
   using type = T;
+  /// The label of the dimension to slice. Either a string or an index.
   DimensionIdentifier label;
+  /// The start index or value of the slice.
   T start;
+  /// The stop index or value of the slice.
   T stop;
+  /// The step index or value of the slice. Only 1 is supported currently.
   Index step = 1;
 };
 
@@ -121,7 +125,9 @@ struct SliceDescriptor {
 template <typename T>
 struct ValueDescriptor {
   using type = T;
+  /// The label of the dimension to slice.
   DimensionIdentifier label;
+  /// The value to slice.
   T value;
 };
 
@@ -135,7 +141,9 @@ struct ValueDescriptor {
 template <typename T>
 struct ListDescriptor {
   using type = T;
+  /// The label of the dimension to slice.
   DimensionIdentifier label;
+  /// The vector of values to slice.
   std::vector<T> values;
 };
 
@@ -286,8 +294,7 @@ Result<std::tuple<nlohmann::json, nlohmann::json>> ValidateAndProcessJson(
  * @tparam R The rank of the Variable.
  * @tparam M The read-write mode of the Variable.
  * @param spec The JSON specification to parse. `spec` is expected to contain
- * ["attributes"]["variable_name"] and
- * ["attributes"]["dimension_names"].
+ * ["attributes"]["variable_name"] and ["attributes"]["dimension_names"].
  * @param store The TensorStore to use for the Variable.
  * @return A Result object containing the created Variable.
  */
@@ -322,8 +329,9 @@ Result<Variable<T, R, M>> from_json(
     return attrsRes.status();
   }
 
-  std::string long_name =
-      "";  // Default case. TODO: Look into making this optional.
+  // Default case.
+  // TODO(BrianMichell): Look into making this optional.
+  std::string long_name = "";
   if (scrubbed_spec.contains("long_name")) {
     if (scrubbed_spec["long_name"].is_string() &&
         scrubbed_spec["long_name"].get<std::string>().size() > 0) {
@@ -378,7 +386,7 @@ Result<Variable<T, R, M>> from_json(
  * to create.
  * @param options The transactional open options to use when opening the
  * TensorStore.
- * @throws absl::StatusCode::kInvalidArgument if the attributes are empty.
+ * @return absl::StatusCode::kInvalidArgument if the attributes are empty.
  * @return mdio::Future<Variable<T, R, M>> A future that will be fulfilled with
  * the created variable.
  */
@@ -560,7 +568,7 @@ Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
   }
   // attributes is not a valid key for the tensorstore open ...
   // FIXME - resolve opening struct array with field and no metadata
-  //         udpates to Tensorstore required ...
+  //         updates to Tensorstore required ...
   if (!store_spec.contains("field") && store_spec.contains("metadata")) {
     store_spec.erase("metadata");
   }
@@ -729,15 +737,16 @@ Future<Variable<T, R, M>> Open(const nlohmann::json& json_spec,
 /**
  * @brief A templated struct representing an MDIO Variable with a tensorstore.
  * This is an MDIO specified zarr V2 tensorstore variable.
- * It represents the non-volitile (on-disc, in-cloud, etc.) data.
+ * It represents the non-volitile (on-disk, in-cloud, etc.) data.
  *
  * @tparam T The type of the data stored in the tensorstore.
  * @tparam R The rank of the tensorstore.
  * @tparam M The read-write mode of the tensorstore.
- * @param variableName
- * @param longName
- * @param metadata
- * @param store
+ * @param variableName The name of the variable.
+ * @param longName The optional long name of the variable.
+ * @param metadata Any metadata associated with the variable.
+ * @param store The underlying Tensorstore.
+ * @param attributes The user attributes associated with the variable.
  */
 template <typename T = void, DimensionIndex R = dynamic_rank,
           ReadWriteMode M = ReadWriteMode::dynamic>
@@ -850,8 +859,9 @@ class Variable {
    * to the target variable.
    * @code
    * MDIO_ASSIGN_OR_RETURN(auto velocity, mdio::Variable<>::Open(velocity_path,
-   * mdio::constants::kOpen)); MDIO_ASSIGN_OR_RETURN(auto velocityData,
-   * mdio::from_variable(velocity));
+   *                                                  mdio::constants::kOpen));
+   * // Get an empty version of the Variable.
+   * MDIO_ASSIGN_OR_RETURN(auto velocityData, mdio::from_variable(velocity));
    * // Do some manipulation of velocity here before writing it out.
    * auto velocityWriteFuture = velocity.Write(velocityData);
    * // This is a future. It will be ready when the write is complete.
@@ -1013,8 +1023,8 @@ class Variable {
    * @brief Slices the Variable along the specified dimensions and returns the
    * resulting sub-Variable. This slice is performed as a half open interval.
    * Dimensions that are not described will remain fully intact.
-   * @pre The step of the slice descriptor must be 1.
-   * @pre The start of the slice descriptor must be less than the stop.
+   * @pre The step of the descriptor object must be 1.
+   * @pre The start of the descriptor object must be less than the stop.
    * @post The resulting Variable will be sliced along the specified dimensions
    * within it's domain. If the slice lay outside of the domain of the Variable,
    * the slice will be clamped to the domain.
@@ -1173,6 +1183,10 @@ class Variable {
     return *this;
   }
 
+  /**
+   * @brief Retrieves the spec of the Variable as a JSON object.
+   * @return A JSON object representing the spec of the Variable.
+   */
   Result<nlohmann::json> get_spec() const {
     auto spec_res = spec();
     if (!spec_res.ok()) {
@@ -1201,8 +1215,6 @@ class Variable {
    * otherwise a vector of the chunk shape.
    */
   Result<std::vector<DimensionIndex>> get_chunk_shape() const {
-    // TODO(BrianMichell): Depricate this method name
-    // Reasoning: To reduce confusion between it and get_store_shape
     auto spec_res = get_spec();
     if (!spec_res.status().ok()) {
       return spec_res;
@@ -1253,7 +1265,8 @@ class Variable {
    * @brief Publishes new ".zattrs" metadata to the Variable's durable storage.
    * This method should not be called independantly as it will result in a
    * mismatch between the Variable metadata and Dataset metadata
-   * @return
+   * @return A future representing the timestamped storage generation of the
+   * updated Variable.
    */
   Future<tensorstore::TimestampedStorageGeneration> PublishMetadata() {
     auto publish = [](const ::nlohmann::json& json_var, bool isCloudStore,
@@ -1330,18 +1343,21 @@ class Variable {
    * an error and the attributes remain unchanged.
    * @details \b Intended_Usage
    * @code
-   * auto var = my_dataset.variables.at("my_variable_key").value(); // Status
-   * check ignored for berevity nlohmann::json to_update = var.GetAttributes();
+   * // Status check ignored for brevity
+   * auto var = my_dataset.variables.at("my_variable_key").value();
+   * nlohmann::json to_update = var.GetAttributes();
    * to_update["attributes"]["new_attr"] = "new_value";
-   * std::vector<int32_t> binCenters; // Populate with your data as needed
+   * std::vector<int32_t> binCenters;
+   * // Populate with your data as needed
    * to_update["statsV1"]["histogram"]["binCenters"] = binCenters;
-   * // NOTE: The vector is of type int32_t. We should pass the type as a
-   * template argument. auto update_result =
-   * var.UpdateAttributes<int32_t>(to_update); if (!update_result.status().ok())
-   * {
+   * // NOTE: The vector is of type int32_t. We must pass the type as a
+   * template argument.
+   * auto update_result = var.UpdateAttributes<int32_t>(to_update);
+   * if (!update_result.status().ok()) {
    *      // In this case nothing will happen. We output an error and move on
-   * with what previously existed. std::cerr << "Failed to update attributes: "
-   * << update_result.status() << std::endl;
+   *      // with what previously existed.
+   *      std::cerr << "Failed to update attributes: " <<
+   *      update_result.status() << std::endl;
    * }
    * @endcode
    * NOTE: This does not commit changes to durable media.
@@ -1357,6 +1373,14 @@ class Variable {
     return res;
   }
 
+  /**
+   * @brief Gets the User Attributes of the Variable as a JSON object.
+   * Returned object is expected to have a parent key of "attributes".
+   * This is expected to be the exact copy of the attributes field.
+   * @see
+   * https://mdio-python.readthedocs.io/en/v1/data_models/version_1.html#mdio.schema.v1.variable.VariableMetadata.attributes
+   * @return The User Attributes in JSON form.
+   */
   nlohmann::json GetAttributes() const {
     // Dereference the outer std::shared_ptr to get the inner std::shared_ptr
     return (*attributes)->ToJson();
@@ -1364,6 +1388,7 @@ class Variable {
 
   /**
    * @brief Gets the entire metadata of the Variable.
+   * Returned object is expected to have a parent key of "metadata".
    * @return The metadata in JSON form
    */
   nlohmann::json getMetadata() const {
@@ -1383,7 +1408,7 @@ class Variable {
    * @brief A reduced version of the metadata
    * NOTE: This may only be useful for internal uses. See `getMetadata()` for
    * the full metadata. This version should lack the mutable UserAttributes
-   * portions, if they exist
+   * portions, if they exist.
    * @return The reduced metadata in JSON form
    */
   const nlohmann::json getReducedMetadata() const {
@@ -1421,6 +1446,9 @@ class Variable {
     }
   }
 
+  /**
+   * @brief A struct representing the half open interval of a dimension.
+   */
   struct Interval {
     friend std::ostream& operator<<(std::ostream& os, const Interval& obj) {
       os << obj.label.label() << ": [" << obj.inclusive_min << ", "
@@ -1428,8 +1456,11 @@ class Variable {
       return os;
     }
 
+    /// The string or index label of the dimension.
     mdio::DimensionIdentifier label;
+    /// The inclusive minimum of the interval.
     mdio::Index inclusive_min;
+    /// The exclusive maximum of the interval.
     mdio::Index exclusive_max;
   };
 
@@ -1488,10 +1519,22 @@ class Variable {
   }
 
   // ===========================Member data getters===========================
+  /**
+   * @brief Gets the name of the variable.
+   * @return The name of the variable.
+   */
   const std::string& get_variable_name() const { return variableName; }
 
+  /**
+   * @brief Gets the long name of the variable.
+   * @return The long name of the variable.
+   */
   const std::string& get_long_name() const { return longName; }
 
+  /**
+   * @brief Gets the underlying tensorstore of the variable.
+   * @return The tensorstore of the variable.
+   */
   const tensorstore::TensorStore<T, R, M>& get_store() const { return store; }
 
   // The data that should remain static, but MAY need to be updated.
@@ -1756,14 +1799,13 @@ struct VariableData {
    * mdio::RangeDescriptor<Index> dim_zero_slice = {"Dimension_0", 4, 10, 1};
    * MDIO_ASSIGN_OR_RETURN(auto sliced_dataset, dataset.isel(dim_zero_slice));
    * MDIO_ASSIGN_OR_RETURN(auto sliced_variable,
-   * sliced_dataset.variables.get<mdio::dtypes::float32>("my_variable"));
+   *       sliced_dataset.variables.get<mdio::dtypes::float32>("my_variable"));
    * MDIO_ASSIGN_OR_RETURN(auto sliced_data, sliced_variable.Read().result());
    * auto flattened_data =
    * reinterpret_cast<mdio::float32_t*>(sliced_data.get_data_accessor().data());
    * auto offset = sliced_data.get_flattened_offset();
    * // We can use the method `sliced_data.get_data_accessor().num_elements()`
-   * in conjunction with
-   * // `offset` instead of hardcoding 6 for n-dimensional data.
+   * // in conjunction with `offset` instead of hardcoding 6.
    * for (size_t i=0; i<6; ++i) {
    *      std::cout << flattened_data[i + offset] << std::endl;
    * }
