@@ -1823,17 +1823,12 @@ Result<VariableData<T, R, OriginKind>> from_variable(
     size_t num_elements = variable.num_samples();
     size_t element_size = variable.dtype().size();
 
-    // Fill with NaN values using memset
     if (variable.dtype() == constants::kFloat32) {
       auto* data = reinterpret_cast<float*>(_array.data());
-      for (size_t i = 0; i < num_elements; ++i) {
-        data[i] = std::numeric_limits<float>::quiet_NaN();
-      }
+      std::fill_n(data, num_elements, std::numeric_limits<float>::quiet_NaN());
     } else {  // double
       auto* data = reinterpret_cast<double*>(_array.data());
-      for (size_t i = 0; i < num_elements; ++i) {
-        data[i] = std::numeric_limits<double>::quiet_NaN();
-      }
+      std::fill_n(data, num_elements, std::numeric_limits<double>::quiet_NaN());
     }
   }
 
