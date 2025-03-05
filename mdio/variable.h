@@ -1013,7 +1013,6 @@ class Variable {
    * @brief Slices the Variable along the specified dimensions and returns the
    * resulting sub-Variable. This slice is performed as a half open interval.
    * Dimensions that are not described will remain fully intact.
-   * @pre The step of the slice descriptor must be 1.
    * @pre The start of the slice descriptor must be less than the stop.
    * @post The resulting Variable will be sliced along the specified dimensions
    * within it's domain. If the slice lay outside of the domain of the Variable,
@@ -1043,7 +1042,6 @@ class Variable {
     stop.reserve(numDescriptors);
     step.reserve(numDescriptors);
     // -1 Everything is ok
-    // -2 Error: Step is not 1
     // >=0 Error: Start is greater than or equal to stop
     int8_t preconditionStatus = -1;
 
@@ -1052,10 +1050,6 @@ class Variable {
           size_t idx = 0;
           ((
                [&] {
-                 if (desc.step != 1) {
-                   preconditionStatus = -2;
-                   return -2;
-                 }
                  auto clampedDesc = sliceInRange(desc);
                  if (clampedDesc.start > clampedDesc.stop) {
                    preconditionStatus = idx;
@@ -1075,10 +1069,7 @@ class Variable {
         },
         tuple_descs);
 
-    if (preconditionStatus == -2) {
-      return absl::InvalidArgumentError(
-          "Only step 1 is supported for slicing.");
-    } else if (preconditionStatus >= 0) {
+    if (preconditionStatus >= 0) {
       mdio::RangeDescriptor<Index> err;
       std::apply(
           [&](const auto&... desc) {
@@ -1597,8 +1588,6 @@ struct LabeledArray {
 
     tensorstore::DimensionIndexBuffer buffer;
 
-    bool preconditionStatus = true;
-
     absl::Status overall_status = absl::OkStatus();
     std::apply(
         [&](const auto&... desc) {
@@ -1614,20 +1603,12 @@ struct LabeledArray {
                    overall_status = result;  // Capture the error status
                    return;                   // Exit lambda on error
                  }
-                 if (desc.step != 1) {
-                   preconditionStatus = false;
-                 }
                  dims[idx] = buffer[0];
                }(),
                idx++),
            ...);
         },
         tuple_descs);
-
-    if (!preconditionStatus) {
-      return absl::InvalidArgumentError(
-          "Only step 1 is supported for slicing.");
-    }
 
     /// could be we can't slice a dimension
     if (!overall_status.ok()) {
