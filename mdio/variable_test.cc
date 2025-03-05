@@ -754,28 +754,9 @@ TEST(Variable, outOfBoundsSlice) {
   auto badDomain = outbounds.value();
   EXPECT_THAT(badDomain.dimensions().shape(), ::testing::ElementsAre(250, 500))
       << badDomain.dimensions();
-
-  //   mdio::RangeDescriptor<mdio::Index> illegal_step = {"x", 0, 500, 2};
-  // var = mdio::Variable<>::Open(json_good,
-  // mdio::constants::kCreateClean).result(); auto illegal =
-  // var.value().slice(illegal_step); EXPECT_FALSE(illegal.status().ok()) <<
-  // "Step precondition was violated but still sliced";
-
-  // mdio::RangeDescriptor<mdio::Index> illegal_start_stop = {"x", 500, 0, 1};
-  // illegal = var.value().slice(illegal_start_stop);
-  // EXPECT_FALSE(illegal.status().ok()) << "Start stop precondition was
-  // violated but still sliced";
-
-  // mdio::RangeDescriptor<mdio::Index> same_idx = {"x", 1, 1, 1};
-  // auto legal = var.value().slice(same_idx);
-  // EXPECT_TRUE(legal.status().ok()) <<
-  // legal.status();mdio::RangeDescriptor<mdio::Index> illegal_step = {"x", 0,
-  // 500, 2};
+      
   auto var1 =
       mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean).result();
-  //   auto illegal = var1.value().slice(illegal_step);
-  //   EXPECT_FALSE(illegal.status().ok())
-  //       << "Step precondition was violated but still sliced";
 
   mdio::RangeDescriptor<mdio::Index> illegal_start_stop = {"x", 500, 0, 1};
   auto illegal = var1.value().slice(illegal_start_stop);
@@ -894,11 +875,6 @@ TEST(VariableData, outOfBoundsSlice) {
   auto outbounds = varData.slice(x_outbounds, y_inbounds);
   EXPECT_FALSE(outbounds.status().ok())
       << "Slicing out of bounds should fail but did not";
-
-  //   mdio::RangeDescriptor<mdio::Index> illegal_step = {"x", 0, 500, 2};
-  //   auto illegal = varData.slice(illegal_step);
-  //   EXPECT_FALSE(illegal.status().ok())
-  //       << "Step precondition was violated but still sliced";
 }
 
 TEST(VariableSpec, open) {
