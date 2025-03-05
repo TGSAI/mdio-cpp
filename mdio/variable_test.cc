@@ -754,7 +754,7 @@ TEST(Variable, outOfBoundsSlice) {
   auto badDomain = outbounds.value();
   EXPECT_THAT(badDomain.dimensions().shape(), ::testing::ElementsAre(250, 500))
       << badDomain.dimensions();
-      
+
   auto var1 =
       mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean).result();
 

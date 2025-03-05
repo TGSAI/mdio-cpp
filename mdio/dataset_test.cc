@@ -538,11 +538,13 @@ TEST(Dataset, iselWithStrideAndExistingData) {
   std::string testPath = "zarrs/slice_scale_test";
   float scaleFactor = 2.5f;
 
-  // --- Step 1: Initialize the entire image variable with QC values and Write it ---
+  // --- Step 1: Initialize the entire image variable with QC values and Write
+  // it ---
   {
     // Create a new dataset
     auto json_vars = GetToyExample();
-    auto dataset = mdio::Dataset::from_json(json_vars, testPath, mdio::constants::kCreateClean);
+    auto dataset = mdio::Dataset::from_json(json_vars, testPath,
+                                            mdio::constants::kCreateClean);
     ASSERT_TRUE(dataset.status().ok()) << dataset.status();
     auto ds = dataset.value();
 
@@ -571,7 +573,8 @@ TEST(Dataset, iselWithStrideAndExistingData) {
     ASSERT_TRUE(writeFut.status().ok()) << writeFut.status();
   }  // End of Step 1
 
-  // --- Step 2: Slice with stride of 2 and scale the values of the "image" variable ---
+  // --- Step 2: Slice with stride of 2 and scale the values of the "image"
+  // variable ---
   {
     // Re-open the dataset for modifications.
     auto reopenedDsFut = mdio::Dataset::Open(testPath, mdio::constants::kOpen);
@@ -594,9 +597,10 @@ TEST(Dataset, iselWithStrideAndExistingData) {
     auto imageData = imageDataFut.value();
     auto imageAccessor = imageData.get_data_accessor().data();
 
-    // The sliced "image" now has dimensions 128 x 512 x 384 because we selected every 2nd index.
-    // Scale each element in the slice by 'scaleFactor'
-    for (uint32_t ii = 0; ii < 128; ii++) {  // 'ii' corresponds to original index i = ii * 2.
+    // The sliced "image" now has dimensions 128 x 512 x 384 because we selected
+    // every 2nd index. Scale each element in the slice by 'scaleFactor'
+    for (uint32_t ii = 0; ii < 128;
+         ii++) {  // 'ii' corresponds to original index i = ii * 2.
       for (uint32_t j = 0; j < 512; j++) {
         for (uint32_t k = 0; k < 384; k++) {
           size_t index = ii * (512 * 384) + j * 384 + k;
@@ -626,8 +630,9 @@ TEST(Dataset, iselWithStrideAndExistingData) {
     auto imageAccessor = imageData.get_data_accessor().data();
 
     // Validate the values over the entire "image" variable.
-    // For even inline indices (i % 2 == 0) we expect the initial QC value scaled by 'scaleFactor'.
-    // For odd inline indices, the original QC values should remain.
+    // For even inline indices (i % 2 == 0) we expect the initial QC value
+    // scaled by 'scaleFactor'. For odd inline indices, the original QC values
+    // should remain.
     for (uint32_t i = 0; i < 256; i++) {
       for (uint32_t j = 0; j < 512; j++) {
         for (uint32_t k = 0; k < 384; k++) {
