@@ -17,6 +17,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <cmath>  // For checking NaN values
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -1268,6 +1269,24 @@ TEST(VariableData, writeTest) {
 
   std::filesystem::remove_all("test.zarr");
   std::filesystem::remove_all("name");
+}
+
+TEST(VariableData, fromVariableFillTest) {
+  auto goodJson = json_good;
+  // Issue #144 reports double with fill value of NaN filling with 0's
+  goodJson["metadata"]["dtype"] = "<f8";
+  // Copy dataset factory fill value pattern for double.
+  goodJson["metadata"]["fill_value"] = nlohmann::json::value_t::null;
+  auto variable = mdio::Variable<mdio::dtypes::float64_t>::Open(
+                      goodJson, mdio::constants::kCreateClean)
+                      .value();
+  mdio::Result<mdio::VariableData<mdio::dtypes::float64_t>> variableData =
+      mdio::from_variable<mdio::dtypes::float64_t>(variable);
+
+  // Use std::isnan to check for NaN
+  EXPECT_TRUE(std::isnan(variableData.value().get_data_accessor().data()[0]))
+      << "Expected NaN filled array but got "
+      << variableData.value().get_data_accessor().data()[0];
 }
 
 }  // namespace

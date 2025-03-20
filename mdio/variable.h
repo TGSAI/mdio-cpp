@@ -16,6 +16,7 @@
 #define MDIO_VARIABLE_H_
 
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <queue>
 #include <set>
@@ -1793,8 +1794,15 @@ struct VariableData {
 };
 
 /**
- * @brief If you already have a variable in memory, allocated a
- * variableDataobject using this variable as the specification.
+ * @brief Allocates a VariableData object with the specified dtype and fill
+ * value. Intended behavior is to fill the array with default fill values and
+ * may overwrite existing data if written to disk.
+ * @tparam T The data type of the variable.
+ * @tparam R The rank of the variable.
+ * @tparam OriginKind The origin kind of the variable.
+ * @param variable The variable to allocate from.
+ * @return mdio::Result<VariableData<T, R, OriginKind>> The allocated
+ * VariableData object.
  */
 template <typename T = void, DimensionIndex R = dynamic_rank,
           ArrayOriginKind OriginKind = offset_origin>
@@ -1808,6 +1816,21 @@ Result<VariableData<T, R, OriginKind>> from_variable(
   auto _array = tensorstore::AllocateArray(
       variable.get_store().domain().box(), mdio::ContiguousLayoutOrder::c,
       tensorstore::value_init, variable.dtype());
+
+  if (variable.dtype() == constants::kFloat32 ||
+      variable.dtype() == constants::kFloat64) {
+    // Get the size of the array in bytes
+    size_t num_elements = variable.num_samples();
+    size_t element_size = variable.dtype().size();
+
+    if (variable.dtype() == constants::kFloat32) {
+      auto* data = reinterpret_cast<float*>(_array.data());
+      std::fill_n(data, num_elements, std::numeric_limits<float>::quiet_NaN());
+    } else {  // double
+      auto* data = reinterpret_cast<double*>(_array.data());
+      std::fill_n(data, num_elements, std::numeric_limits<double>::quiet_NaN());
+    }
+  }
 
   // The second step tries to cast the dtype of the array to the supplied
   // templated. this can fail if the types are inconsistent, at which point it
