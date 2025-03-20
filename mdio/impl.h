@@ -114,7 +114,7 @@ constexpr auto kCreateClean =
 /// Create a new file or error if it already exists.
 constexpr auto kCreate = tensorstore::OpenMode::create;
 
-// Tensorstore appears to be imposing a max size of 0x3fffffffffffffff
+/// Tensorstore appears to be imposing a max size of 0x3fffffffffffffff
 constexpr uint64_t kMaxSize = 4611686018427387903;
 
 // Supported dtypes
