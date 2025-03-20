@@ -24,7 +24,6 @@
 #include "interpolation.h"
 #include "progress.h"
 #include "seismic_numpy.h"
-#include "seismic_png.h"
 #include "tensorstore/tensorstore.h"
 
 #define MDIO_RETURN_IF_ERROR(...) TENSORSTORE_RETURN_IF_ERROR(__VA_ARGS__)
@@ -39,7 +38,7 @@ ABSL_FLAG(std::string, depth_range, "",
           "Optional depth range in format {depth,start,end,step}");
 ABSL_FLAG(std::string, variable_name, "seismic",
           "Name of the seismic variable");
-ABSL_FLAG(bool, print_dataset, false, "Print the dataset URL and return");
+ABSL_FLAG(bool, print_dataset, false, "Print the dataset metadata and return");
 ABSL_FLAG(std::string, dataset_path,
           "s3://tgs-opendata-poseidon/full_stack_agc.mdio",
           "The path to the dataset");
@@ -126,5 +125,11 @@ int main(int argc, char* argv[]) {
   auto desc2 = ParseRange(crossline_range);
   auto desc3 = ParseRange(depth_range);
 
-  return Run<float>(desc1, desc2, desc3).ok() ? 0 : 1;
+  auto runResult = Run<float>(desc1, desc2, desc3);
+  if (!runResult.ok()) {
+    std::cerr << "Error: " << runResult.ToString() << std::endl;
+    return 1;
+  }
+
+  return 0;
 }
