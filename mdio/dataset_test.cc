@@ -966,6 +966,46 @@ TEST(Dataset, create) {
       << "Dataset successfully overwrote an existing dataset!";
 }
 
+TEST(Dataset, getVariableUnits) {
+  const std::string path = "zarrs/acceptance";
+  std::filesystem::remove_all("zarrs/acceptance");
+  auto json_vars = GetToyExample();
+
+  auto datasetRes =
+      mdio::Dataset::from_json(json_vars, path, mdio::constants::kCreateClean);
+  ASSERT_TRUE(datasetRes.status().ok()) << datasetRes.status();
+  auto dataset = datasetRes.value();
+
+  auto imageRes = dataset.variables.at("velocity");
+  ASSERT_TRUE(imageRes.ok()) << imageRes.status();
+  auto image = imageRes.value();
+
+  auto unitsRes = image.get_units();
+  ASSERT_TRUE(unitsRes.status().ok()) << unitsRes.status();
+  auto units = unitsRes.value();
+  EXPECT_EQ(units.get<std::string>(), mdio::units::kMetersPerSecond);
+}
+
+TEST(Dataset, getVariableUnitsError) {
+  const std::string path = "zarrs/acceptance";
+  std::filesystem::remove_all("zarrs/acceptance");
+  auto json_vars = GetToyExample();
+
+  auto datasetRes =
+      mdio::Dataset::from_json(json_vars, path, mdio::constants::kCreateClean);
+  ASSERT_TRUE(datasetRes.status().ok()) << datasetRes.status();
+  auto dataset = datasetRes.value();
+
+  auto imageRes = dataset.variables.at("image");
+  ASSERT_TRUE(imageRes.ok()) << imageRes.status();
+  auto image = imageRes.value();
+
+  auto unitsRes = image.get_units();
+  ASSERT_FALSE(unitsRes.status().ok()) << unitsRes.status();
+  EXPECT_EQ(unitsRes.status().message(),
+            "This Variable does not contain units");
+}
+
 TEST(Dataset, commitMetadata) {
   const std::string path = "zarrs/acceptance";
   std::filesystem::remove_all("zarrs/acceptance");

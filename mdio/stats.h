@@ -352,7 +352,7 @@ class UserAttributes {
    * @endcode
    */
   UserAttributes(const UserAttributes& other)
-      : stats(other.stats), attrs(other.attrs) {}
+      : stats(other.stats), units(other.units), attrs(other.attrs) {}
 
   /**
    * @brief Constructs a UserAttributes object from a JSON representation of a
@@ -410,35 +410,60 @@ class UserAttributes {
     // Because the user can supply JSON here, there's a chance that the JSON is
     // malformed.
     try {
-      if (j.contains("statsV1")) {
-        auto statsJson = j["statsV1"];
+      if (j.contains("statsV1") || j.contains("unitsV1")) {
         std::vector<internal::SummaryStats> statsCollection;
-        if (statsJson.is_array()) {
-          for (auto& s : statsJson) {
-            auto statsRes = internal::SummaryStats::FromJson<T>(s);
+        if (j.contains("statsV1")) {
+          auto statsJson = j["statsV1"];
+          if (statsJson.is_array()) {
+            for (auto& s : statsJson) {
+              auto statsRes = internal::SummaryStats::FromJson<T>(s);
+              if (!statsRes.status().ok()) {
+                return statsRes.status();
+              }
+              statsCollection.emplace_back(statsRes.value());
+            }
+          } else {
+            auto statsRes = internal::SummaryStats::FromJson<T>(statsJson);
             if (!statsRes.status().ok()) {
               return statsRes.status();
             }
             statsCollection.emplace_back(statsRes.value());
           }
-        } else {
-          auto statsRes = internal::SummaryStats::FromJson<T>(statsJson);
-          if (!statsRes.status().ok()) {
-            return statsRes.status();
+        }
+        std::vector<std::string> unitsCollection;
+        if (j.contains("unitsV1")) {
+          auto unitsJson = j["unitsV1"];
+          if (unitsJson.is_array()) {
+            for (auto& s : unitsJson) {
+              if (s.is_object()) {
+                // If the element is an object, iterate its key-value pairs.
+                for (auto& kv : s.items()) {
+                  unitsCollection.push_back(kv.value().get<std::string>());
+                }
+              } else {
+                unitsCollection.push_back(s.get<std::string>());
+              }
+            }
+          } else if (unitsJson.is_object()) {
+            // If unitsV1 itself is an object, iterate its key-value pairs.
+            for (auto& kv : unitsJson.items()) {
+              unitsCollection.push_back(kv.value().get<std::string>());
+            }
+          } else {
+            unitsCollection.push_back(unitsJson.get<std::string>());
           }
-          statsCollection.emplace_back(statsRes.value());
         }
         auto attrs =
-            UserAttributes(statsCollection, j.contains("attributes")
-                                                ? j["attributes"]
-                                                : nlohmann::json::object());
-        return attrs;
+            UserAttributes(statsCollection, unitsCollection,
+                           j.contains("attributes") ? j["attributes"]
+                                                    : nlohmann::json::object());
+        return mdio::Result<UserAttributes>(attrs);
       } else if (j.contains("attributes")) {
         auto attrs = UserAttributes(j["attributes"]);
-        return attrs;
+        return mdio::Result<UserAttributes>(attrs);
       }
       auto attrs = UserAttributes(nlohmann::json::object());
-      return attrs;
+      return mdio::Result<UserAttributes>(attrs);
     } catch (const nlohmann::json::exception& e) {
       return absl::InvalidArgumentError(
           "There appeared to be some malformed JSON" + std::string(e.what()));
@@ -455,6 +480,12 @@ class UserAttributes {
   const nlohmann::json getStatsV1() const { return statsBindable(); }
 
   /**
+   * @brief Extracts just the unitsV1 JSON
+   * @return The unitsV1 JSON representation of the data
+   */
+  const nlohmann::json getUnitsV1() const { return unitsBindable(); }
+
+  /**
    * @brief Extracts just the attributes JSON
    * @return The attributes JSON representation of the data
    */
@@ -468,6 +499,9 @@ class UserAttributes {
     nlohmann::json j = nlohmann::json::object();
     if (stats.size() >= 1) {
       j["statsV1"] = statsBindable();
+    }
+    if (units.size() >= 1) {
+      j["unitsV1"] = unitsBindable();
     }
     auto attrs = attrsBindable();
     if (attrs.empty()) {
@@ -485,7 +519,7 @@ class UserAttributes {
    * static member function `FromJson(nlohmann::json)`
    */
   explicit UserAttributes(const nlohmann::json& attrs)
-      : attrs(attrs), stats({}) {}
+      : attrs(attrs), stats({}), units({}) {}
 
   /**
    * @brief A case where there are statsV1 objects but no attributes
@@ -494,10 +528,33 @@ class UserAttributes {
    * @note This constructor is intended for internal use only. Please use the
    * static member function `FromJson(nlohmann::json)`
    */
-
   UserAttributes(const std::vector<internal::SummaryStats>& stats,
                  const nlohmann::json attrs)
-      : stats(stats), attrs(attrs) {}
+      : stats(stats), units({}), attrs(attrs) {}
+
+  /**
+   * @brief A case where there are unitsV1 objects but no attributes
+   * @param units A collection of SummaryStats objects
+   * @param attrs User specified attributes
+   * @note This constructor is intended for internal use only. Please use the
+   * static member function `FromJson(nlohmann::json)`
+   */
+  UserAttributes(const std::vector<std::string>& units,
+                 const nlohmann::json attrs)
+      : units(units), attrs(attrs) {}
+
+  /**
+   * @brief A case where there are both statsV1 and unitsV1 objects
+   * @param stats A collection of SummaryStats objects
+   * @param units A collection of SummaryStats objects
+   * @param attrs User specified attributes
+   * @note This constructor is intended for internal use only. Please use the
+   * static member function `FromJson(nlohmann::json)`
+   */
+  UserAttributes(const std::vector<internal::SummaryStats>& stats,
+                 const std::vector<std::string>& units,
+                 const nlohmann::json attrs)
+      : stats(stats), units(units), attrs(attrs) {}
 
   /**
    * @brief Binds the existing statsV1 data to a JSON object
@@ -514,6 +571,23 @@ class UserAttributes {
       statsRet.emplace_back(stat.getBindable());
     }
     return statsRet;
+  }
+
+  /**
+   * @brief Binds the existing unitsV1 data to a JSON object
+   * @return A bindable unitsV1 JSON object
+   */
+  const nlohmann::json unitsBindable() const {
+    if (units.empty()) {
+      return nlohmann::json::object();
+    } else if (units.size() == 1) {
+      return units[0];
+    }
+    nlohmann::json unitsRet = nlohmann::json::array();
+    for (const auto& unit : units) {
+      unitsRet.push_back(unit);
+    }
+    return unitsRet;
   }
 
   /**
@@ -547,13 +621,14 @@ class UserAttributes {
             return true;  // Assumption #1
           }
         }
-        return false;  // If we get here then we have only integers
+        return false;
       }
     }
-    return true;  // We don't care, a histogram doesn't exist in this Variable
+    return true;  // Default to float if no histogram is provided
   }
 
   std::vector<internal::SummaryStats> stats;
+  std::vector<std::string> units;
   const nlohmann::json attrs;
 };
 

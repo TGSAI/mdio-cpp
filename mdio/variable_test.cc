@@ -51,11 +51,12 @@
                     {"job status", "win"},  // can be anything
                     {"project code", "fail"}
                 }
-            }}
+            },
+            {"unitsV1", {"m", "ft"}}  // moved to be directly in metadata
+            }
         },
         {"long_name", "foooooo ....."},  // required
         {"dimension_names", {"x", "y"} },  // required
-        {"dimension_units", {"m", "ft"} },  // optional (if coord).
     }},
     {"metadata",
         {
@@ -78,7 +79,7 @@
         }
     },
     {"attributes",
-        {{"dimension_units", {"m", "ft"} },  // optional (if coord).
+        {{"unitsV1", {"m", "ft"} },  // optional (if coord).
             {"metadata",
                 {{"attributes",  // optional misc attributes.
                     {
@@ -731,6 +732,16 @@ TEST(Variable, userAttributes) {
       << "An update to the UserAttributes was not detected";
   EXPECT_TRUE(var2Sliced.was_updated())
       << "An update to the UserAttributes was not detected";
+}
+
+TEST(Variable, getUnitsPresent) {
+  auto var1Res =
+      mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean);
+  ASSERT_TRUE(var1Res.status().ok()) << var1Res.status();
+  auto var1 = var1Res.value();
+
+  auto unitsRes = var1.get_units();
+  ASSERT_TRUE(unitsRes.status().ok()) << unitsRes.status();
 }
 
 // If a slice is "out of bounds" it should automatically get resized to the
