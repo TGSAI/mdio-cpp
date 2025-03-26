@@ -5,7 +5,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=9"/>
 <meta name="generator" content="Doxygen 1.9.1"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>mdio-cpp: utils/trim.h Source File</title>
+<title>mdio-cpp: mdio/utils/trim.h Source File</title>
 <link href="tabs.css" rel="stylesheet" type="text/css"/>
 <script type="text/javascript" src="jquery.js"></script>
 <script type="text/javascript" src="dynsections.js"></script>
@@ -137,8 +137,8 @@ $(document).ready(function(){initNavTree('trim_8h_source.html',''); initResizabl
 <div class="line"><a name="l00063"></a><span class="lineno">   63</span>&#160;    shapeDescriptors[descriptor.label.label()] = descriptor.stop;</div>
 <div class="line"><a name="l00064"></a><span class="lineno">   64</span>&#160;  }</div>
 <div class="line"><a name="l00065"></a><span class="lineno">   65</span>&#160; </div>
-<div class="line"><a name="l00066"></a><span class="lineno">   66</span>&#160;  <span class="keywordflow">for</span> (<span class="keyword">auto</span>&amp; varIdentifier : ds.variables.<a class="code" href="classmdio_1_1VariableCollection.html#a55208352254095d837791efb6b686a48">get_iterable_accessor</a>()) {</div>
-<div class="line"><a name="l00067"></a><span class="lineno">   67</span>&#160;    MDIO_ASSIGN_OR_RETURN(<span class="keyword">auto</span> var, ds.variables.<a class="code" href="classmdio_1_1VariableCollection.html#abfc463aee7d2249077994eb2222393de">at</a>(varIdentifier))</div>
+<div class="line"><a name="l00066"></a><span class="lineno">   66</span>&#160;  <span class="keywordflow">for</span> (<span class="keyword">auto</span>&amp; varIdentifier : ds.<a class="code" href="classmdio_1_1Dataset.html#aeabcbbdede410372614f10d5503f3f0a">variables</a>.<a class="code" href="classmdio_1_1VariableCollection.html#a55208352254095d837791efb6b686a48">get_iterable_accessor</a>()) {</div>
+<div class="line"><a name="l00067"></a><span class="lineno">   67</span>&#160;    MDIO_ASSIGN_OR_RETURN(<span class="keyword">auto</span> var, ds.<a class="code" href="classmdio_1_1Dataset.html#aeabcbbdede410372614f10d5503f3f0a">variables</a>.<a class="code" href="classmdio_1_1VariableCollection.html#abfc463aee7d2249077994eb2222393de">at</a>(varIdentifier))</div>
 <div class="line"><a name="l00068"></a><span class="lineno">   68</span>&#160;    var.set_metadata_publish_flag(<span class="keyword">true</span>);</div>
 <div class="line"><a name="l00069"></a><span class="lineno">   69</span>&#160; </div>
 <div class="line"><a name="l00070"></a><span class="lineno">   70</span>&#160;    <span class="keywordtype">bool</span> wasStruct = var.dimensions().labels().back() == <span class="stringliteral">&quot;&quot;</span>;</div>
@@ -184,7 +184,7 @@ $(document).ready(function(){initNavTree('trim_8h_source.html',''); initResizabl
 <div class="line"><a name="l00110"></a><span class="lineno">  110</span>&#160;    }</div>
 <div class="line"><a name="l00111"></a><span class="lineno">  111</span>&#160;  }</div>
 <div class="line"><a name="l00112"></a><span class="lineno">  112</span>&#160; </div>
-<div class="line"><a name="l00113"></a><span class="lineno">  113</span>&#160;  <span class="keywordflow">return</span> ds.CommitMetadata();</div>
+<div class="line"><a name="l00113"></a><span class="lineno">  113</span>&#160;  <span class="keywordflow">return</span> ds.<a class="code" href="classmdio_1_1Dataset.html#a22157bcd14ae36f84e985323701daf36">CommitMetadata</a>();</div>
 <div class="line"><a name="l00114"></a><span class="lineno">  114</span>&#160;}</div>
 <div class="line"><a name="l00115"></a><span class="lineno">  115</span>&#160; </div>
 <div class="line"><a name="l00116"></a><span class="lineno">  116</span>&#160;}  <span class="comment">// namespace utils</span></div>
@@ -192,7 +192,9 @@ $(document).ready(function(){initNavTree('trim_8h_source.html',''); initResizabl
 <div class="line"><a name="l00118"></a><span class="lineno">  118</span>&#160; </div>
 <div class="line"><a name="l00119"></a><span class="lineno">  119</span>&#160;<span class="preprocessor">#endif  </span><span class="comment">// MDIO_UTILS_TRIM_H_</span></div>
 <div class="ttc" id="aclassmdio_1_1Dataset_html"><div class="ttname"><a href="classmdio_1_1Dataset.html">mdio::Dataset</a></div><div class="ttdoc">The Dataset class The dataset represents a collection of variables sharing a common grid.</div><div class="ttdef"><b>Definition:</b> dataset.h:400</div></div>
-<div class="ttc" id="aclassmdio_1_1Dataset_html_a60effe20b3c7c048d73a71e19f6a80bf"><div class="ttname"><a href="classmdio_1_1Dataset.html#a60effe20b3c7c048d73a71e19f6a80bf">mdio::Dataset::Open</a></div><div class="ttdeci">static std::enable_if_t&lt;(std::is_same_v&lt; S, std::string &gt;), Future&lt; Dataset &gt; &gt; Open(const S &amp;dataset_path, Option &amp;&amp;... options)</div><div class="ttdoc">Opens a Dataset from a file path. This method will assume that the Dataset already exists at the spec...</div><div class="ttdef"><b>Definition:</b> dataset.h:1029</div></div>
+<div class="ttc" id="aclassmdio_1_1Dataset_html_a22157bcd14ae36f84e985323701daf36"><div class="ttname"><a href="classmdio_1_1Dataset.html#a22157bcd14ae36f84e985323701daf36">mdio::Dataset::CommitMetadata</a></div><div class="ttdeci">tensorstore::Future&lt; void &gt; CommitMetadata()</div><div class="ttdoc">Commits changes made to the Variables metadata to durable media.</div><div class="ttdef"><b>Definition:</b> dataset.h:1322</div></div>
+<div class="ttc" id="aclassmdio_1_1Dataset_html_a60effe20b3c7c048d73a71e19f6a80bf"><div class="ttname"><a href="classmdio_1_1Dataset.html#a60effe20b3c7c048d73a71e19f6a80bf">mdio::Dataset::Open</a></div><div class="ttdeci">static std::enable_if_t&lt;(std::is_same_v&lt; S, std::string &gt;), Future&lt; Dataset &gt; &gt; Open(const S &amp;dataset_path, Option &amp;&amp;... options)</div><div class="ttdoc">Opens a Dataset from a file path. This method will assume that the Dataset already exists at the spec...</div><div class="ttdef"><b>Definition:</b> dataset.h:1038</div></div>
+<div class="ttc" id="aclassmdio_1_1Dataset_html_aeabcbbdede410372614f10d5503f3f0a"><div class="ttname"><a href="classmdio_1_1Dataset.html#aeabcbbdede410372614f10d5503f3f0a">mdio::Dataset::variables</a></div><div class="ttdeci">VariableCollection variables</div><div class="ttdoc">variables contained in the dataset</div><div class="ttdef"><b>Definition:</b> dataset.h:1447</div></div>
 <div class="ttc" id="aclassmdio_1_1VariableCollection_html_a55208352254095d837791efb6b686a48"><div class="ttname"><a href="classmdio_1_1VariableCollection.html#a55208352254095d837791efb6b686a48">mdio::VariableCollection::get_iterable_accessor</a></div><div class="ttdeci">std::vector&lt; std::string &gt; get_iterable_accessor() const</div><div class="ttdoc">Get a sorted iterable accessor for the VariableCollection.</div><div class="ttdef"><b>Definition:</b> variable_collection.h:148</div></div>
 <div class="ttc" id="aclassmdio_1_1VariableCollection_html_abfc463aee7d2249077994eb2222393de"><div class="ttname"><a href="classmdio_1_1VariableCollection.html#abfc463aee7d2249077994eb2222393de">mdio::VariableCollection::at</a></div><div class="ttdeci">Result&lt; Variable&lt; T, R, M &gt; &gt; at(const std::string &amp;label) const</div><div class="ttdef"><b>Definition:</b> variable_collection.h:105</div></div>
 <div class="ttc" id="anamespacemdio_1_1constants_html_a6788ecca2934df06723540a3c9ad2481"><div class="ttname"><a href="namespacemdio_1_1constants.html#a6788ecca2934df06723540a3c9ad2481">mdio::constants::kOpen</a></div><div class="ttdeci">constexpr auto kOpen</div><div class="ttdoc">Open a pre-existing file.</div><div class="ttdef"><b>Definition:</b> impl.h:110</div></div>
@@ -202,7 +204,7 @@ $(document).ready(function(){initNavTree('trim_8h_source.html',''); initResizabl
 <!-- start footer part -->
 <div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
   <ul>
-    <li class="navelem"><a class="el" href="dir_cbdb8362360e11eafe2fa3bc74cf0ffd.html">utils</a></li><li class="navelem"><b>trim.h</b></li>
+    <li class="navelem"><a class="el" href="dir_67738b5c0415bea8f52065236185cc8d.html">mdio</a></li><li class="navelem"><a class="el" href="dir_76ba11d7b337a4fad6522f09289378df.html">utils</a></li><li class="navelem"><b>trim.h</b></li>
     <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.9.1 </li>
   </ul>
 </div>

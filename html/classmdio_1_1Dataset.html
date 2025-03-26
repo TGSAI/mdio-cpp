@@ -113,15 +113,15 @@ Classes</h2></td></tr>
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-methods"></a>
 Public Member Functions</h2></td></tr>
 <tr class="memitem:a57c9595e97c0b5ebced1d46d302f1997"><td class="memItemLeft" align="right" valign="top"><a id="a57c9595e97c0b5ebced1d46d302f1997"></a>
-&#160;</td><td class="memItemRight" valign="bottom"><b>Dataset</b> (const nlohmann::json &amp;metadata, const <a class="el" href="classmdio_1_1VariableCollection.html">VariableCollection</a> &amp;variables, const coordinate_map &amp;coordinates, const tensorstore::IndexDomain&lt;&gt; &amp;domain)</td></tr>
+&#160;</td><td class="memItemRight" valign="bottom"><b>Dataset</b> (const nlohmann::json &amp;metadata, const <a class="el" href="classmdio_1_1VariableCollection.html">VariableCollection</a> &amp;<a class="el" href="classmdio_1_1Dataset.html#aeabcbbdede410372614f10d5503f3f0a">variables</a>, const coordinate_map &amp;<a class="el" href="classmdio_1_1Dataset.html#a488f08fb07dfb2b2d3c6431d4e56a8ca">coordinates</a>, const tensorstore::IndexDomain&lt;&gt; &amp;<a class="el" href="classmdio_1_1Dataset.html#a0a3a23206804b91593f0a7ca6d6a95c9">domain</a>)</td></tr>
 <tr class="separator:a57c9595e97c0b5ebced1d46d302f1997"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a00b3f4023005865c9e8d721e6ed7ede8"><td class="memTemplParams" colspan="2">template&lt;typename T  = void, DimensionIndex R = dynamic_rank, ReadWriteMode M = ReadWriteMode::dynamic&gt; </td></tr>
 <tr class="memitem:a00b3f4023005865c9e8d721e6ed7ede8"><td class="memTemplItemLeft" align="right" valign="top">Result&lt; <a class="el" href="structmdio_1_1Variable.html">Variable</a>&lt; T, R, M &gt; &gt;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="classmdio_1_1Dataset.html#a00b3f4023005865c9e8d721e6ed7ede8">get_variable</a> (const std::string &amp;variable_name)</td></tr>
 <tr class="memdesc:a00b3f4023005865c9e8d721e6ed7ede8"><td class="mdescLeft">&#160;</td><td class="mdescRight">Retrieves a variable from within the dataset.  <a href="classmdio_1_1Dataset.html#a00b3f4023005865c9e8d721e6ed7ede8">More...</a><br /></td></tr>
 <tr class="separator:a00b3f4023005865c9e8d721e6ed7ede8"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a8da834c09386a5b55b6bf9d032c94569"><td class="memTemplParams" colspan="2"><a id="a8da834c09386a5b55b6bf9d032c94569"></a>
-template&lt;typename... DimensionIdentifier&gt; </td></tr>
-<tr class="memitem:a8da834c09386a5b55b6bf9d032c94569"><td class="memTemplItemLeft" align="right" valign="top">mdio::Result&lt; std::vector&lt; <a class="el" href="structmdio_1_1Variable.html">Variable</a>&lt;&gt;::Interval &gt; &gt;&#160;</td><td class="memTemplItemRight" valign="bottom"><b>get_intervals</b> (const DimensionIdentifier &amp;... labels) const</td></tr>
+<tr class="memitem:a8da834c09386a5b55b6bf9d032c94569"><td class="memTemplParams" colspan="2">template&lt;typename... DimensionIdentifier&gt; </td></tr>
+<tr class="memitem:a8da834c09386a5b55b6bf9d032c94569"><td class="memTemplItemLeft" align="right" valign="top">mdio::Result&lt; std::vector&lt; <a class="el" href="structmdio_1_1Variable.html">Variable</a>&lt;&gt;::Interval &gt; &gt;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="classmdio_1_1Dataset.html#a8da834c09386a5b55b6bf9d032c94569">get_intervals</a> (const DimensionIdentifier &amp;... labels) const</td></tr>
+<tr class="memdesc:a8da834c09386a5b55b6bf9d032c94569"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the intervals of the the dataset.  <a href="classmdio_1_1Dataset.html#a8da834c09386a5b55b6bf9d032c94569">More...</a><br /></td></tr>
 <tr class="separator:a8da834c09386a5b55b6bf9d032c94569"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a273fbf7254f4c75effa324a1a531d6c0"><td class="memTemplParams" colspan="2">template&lt;typename... Descriptors&gt; </td></tr>
 <tr class="memitem:a273fbf7254f4c75effa324a1a531d6c0"><td class="memTemplItemLeft" align="right" valign="top">Result&lt; <a class="el" href="classmdio_1_1Dataset.html">Dataset</a> &gt;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="classmdio_1_1Dataset.html#a273fbf7254f4c75effa324a1a531d6c0">isel</a> (Descriptors &amp;... descriptors)</td></tr>
@@ -129,7 +129,7 @@ template&lt;typename... DimensionIdentifier&gt; </td></tr>
 <tr class="separator:a273fbf7254f4c75effa324a1a531d6c0"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:afaf24735691b23748f6d6ae03ac596c6"><td class="memItemLeft" align="right" valign="top"><a id="afaf24735691b23748f6d6ae03ac596c6"></a>
 Result&lt; <a class="el" href="classmdio_1_1Dataset.html">Dataset</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classmdio_1_1Dataset.html#afaf24735691b23748f6d6ae03ac596c6">isel</a> (const std::vector&lt; <a class="el" href="structmdio_1_1RangeDescriptor.html">RangeDescriptor</a>&lt; Index &gt;&gt; &amp;slices)</td></tr>
-<tr class="memdesc:afaf24735691b23748f6d6ae03ac596c6"><td class="mdescLeft">&#160;</td><td class="mdescRight">Internal use only. Calls the <code>isel</code> method with a vector of <code><a class="el" href="structmdio_1_1RangeDescriptor.html" title="A descriptor for slicing a Variable or Dataset.">RangeDescriptor</a></code> objects. Limited to <code>internal::kMaxNumSlices</code> slices which may not be equal to the number of descriptors. <br /></td></tr>
+<tr class="memdesc:afaf24735691b23748f6d6ae03ac596c6"><td class="mdescLeft">&#160;</td><td class="mdescRight">This version of isel is only expected to be used interally. Documentation is provided for clarity and usage in the case where the number of descriptors cannot be known at compile time. Calls the <code>isel</code> method with a vector of <code><a class="el" href="structmdio_1_1RangeDescriptor.html" title="A descriptor for slicing a Variable or Dataset.">RangeDescriptor</a></code> objects. Limited to <code>internal::kMaxNumSlices</code> slices which may not be equal to the number of descriptors. <br /></td></tr>
 <tr class="separator:afaf24735691b23748f6d6ae03ac596c6"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ac1baa5daa0223cb4fcd1d74012928ce7"><td class="memTemplParams" colspan="2">template&lt;typename... Descriptors&gt; </td></tr>
 <tr class="memitem:ac1baa5daa0223cb4fcd1d74012928ce7"><td class="memTemplItemLeft" align="right" valign="top">Result&lt; <a class="el" href="classmdio_1_1Dataset.html">Dataset</a> &gt;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="classmdio_1_1Dataset.html#ac1baa5daa0223cb4fcd1d74012928ce7">sel</a> (Descriptors... descriptors)</td></tr>
@@ -142,11 +142,11 @@ Result&lt; <a class="el" href="classmdio_1_1Dataset.html">Dataset</a> &gt;&#160;
 <tr class="memitem:a46a1ae07d2e73e8f898802d61b0d1fe7"><td class="memTemplItemLeft" align="right" valign="top">Future&lt; <a class="el" href="structmdio_1_1Variable.html">Variable</a>&lt; T, R, M &gt; &gt;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="classmdio_1_1Dataset.html#a46a1ae07d2e73e8f898802d61b0d1fe7">SelectField</a> (const std::string &amp;variableName, const std::string &amp;fieldName)</td></tr>
 <tr class="memdesc:a46a1ae07d2e73e8f898802d61b0d1fe7"><td class="mdescLeft">&#160;</td><td class="mdescRight">Selects a field from a <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> with a structured data type. This will need to re-open the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a>. The new <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> will replace the original one in the <a class="el" href="classmdio_1_1Dataset.html" title="The Dataset class The dataset represents a collection of variables sharing a common grid.">Dataset</a> once the future has been resolved. Attempting to access the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> before the future has been resolved may result in a race condition.  <a href="classmdio_1_1Dataset.html#a46a1ae07d2e73e8f898802d61b0d1fe7">More...</a><br /></td></tr>
 <tr class="separator:a46a1ae07d2e73e8f898802d61b0d1fe7"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a22157bcd14ae36f84e985323701daf36"><td class="memItemLeft" align="right" valign="top"><a id="a22157bcd14ae36f84e985323701daf36"></a>
-tensorstore::Future&lt; void &gt;&#160;</td><td class="memItemRight" valign="bottom"><b>CommitMetadata</b> ()</td></tr>
+<tr class="memitem:a22157bcd14ae36f84e985323701daf36"><td class="memItemLeft" align="right" valign="top">tensorstore::Future&lt; void &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classmdio_1_1Dataset.html#a22157bcd14ae36f84e985323701daf36">CommitMetadata</a> ()</td></tr>
+<tr class="memdesc:a22157bcd14ae36f84e985323701daf36"><td class="mdescLeft">&#160;</td><td class="mdescRight">Commits changes made to the Variables metadata to durable media.  <a href="classmdio_1_1Dataset.html#a22157bcd14ae36f84e985323701daf36">More...</a><br /></td></tr>
 <tr class="separator:a22157bcd14ae36f84e985323701daf36"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ac664ab0fdc9c9d9e5f4fdace3895d4b2"><td class="memItemLeft" align="right" valign="top"><a id="ac664ab0fdc9c9d9e5f4fdace3895d4b2"></a>
-const nlohmann::json &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>getMetadata</b> () const</td></tr>
+<tr class="memitem:ac664ab0fdc9c9d9e5f4fdace3895d4b2"><td class="memItemLeft" align="right" valign="top">const nlohmann::json &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classmdio_1_1Dataset.html#ac664ab0fdc9c9d9e5f4fdace3895d4b2">getMetadata</a> () const</td></tr>
+<tr class="memdesc:ac664ab0fdc9c9d9e5f4fdace3895d4b2"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the <a class="el" href="classmdio_1_1Dataset.html" title="The Dataset class The dataset represents a collection of variables sharing a common grid.">Dataset</a> level metadata.  <a href="classmdio_1_1Dataset.html#ac664ab0fdc9c9d9e5f4fdace3895d4b2">More...</a><br /></td></tr>
 <tr class="separator:ac664ab0fdc9c9d9e5f4fdace3895d4b2"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-static-methods"></a>
@@ -167,13 +167,16 @@ Static Public Member Functions</h2></td></tr>
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-attribs"></a>
 Public Attributes</h2></td></tr>
 <tr class="memitem:aeabcbbdede410372614f10d5503f3f0a"><td class="memItemLeft" align="right" valign="top"><a id="aeabcbbdede410372614f10d5503f3f0a"></a>
-<a class="el" href="classmdio_1_1VariableCollection.html">VariableCollection</a>&#160;</td><td class="memItemRight" valign="bottom"><b>variables</b></td></tr>
+<a class="el" href="classmdio_1_1VariableCollection.html">VariableCollection</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classmdio_1_1Dataset.html#aeabcbbdede410372614f10d5503f3f0a">variables</a></td></tr>
+<tr class="memdesc:aeabcbbdede410372614f10d5503f3f0a"><td class="mdescLeft">&#160;</td><td class="mdescRight">variables contained in the dataset <br /></td></tr>
 <tr class="separator:aeabcbbdede410372614f10d5503f3f0a"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a488f08fb07dfb2b2d3c6431d4e56a8ca"><td class="memItemLeft" align="right" valign="top"><a id="a488f08fb07dfb2b2d3c6431d4e56a8ca"></a>
-coordinate_map&#160;</td><td class="memItemRight" valign="bottom"><b>coordinates</b></td></tr>
+coordinate_map&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classmdio_1_1Dataset.html#a488f08fb07dfb2b2d3c6431d4e56a8ca">coordinates</a></td></tr>
+<tr class="memdesc:a488f08fb07dfb2b2d3c6431d4e56a8ca"><td class="mdescLeft">&#160;</td><td class="mdescRight">link a variable name to its coordinates via its name(s) <br /></td></tr>
 <tr class="separator:a488f08fb07dfb2b2d3c6431d4e56a8ca"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a0a3a23206804b91593f0a7ca6d6a95c9"><td class="memItemLeft" align="right" valign="top"><a id="a0a3a23206804b91593f0a7ca6d6a95c9"></a>
-tensorstore::IndexDomain&#160;</td><td class="memItemRight" valign="bottom"><b>domain</b></td></tr>
+tensorstore::IndexDomain&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classmdio_1_1Dataset.html#a0a3a23206804b91593f0a7ca6d6a95c9">domain</a></td></tr>
+<tr class="memdesc:a0a3a23206804b91593f0a7ca6d6a95c9"><td class="mdescLeft">&#160;</td><td class="mdescRight">enumerate the dimensions <br /></td></tr>
 <tr class="separator:a0a3a23206804b91593f0a7ca6d6a95c9"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="friends"></a>
@@ -185,6 +188,34 @@ std::ostream &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>operato
 <a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
 <div class="textblock"><p>The <a class="el" href="classmdio_1_1Dataset.html" title="The Dataset class The dataset represents a collection of variables sharing a common grid.">Dataset</a> class The dataset represents a collection of variables sharing a common grid. </p>
 </div><h2 class="groupheader">Member Function Documentation</h2>
+<a id="a22157bcd14ae36f84e985323701daf36"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a22157bcd14ae36f84e985323701daf36">&#9670;&nbsp;</a></span>CommitMetadata()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">tensorstore::Future&lt;void&gt; mdio::Dataset::CommitMetadata </td>
+          <td>(</td>
+          <td class="paramname"></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Commits changes made to the Variables metadata to durable media. </p>
+<dl class="section return"><dt>Returns</dt><dd>A future representing the completion of the commit or an error if no changes were made but the commit was requested. </dd></dl>
+
+</div>
+</div>
 <a id="af52858456c9c4aa26ea419a0e3070152"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#af52858456c9c4aa26ea419a0e3070152">&#9670;&nbsp;</a></span>from_json()</h2>
 
@@ -240,9 +271,46 @@ template&lt;typename... Option&gt; </div>
 <div class="line">  dataset_path,</div>
 <div class="line">  <a class="code" href="namespacemdio_1_1constants.html#aafefd7c58702ee569c7c4f679c424e0f">mdio::constants::kCreate</a></div>
 <div class="line">);</div>
-<div class="ttc" id="aclassmdio_1_1Dataset_html_af52858456c9c4aa26ea419a0e3070152"><div class="ttname"><a href="classmdio_1_1Dataset.html#af52858456c9c4aa26ea419a0e3070152">mdio::Dataset::from_json</a></div><div class="ttdeci">static Future&lt; Dataset &gt; from_json(::nlohmann::json &amp;json_schema, const std::string &amp;path, Option &amp;&amp;... options)</div><div class="ttdoc">Constructs a Dataset from a JSON schema. This method will validate the JSON schema against the MDIO D...</div><div class="ttdef"><b>Definition:</b> dataset.h:497</div></div>
+<div class="ttc" id="aclassmdio_1_1Dataset_html_af52858456c9c4aa26ea419a0e3070152"><div class="ttname"><a href="classmdio_1_1Dataset.html#af52858456c9c4aa26ea419a0e3070152">mdio::Dataset::from_json</a></div><div class="ttdeci">static Future&lt; Dataset &gt; from_json(::nlohmann::json &amp;json_schema, const std::string &amp;path, Option &amp;&amp;... options)</div><div class="ttdoc">Constructs a Dataset from a JSON schema. This method will validate the JSON schema against the MDIO D...</div><div class="ttdef"><b>Definition:</b> dataset.h:504</div></div>
 <div class="ttc" id="anamespacemdio_1_1constants_html_aafefd7c58702ee569c7c4f679c424e0f"><div class="ttname"><a href="namespacemdio_1_1constants.html#aafefd7c58702ee569c7c4f679c424e0f">mdio::constants::kCreate</a></div><div class="ttdeci">constexpr auto kCreate</div><div class="ttdoc">Create a new file or error if it already exists.</div><div class="ttdef"><b>Definition:</b> impl.h:115</div></div>
 </div><!-- fragment --><dl class="section return"><dt>Returns</dt><dd>An <code>mdio::Future</code> resolves to a <a class="el" href="classmdio_1_1Dataset.html" title="The Dataset class The dataset represents a collection of variables sharing a common grid.">Dataset</a> if successful, or an error if the schema is invalid. </dd></dl>
+
+</div>
+</div>
+<a id="a8da834c09386a5b55b6bf9d032c94569"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a8da834c09386a5b55b6bf9d032c94569">&#9670;&nbsp;</a></span>get_intervals()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename... DimensionIdentifier&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">mdio::Result&lt;std::vector&lt;<a class="el" href="structmdio_1_1Variable.html">Variable</a>&lt;&gt;::Interval&gt; &gt; mdio::Dataset::get_intervals </td>
+          <td>(</td>
+          <td class="paramtype">const DimensionIdentifier &amp;...&#160;</td>
+          <td class="paramname"><em>labels</em></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets the intervals of the the dataset. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">0</td><td>or more dimension labels for the intervals to retrieve. No labels will return all intervals in the dataset. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>A vector of intervals or NotFoundError if no intervals could be found. </dd></dl>
 
 </div>
 </div>
@@ -280,6 +348,34 @@ template&lt;typename T  = void, DimensionIndex R = dynamic_rank, ReadWriteMode M
   </dd>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>An <code>mdio::Result</code> containing the retrieved variable if successful, or an error if the label is not found. </dd></dl>
+
+</div>
+</div>
+<a id="ac664ab0fdc9c9d9e5f4fdace3895d4b2"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac664ab0fdc9c9d9e5f4fdace3895d4b2">&#9670;&nbsp;</a></span>getMetadata()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">const nlohmann::json&amp; mdio::Dataset::getMetadata </td>
+          <td>(</td>
+          <td class="paramname"></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets the <a class="el" href="classmdio_1_1Dataset.html" title="The Dataset class The dataset represents a collection of variables sharing a common grid.">Dataset</a> level metadata. </p>
+<dl class="section return"><dt>Returns</dt><dd>A const reference to the <a class="el" href="classmdio_1_1Dataset.html" title="The Dataset class The dataset represents a collection of variables sharing a common grid.">Dataset</a>'s metadata. </dd></dl>
 
 </div>
 </div>
@@ -323,7 +419,7 @@ template&lt;typename... Descriptors&gt; </div>
 <div class="line">MDIO_ASSIGN_OR_RETURN(</div>
 <div class="line"> <span class="keyword">auto</span> slice, dataset.isel(desc1, desc2)</div>
 <div class="line">);</div>
-<div class="ttc" id="astructmdio_1_1RangeDescriptor_html"><div class="ttname"><a href="structmdio_1_1RangeDescriptor.html">mdio::RangeDescriptor</a></div><div class="ttdoc">A descriptor for slicing a Variable or Dataset.</div><div class="ttdef"><b>Definition:</b> variable.h:75</div></div>
+<div class="ttc" id="astructmdio_1_1RangeDescriptor_html"><div class="ttname"><a href="structmdio_1_1RangeDescriptor.html">mdio::RangeDescriptor</a></div><div class="ttdoc">A descriptor for slicing a Variable or Dataset.</div><div class="ttdef"><b>Definition:</b> variable.h:76</div></div>
 </div><!-- fragment --><dl class="section return"><dt>Returns</dt><dd>An <code>mdio::Result</code> containing a sliced <a class="el" href="classmdio_1_1Dataset.html" title="The Dataset class The dataset represents a collection of variables sharing a common grid.">Dataset</a> if successful, or an error if the slice is invalid. </dd></dl>
 
 </div>
@@ -428,7 +524,7 @@ template&lt;typename S  = std::string, typename... Option&gt; </div>
 <p><b>Usage</b> </p><div class="fragment"><div class="line"><span class="keyword">auto</span> existing_dataset = <a class="code" href="classmdio_1_1Dataset.html#a60effe20b3c7c048d73a71e19f6a80bf">mdio::Dataset::Open</a>(</div>
 <div class="line">     dataset_path, <a class="code" href="namespacemdio_1_1constants.html#a6788ecca2934df06723540a3c9ad2481">mdio::constants::kOpen</a></div>
 <div class="line">);</div>
-<div class="ttc" id="aclassmdio_1_1Dataset_html_a60effe20b3c7c048d73a71e19f6a80bf"><div class="ttname"><a href="classmdio_1_1Dataset.html#a60effe20b3c7c048d73a71e19f6a80bf">mdio::Dataset::Open</a></div><div class="ttdeci">static std::enable_if_t&lt;(std::is_same_v&lt; S, std::string &gt;), Future&lt; Dataset &gt; &gt; Open(const S &amp;dataset_path, Option &amp;&amp;... options)</div><div class="ttdoc">Opens a Dataset from a file path. This method will assume that the Dataset already exists at the spec...</div><div class="ttdef"><b>Definition:</b> dataset.h:1029</div></div>
+<div class="ttc" id="aclassmdio_1_1Dataset_html_a60effe20b3c7c048d73a71e19f6a80bf"><div class="ttname"><a href="classmdio_1_1Dataset.html#a60effe20b3c7c048d73a71e19f6a80bf">mdio::Dataset::Open</a></div><div class="ttdeci">static std::enable_if_t&lt;(std::is_same_v&lt; S, std::string &gt;), Future&lt; Dataset &gt; &gt; Open(const S &amp;dataset_path, Option &amp;&amp;... options)</div><div class="ttdoc">Opens a Dataset from a file path. This method will assume that the Dataset already exists at the spec...</div><div class="ttdef"><b>Definition:</b> dataset.h:1038</div></div>
 <div class="ttc" id="anamespacemdio_1_1constants_html_a6788ecca2934df06723540a3c9ad2481"><div class="ttname"><a href="namespacemdio_1_1constants.html#a6788ecca2934df06723540a3c9ad2481">mdio::constants::kOpen</a></div><div class="ttdeci">constexpr auto kOpen</div><div class="ttdoc">Open a pre-existing file.</div><div class="ttdef"><b>Definition:</b> impl.h:110</div></div>
 </div><!-- fragment --> <dl class="section return"><dt>Returns</dt><dd>An <code>mdio::Future</code> containing a <a class="el" href="classmdio_1_1Dataset.html" title="The Dataset class The dataset represents a collection of variables sharing a common grid.">Dataset</a> if successful, or an error if the path is invalid. </dd></dl>
 
@@ -554,7 +650,7 @@ template&lt;typename T  = void, DimensionIndex R = dynamic_rank, ReadWriteMode M
 </div>
 </div>
 <hr/>The documentation for this class was generated from the following file:<ul>
-<li><a class="el" href="dataset_8h_source.html">dataset.h</a></li>
+<li>mdio/<a class="el" href="dataset_8h_source.html">dataset.h</a></li>
 </ul>
 </div><!-- contents -->
 </div><!-- doc-content -->

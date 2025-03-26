@@ -109,7 +109,7 @@ Classes</h2></td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classmdio_1_1UserAttributes.html">UserAttributes</a></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html">Variable</a></td></tr>
-<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">A templated struct representing an MDIO <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> with a tensorstore. This is an MDIO specified zarr V2 tensorstore variable. It represents the non-volitile (on-disc, in-cloud, etc.) data.  <a href="structmdio_1_1Variable.html#details">More...</a><br /></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">A templated struct representing an MDIO <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> with a tensorstore. This is an MDIO specified zarr V2 tensorstore variable. It represents the non-volitile (on-disk, in-cloud, etc.) data.  <a href="structmdio_1_1Variable.html#details">More...</a><br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1VariableData.html">VariableData</a></td></tr>
 <tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">The in-memory representation of the data This object should only be constructed through the <a class="el" href="structmdio_1_1Variable.html#af425045bbd682a466383dcb99e244c6e" title="Read the data from the variable. Reads the data from the source variable. Provide an Open method for ...">Variable::Read()</a> function. This data only exists in memory and should be preserved with the <a class="el" href="structmdio_1_1Variable.html#ab4ba4f463cf01d9b0e410ab21e590a2b" title="Write the data to the variable. Writes the data from the source variable data to the target variable.">Variable::Write()</a> function.  <a href="structmdio_1_1VariableData.html#details">More...</a><br /></td></tr>
@@ -213,10 +213,9 @@ using&#160;</td><td class="memItemRight" valign="bottom"><b>Context</b> = tensor
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="func-members"></a>
 Functions</h2></td></tr>
-<tr class="memitem:a235692fcef4cfccfba94767404d2b11d"><td class="memTemplParams" colspan="2"><a id="a235692fcef4cfccfba94767404d2b11d"></a>
-template&lt;typename T  = void, DimensionIndex R = dynamic_rank, ArrayOriginKind OriginKind = offset_origin&gt; </td></tr>
+<tr class="memitem:a235692fcef4cfccfba94767404d2b11d"><td class="memTemplParams" colspan="2">template&lt;typename T  = void, DimensionIndex R = dynamic_rank, ArrayOriginKind OriginKind = offset_origin&gt; </td></tr>
 <tr class="memitem:a235692fcef4cfccfba94767404d2b11d"><td class="memTemplItemLeft" align="right" valign="top">Result&lt; <a class="el" href="structmdio_1_1VariableData.html">VariableData</a>&lt; T, R, OriginKind &gt; &gt;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="namespacemdio.html#a235692fcef4cfccfba94767404d2b11d">from_variable</a> (const <a class="el" href="structmdio_1_1Variable.html">Variable</a>&lt;&gt; &amp;variable)</td></tr>
-<tr class="memdesc:a235692fcef4cfccfba94767404d2b11d"><td class="mdescLeft">&#160;</td><td class="mdescRight">If you already have a variable in memory, allocated a variableDataobject using this variable as the specification. <br /></td></tr>
+<tr class="memdesc:a235692fcef4cfccfba94767404d2b11d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Allocates a <a class="el" href="structmdio_1_1VariableData.html" title="The in-memory representation of the data This object should only be constructed through the Variable:...">VariableData</a> object with the specified dtype and fill value. Intended behavior is to fill the array with default fill values and may overwrite existing data if written to disk.  <a href="namespacemdio.html#a235692fcef4cfccfba94767404d2b11d">More...</a><br /></td></tr>
 <tr class="separator:a235692fcef4cfccfba94767404d2b11d"><td class="memSeparator" colspan="2">&#160;</td></tr>
 </table><table class="memberdecls">
 <tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="var-members"></a>
@@ -235,23 +234,61 @@ constexpr ArrayOriginKind&#160;</td><td class="memItemRight" valign="bottom"><b>
 <div class="textblock"><p>The intention of this extensible data class is to provide a representation of the <a class="el" href="classmdio_1_1UserAttributes.html">UserAttributes</a> that COULD be modified. It is intended to be completely immutable after construction. The reasoning is that this data is already written to durable media and if the wrong values are changed the data could be corrupted. This is a safety measure to prevent that. Note that modifications are not durable and will need to be committed from the parent <a class="el" href="classmdio_1_1Dataset.html" title="The Dataset class The dataset represents a collection of variables sharing a common grid.">Dataset</a> object. Great care must be taken when committing the changes and should only be done once. While there are multiple construction options, the only one intended for user interaction is <code>mdio::UserAttributes::FromJson(const nlohmann::json)</code>. The <a class="el" href="classmdio_1_1UserAttributes.html">UserAttributes</a> that is associated with the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> should be reassigned to a new <a class="el" href="classmdio_1_1UserAttributes.html">UserAttributes</a> object iff the object NEEDS to be modified. A normal usecase should NOT require constant modification of the <a class="el" href="classmdio_1_1UserAttributes.html">UserAttributes</a> object.</p>
 <p>The end-user should NEVER need to enter the internal namespace or access the <a class="el" href="classmdio_1_1UserAttributes.html">UserAttributes</a> constructor directly. They should instead use the static member function FromJson. If a <a class="el" href="classmdio_1_1UserAttributes.html">UserAttributes</a> object is in need of modification it should be done as follows</p>
 <div class="fragment"><div class="line"><span class="comment">// NOTE: We do not verify the status of `dataset.variables.at(&quot;variable&quot;)` in</span></div>
-<div class="line"><span class="keyword">this</span> example code. This is <span class="keywordflow">for</span> brevity. <a class="code" href="classmdio_1_1UserAttributes.html">mdio::UserAttributes</a> userAttrs =</div>
-<div class="line">dataset.variables.at(<span class="stringliteral">&quot;variable&quot;</span>).value().userAttrs; nlohmann::json</div>
-<div class="line">updatedAttrs = userAttrs.<a class="code" href="classmdio_1_1UserAttributes.html#ae143b6efdbe56a9f3a6bfbd60b5a716c">ToJson</a>();</div>
+<div class="line"><span class="keyword">this</span> example code. This is <span class="keywordflow">for</span> brevity.</div>
+<div class="line">mdio::UserAttributes userAttrs =</div>
+<div class="line">                        dataset.variables.at(<span class="stringliteral">&quot;variable&quot;</span>).value().userAttrs;</div>
+<div class="line">nlohmann::json updatedAttrs = userAttrs.ToJson();</div>
 <div class="line"><span class="comment">// Modify updatedAttrs as any normal JSON object</span></div>
 <div class="line"><span class="comment">// NOTE: FromJson can take an optional template of `int32_t` default to</span></div>
-<div class="line">`<span class="keywordtype">float</span>` to specify the type of the histogram. <span class="keyword">auto</span> updatedUserAttrsResult =</div>
-<div class="line"><a class="code" href="classmdio_1_1UserAttributes.html#a54686e10a9749d0f8bb3427426ef0f10">mdio::UserAttributes::FromJson</a>(updatedAttrs); <span class="keywordflow">if</span></div>
-<div class="line">(!updatedUserAttrsResult.ok()) {</div>
+<div class="line">`<span class="keywordtype">float</span>` to specify the type of the histogram.</div>
+<div class="line">auto updatedUserAttrsResult = <a class="code" href="classmdio_1_1UserAttributes.html#a54686e10a9749d0f8bb3427426ef0f10">mdio::UserAttributes::FromJson</a>(updatedAttrs);</div>
+<div class="line"><span class="keywordflow">if</span> (!updatedUserAttrsResult.ok()) {</div>
 <div class="line">  <span class="comment">// Handle error</span></div>
 <div class="line">}</div>
 <div class="line"><a class="code" href="classmdio_1_1UserAttributes.html">mdio::UserAttributes</a> updatedUserAttrs = updatedUserAttrsResult.value();</div>
 <div class="line">dataset.variables.get(<span class="stringliteral">&quot;variable&quot;</span>).value().userAttrs = updatedUserAttrs;</div>
-<div class="ttc" id="aclassmdio_1_1UserAttributes_html"><div class="ttname"><a href="classmdio_1_1UserAttributes.html">mdio::UserAttributes</a></div><div class="ttdef"><b>Definition:</b> stats.h:338</div></div>
-<div class="ttc" id="aclassmdio_1_1UserAttributes_html_a54686e10a9749d0f8bb3427426ef0f10"><div class="ttname"><a href="classmdio_1_1UserAttributes.html#a54686e10a9749d0f8bb3427426ef0f10">mdio::UserAttributes::FromJson</a></div><div class="ttdeci">static mdio::Result&lt; UserAttributes &gt; FromJson(const nlohmann::json &amp;j)</div><div class="ttdoc">Constructs a UserAttributes object from the JSON representation of a UserAttributes.</div><div class="ttdef"><b>Definition:</b> stats.h:407</div></div>
-<div class="ttc" id="aclassmdio_1_1UserAttributes_html_ae143b6efdbe56a9f3a6bfbd60b5a716c"><div class="ttname"><a href="classmdio_1_1UserAttributes.html#ae143b6efdbe56a9f3a6bfbd60b5a716c">mdio::UserAttributes::ToJson</a></div><div class="ttdeci">const nlohmann::json ToJson() const</div><div class="ttdoc">Gets the JSON representation of a UserAttributes object.</div><div class="ttdef"><b>Definition:</b> stats.h:465</div></div>
+<div class="ttc" id="aclassmdio_1_1UserAttributes_html"><div class="ttname"><a href="classmdio_1_1UserAttributes.html">mdio::UserAttributes</a></div><div class="ttdef"><b>Definition:</b> stats.h:339</div></div>
+<div class="ttc" id="aclassmdio_1_1UserAttributes_html_a54686e10a9749d0f8bb3427426ef0f10"><div class="ttname"><a href="classmdio_1_1UserAttributes.html#a54686e10a9749d0f8bb3427426ef0f10">mdio::UserAttributes::FromJson</a></div><div class="ttdeci">static mdio::Result&lt; UserAttributes &gt; FromJson(const nlohmann::json &amp;j)</div><div class="ttdoc">Constructs a UserAttributes object from the JSON representation of a UserAttributes.</div><div class="ttdef"><b>Definition:</b> stats.h:409</div></div>
 </div><!-- fragment --><p>Another thing to note is that we do not supply an easy way to add a histogram or attributes to an existing <a class="el" href="classmdio_1_1UserAttributes.html">UserAttributes</a> object. This is by design, a defined <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> should know beforehand that it will contain those attributes. </p>
-</div></div><!-- contents -->
+</div><h2 class="groupheader">Function Documentation</h2>
+<a id="a235692fcef4cfccfba94767404d2b11d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a235692fcef4cfccfba94767404d2b11d">&#9670;&nbsp;</a></span>from_variable()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T  = void, DimensionIndex R = dynamic_rank, ArrayOriginKind OriginKind = offset_origin&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">Result&lt;<a class="el" href="structmdio_1_1VariableData.html">VariableData</a>&lt;T, R, OriginKind&gt; &gt; mdio::from_variable </td>
+          <td>(</td>
+          <td class="paramtype">const <a class="el" href="structmdio_1_1Variable.html">Variable</a>&lt;&gt; &amp;&#160;</td>
+          <td class="paramname"><em>variable</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Allocates a <a class="el" href="structmdio_1_1VariableData.html" title="The in-memory representation of the data This object should only be constructed through the Variable:...">VariableData</a> object with the specified dtype and fill value. Intended behavior is to fill the array with default fill values and may overwrite existing data if written to disk. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">T</td><td>The data type of the variable. </td></tr>
+    <tr><td class="paramname">R</td><td>The rank of the variable. </td></tr>
+    <tr><td class="paramname">OriginKind</td><td>The origin kind of the variable. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">variable</td><td>The variable to allocate from. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>mdio::Result&lt;VariableData&lt;T, R, OriginKind&gt;&gt; The allocated <a class="el" href="structmdio_1_1VariableData.html" title="The in-memory representation of the data This object should only be constructed through the Variable:...">VariableData</a> object. </dd></dl>
+
+</div>
+</div>
+</div><!-- contents -->
 </div><!-- doc-content -->
 <!-- start footer part -->
 <div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->

@@ -96,7 +96,7 @@ $(document).ready(function(){initNavTree('structmdio_1_1Variable.html',''); init
 </div><!--header-->
 <div class="contents">
 
-<p>A templated struct representing an MDIO <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> with a tensorstore. This is an MDIO specified zarr V2 tensorstore variable. It represents the non-volitile (on-disc, in-cloud, etc.) data.  
+<p>A templated struct representing an MDIO <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> with a tensorstore. This is an MDIO specified zarr V2 tensorstore variable. It represents the non-volitile (on-disk, in-cloud, etc.) data.  
  <a href="structmdio_1_1Variable.html#details">More...</a></p>
 
 <p><code>#include &lt;<a class="el" href="variable_8h_source.html">variable.h</a>&gt;</code></p>
@@ -106,6 +106,7 @@ Classes</h2></td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><b>index_sequence</b></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable_1_1Interval.html">Interval</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">A struct representing the half open interval of a dimension.  <a href="structmdio_1_1Variable_1_1Interval.html#details">More...</a><br /></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><b>make_index_sequence</b></td></tr>
 <tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
@@ -158,8 +159,8 @@ Result&lt; <a class="el" href="structmdio_1_1Variable.html">Variable</a> &gt;&#1
 <tr class="memitem:ae6f8d0b0dd2580e9add2b7b118076aa1"><td class="memTemplItemLeft" align="right" valign="top">Result&lt; <a class="el" href="structmdio_1_1Variable.html">Variable</a> &gt;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#ae6f8d0b0dd2580e9add2b7b118076aa1">slice</a> (const Descriptors &amp;... descriptors) const</td></tr>
 <tr class="memdesc:ae6f8d0b0dd2580e9add2b7b118076aa1"><td class="mdescLeft">&#160;</td><td class="mdescRight">Slices the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> along the specified dimensions and returns the resulting sub-Variable. This slice is performed as a half open interval. Dimensions that are not described will remain fully intact.  <a href="structmdio_1_1Variable.html#ae6f8d0b0dd2580e9add2b7b118076aa1">More...</a><br /></td></tr>
 <tr class="separator:ae6f8d0b0dd2580e9add2b7b118076aa1"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:aa148239da2dc59066ea30edb9d391208"><td class="memItemLeft" align="right" valign="top"><a id="aa148239da2dc59066ea30edb9d391208"></a>
-Result&lt; nlohmann::json &gt;&#160;</td><td class="memItemRight" valign="bottom"><b>get_spec</b> () const</td></tr>
+<tr class="memitem:aa148239da2dc59066ea30edb9d391208"><td class="memItemLeft" align="right" valign="top">Result&lt; nlohmann::json &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#aa148239da2dc59066ea30edb9d391208">get_spec</a> () const</td></tr>
+<tr class="memdesc:aa148239da2dc59066ea30edb9d391208"><td class="mdescLeft">&#160;</td><td class="mdescRight">Retrieves the spec of the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> as a JSON object.  <a href="structmdio_1_1Variable.html#aa148239da2dc59066ea30edb9d391208">More...</a><br /></td></tr>
 <tr class="separator:aa148239da2dc59066ea30edb9d391208"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a4aaa5bcd4353616096acbfeabb7946fe"><td class="memItemLeft" align="right" valign="top">Result&lt; std::vector&lt; DimensionIndex &gt; &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#a4aaa5bcd4353616096acbfeabb7946fe">get_chunk_shape</a> () const</td></tr>
 <tr class="memdesc:a4aaa5bcd4353616096acbfeabb7946fe"><td class="mdescLeft">&#160;</td><td class="mdescRight">Retrieves the specified chunk shape of the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> if it exists.  <a href="structmdio_1_1Variable.html#a4aaa5bcd4353616096acbfeabb7946fe">More...</a><br /></td></tr>
@@ -171,14 +172,14 @@ Result&lt; nlohmann::json &gt;&#160;</td><td class="memItemRight" valign="bottom
 <tr class="memitem:aee667e4ed0e628fda1240308a3322f23"><td class="memTemplItemLeft" align="right" valign="top">Result&lt; void &gt;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#aee667e4ed0e628fda1240308a3322f23">UpdateAttributes</a> (const nlohmann::json &amp;newAttrs)</td></tr>
 <tr class="memdesc:aee667e4ed0e628fda1240308a3322f23"><td class="mdescLeft">&#160;</td><td class="mdescRight">Attempts to safely update the user attributes of a <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> (["metadata"]["attributes"] and/or ["metadata"]["statsV1"]).  <a href="structmdio_1_1Variable.html#aee667e4ed0e628fda1240308a3322f23">More...</a><br /></td></tr>
 <tr class="separator:aee667e4ed0e628fda1240308a3322f23"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:acd03f3f669daa74f6b0e4be1623cfbd7"><td class="memItemLeft" align="right" valign="top"><a id="acd03f3f669daa74f6b0e4be1623cfbd7"></a>
-nlohmann::json&#160;</td><td class="memItemRight" valign="bottom"><b>GetAttributes</b> () const</td></tr>
+<tr class="memitem:acd03f3f669daa74f6b0e4be1623cfbd7"><td class="memItemLeft" align="right" valign="top">nlohmann::json&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#acd03f3f669daa74f6b0e4be1623cfbd7">GetAttributes</a> () const</td></tr>
+<tr class="memdesc:acd03f3f669daa74f6b0e4be1623cfbd7"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the User Attributes of the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> as a JSON object. Returned object is expected to have a parent key of "attributes". This is expected to be the exact copy of the attributes field.  <a href="structmdio_1_1Variable.html#acd03f3f669daa74f6b0e4be1623cfbd7">More...</a><br /></td></tr>
 <tr class="separator:acd03f3f669daa74f6b0e4be1623cfbd7"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a4af588da2fe10fd11f396cbc04358d2e"><td class="memItemLeft" align="right" valign="top">nlohmann::json&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#a4af588da2fe10fd11f396cbc04358d2e">getMetadata</a> () const</td></tr>
-<tr class="memdesc:a4af588da2fe10fd11f396cbc04358d2e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the entire metadata of the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a>.  <a href="structmdio_1_1Variable.html#a4af588da2fe10fd11f396cbc04358d2e">More...</a><br /></td></tr>
+<tr class="memdesc:a4af588da2fe10fd11f396cbc04358d2e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the entire metadata of the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a>. Returned object is expected to have a parent key of "metadata".  <a href="structmdio_1_1Variable.html#a4af588da2fe10fd11f396cbc04358d2e">More...</a><br /></td></tr>
 <tr class="separator:a4af588da2fe10fd11f396cbc04358d2e"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a4ef8f25d1575106456734024fad0eff9"><td class="memItemLeft" align="right" valign="top">const nlohmann::json&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#a4ef8f25d1575106456734024fad0eff9">getReducedMetadata</a> () const</td></tr>
-<tr class="memdesc:a4ef8f25d1575106456734024fad0eff9"><td class="mdescLeft">&#160;</td><td class="mdescRight">A reduced version of the metadata NOTE: This may only be useful for internal uses. See <code><a class="el" href="structmdio_1_1Variable.html#a4af588da2fe10fd11f396cbc04358d2e" title="Gets the entire metadata of the Variable.">getMetadata()</a></code> for the full metadata. This version should lack the mutable <a class="el" href="classmdio_1_1UserAttributes.html">UserAttributes</a> portions, if they exist.  <a href="structmdio_1_1Variable.html#a4ef8f25d1575106456734024fad0eff9">More...</a><br /></td></tr>
+<tr class="memdesc:a4ef8f25d1575106456734024fad0eff9"><td class="mdescLeft">&#160;</td><td class="mdescRight">A reduced version of the metadata NOTE: This may only be useful for internal uses. See <code><a class="el" href="structmdio_1_1Variable.html#a4af588da2fe10fd11f396cbc04358d2e" title="Gets the entire metadata of the Variable. Returned object is expected to have a parent key of &quot;metada...">getMetadata()</a></code> for the full metadata. This version should lack the mutable <a class="el" href="classmdio_1_1UserAttributes.html">UserAttributes</a> portions, if they exist.  <a href="structmdio_1_1Variable.html#a4ef8f25d1575106456734024fad0eff9">More...</a><br /></td></tr>
 <tr class="separator:a4ef8f25d1575106456734024fad0eff9"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a09fee24ea3e4445550af3f8019014d63"><td class="memItemLeft" align="right" valign="top">const bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#a09fee24ea3e4445550af3f8019014d63">was_updated</a> () const</td></tr>
 <tr class="memdesc:a09fee24ea3e4445550af3f8019014d63"><td class="mdescLeft">&#160;</td><td class="mdescRight">Checks if the User Attributes has changed in the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a>.  <a href="structmdio_1_1Variable.html#a09fee24ea3e4445550af3f8019014d63">More...</a><br /></td></tr>
@@ -187,14 +188,14 @@ nlohmann::json&#160;</td><td class="memItemRight" valign="bottom"><b>GetAttribut
 <tr class="memitem:a9656b9c6fff49c5dfb066d0fe3cb020e"><td class="memTemplItemLeft" align="right" valign="top">mdio::Result&lt; std::vector&lt; <a class="el" href="structmdio_1_1Variable_1_1Interval.html">Interval</a> &gt; &gt;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#a9656b9c6fff49c5dfb066d0fe3cb020e">get_intervals</a> (const DimensionIdentifier &amp;... labels) const</td></tr>
 <tr class="memdesc:a9656b9c6fff49c5dfb066d0fe3cb020e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the domain of the whole <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> or selected dimensions.  <a href="structmdio_1_1Variable.html#a9656b9c6fff49c5dfb066d0fe3cb020e">More...</a><br /></td></tr>
 <tr class="separator:a9656b9c6fff49c5dfb066d0fe3cb020e"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a8ee6f9439f537598a49460e8ed30fdc6"><td class="memItemLeft" align="right" valign="top"><a id="a8ee6f9439f537598a49460e8ed30fdc6"></a>
-const std::string &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>get_variable_name</b> () const</td></tr>
+<tr class="memitem:a8ee6f9439f537598a49460e8ed30fdc6"><td class="memItemLeft" align="right" valign="top">const std::string &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#a8ee6f9439f537598a49460e8ed30fdc6">get_variable_name</a> () const</td></tr>
+<tr class="memdesc:a8ee6f9439f537598a49460e8ed30fdc6"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the name of the variable.  <a href="structmdio_1_1Variable.html#a8ee6f9439f537598a49460e8ed30fdc6">More...</a><br /></td></tr>
 <tr class="separator:a8ee6f9439f537598a49460e8ed30fdc6"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a2f06db2494c8512ae0f1409b92632c7b"><td class="memItemLeft" align="right" valign="top"><a id="a2f06db2494c8512ae0f1409b92632c7b"></a>
-const std::string &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>get_long_name</b> () const</td></tr>
+<tr class="memitem:a2f06db2494c8512ae0f1409b92632c7b"><td class="memItemLeft" align="right" valign="top">const std::string &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#a2f06db2494c8512ae0f1409b92632c7b">get_long_name</a> () const</td></tr>
+<tr class="memdesc:a2f06db2494c8512ae0f1409b92632c7b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the long name of the variable.  <a href="structmdio_1_1Variable.html#a2f06db2494c8512ae0f1409b92632c7b">More...</a><br /></td></tr>
 <tr class="separator:a2f06db2494c8512ae0f1409b92632c7b"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:aa094a7e6a0ae874f966c4e39cb121581"><td class="memItemLeft" align="right" valign="top"><a id="aa094a7e6a0ae874f966c4e39cb121581"></a>
-const tensorstore::TensorStore&lt; T, R, M &gt; &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>get_store</b> () const</td></tr>
+<tr class="memitem:aa094a7e6a0ae874f966c4e39cb121581"><td class="memItemLeft" align="right" valign="top">const tensorstore::TensorStore&lt; T, R, M &gt; &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#aa094a7e6a0ae874f966c4e39cb121581">get_store</a> () const</td></tr>
+<tr class="memdesc:aa094a7e6a0ae874f966c4e39cb121581"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the underlying tensorstore of the variable.  <a href="structmdio_1_1Variable.html#aa094a7e6a0ae874f966c4e39cb121581">More...</a><br /></td></tr>
 <tr class="separator:aa094a7e6a0ae874f966c4e39cb121581"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a1b4110cb61acedde49783def9b6f329b"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structmdio_1_1Variable.html#a1b4110cb61acedde49783def9b6f329b">should_publish</a> () const</td></tr>
 <tr class="memdesc:a1b4110cb61acedde49783def9b6f329b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets whether the metadata should get republished.  <a href="structmdio_1_1Variable.html#a1b4110cb61acedde49783def9b6f329b">More...</a><br /></td></tr>
@@ -223,7 +224,7 @@ std::ostream &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>operato
 <div class="textblock"><h3>template&lt;typename T = void, DimensionIndex R = dynamic_rank, ReadWriteMode M = ReadWriteMode::dynamic&gt;<br />
 class mdio::Variable&lt; T, R, M &gt;</h3>
 
-<p>A templated struct representing an MDIO <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> with a tensorstore. This is an MDIO specified zarr V2 tensorstore variable. It represents the non-volitile (on-disc, in-cloud, etc.) data. </p>
+<p>A templated struct representing an MDIO <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> with a tensorstore. This is an MDIO specified zarr V2 tensorstore variable. It represents the non-volitile (on-disk, in-cloud, etc.) data. </p>
 <dl class="tparams"><dt>Template Parameters</dt><dd>
   <table class="tparams">
     <tr><td class="paramname">T</td><td>The type of the data stored in the tensorstore. </td></tr>
@@ -234,10 +235,11 @@ class mdio::Variable&lt; T, R, M &gt;</h3>
 </dl>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
-    <tr><td class="paramname">variableName</td><td></td></tr>
-    <tr><td class="paramname">longName</td><td></td></tr>
-    <tr><td class="paramname">metadata</td><td></td></tr>
-    <tr><td class="paramname">store</td><td></td></tr>
+    <tr><td class="paramname">variableName</td><td>The name of the variable. </td></tr>
+    <tr><td class="paramname">longName</td><td>The optional long name of the variable. </td></tr>
+    <tr><td class="paramname">metadata</td><td>Any metadata associated with the variable. </td></tr>
+    <tr><td class="paramname">store</td><td>The underlying Tensorstore. </td></tr>
+    <tr><td class="paramname">attributes</td><td>The user attributes associated with the variable. </td></tr>
   </table>
   </dd>
 </dl>
@@ -334,7 +336,7 @@ template&lt;typename T  = void, DimensionIndex R = dynamic_rank, ReadWriteMode M
 <div class="line"><a class="code" href="structmdio_1_1RangeDescriptor.html">mdio::RangeDescriptor&lt;Index&gt;</a> desc1 = {<span class="stringliteral">&quot;inline&quot;</span>, chunkShape[0],</div>
 <div class="line">chunkShape[0] * 2, 1}; <a class="code" href="structmdio_1_1RangeDescriptor.html">mdio::RangeDescriptor&lt;Index&gt;</a> desc2 = {<span class="stringliteral">&quot;crossline&quot;</span>,</div>
 <div class="line">chunkShape[1], chunkShape[1] * 2, 1};</div>
-<div class="ttc" id="astructmdio_1_1RangeDescriptor_html"><div class="ttname"><a href="structmdio_1_1RangeDescriptor.html">mdio::RangeDescriptor</a></div><div class="ttdoc">A descriptor for slicing a Variable or Dataset.</div><div class="ttdef"><b>Definition:</b> variable.h:75</div></div>
+<div class="ttc" id="astructmdio_1_1RangeDescriptor_html"><div class="ttname"><a href="structmdio_1_1RangeDescriptor.html">mdio::RangeDescriptor</a></div><div class="ttdoc">A descriptor for slicing a Variable or Dataset.</div><div class="ttdef"><b>Definition:</b> variable.h:76</div></div>
 </div><!-- fragment --> <dl class="section return"><dt>Returns</dt><dd>An NotFoundError if the chunk shape could not be retrieved, otherwise a vector of the chunk shape. </dd></dl>
 
 </div>
@@ -378,6 +380,96 @@ template&lt;typename... DimensionIdentifier&gt; </div>
 
 </div>
 </div>
+<a id="a2f06db2494c8512ae0f1409b92632c7b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2f06db2494c8512ae0f1409b92632c7b">&#9670;&nbsp;</a></span>get_long_name()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T  = void, DimensionIndex R = dynamic_rank, ReadWriteMode M = ReadWriteMode::dynamic&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">const std::string&amp; <a class="el" href="structmdio_1_1Variable.html">mdio::Variable</a>&lt; T, R, M &gt;::get_long_name </td>
+          <td>(</td>
+          <td class="paramname"></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets the long name of the variable. </p>
+<dl class="section return"><dt>Returns</dt><dd>The long name of the variable. </dd></dl>
+
+</div>
+</div>
+<a id="aa148239da2dc59066ea30edb9d391208"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa148239da2dc59066ea30edb9d391208">&#9670;&nbsp;</a></span>get_spec()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T  = void, DimensionIndex R = dynamic_rank, ReadWriteMode M = ReadWriteMode::dynamic&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">Result&lt;nlohmann::json&gt; <a class="el" href="structmdio_1_1Variable.html">mdio::Variable</a>&lt; T, R, M &gt;::get_spec </td>
+          <td>(</td>
+          <td class="paramname"></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Retrieves the spec of the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> as a JSON object. </p>
+<dl class="section return"><dt>Returns</dt><dd>A JSON object representing the spec of the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a>. </dd></dl>
+
+</div>
+</div>
+<a id="aa094a7e6a0ae874f966c4e39cb121581"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa094a7e6a0ae874f966c4e39cb121581">&#9670;&nbsp;</a></span>get_store()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T  = void, DimensionIndex R = dynamic_rank, ReadWriteMode M = ReadWriteMode::dynamic&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">const tensorstore::TensorStore&lt;T, R, M&gt;&amp; <a class="el" href="structmdio_1_1Variable.html">mdio::Variable</a>&lt; T, R, M &gt;::get_store </td>
+          <td>(</td>
+          <td class="paramname"></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets the underlying tensorstore of the variable. </p>
+<dl class="section return"><dt>Returns</dt><dd>The tensorstore of the variable. </dd></dl>
+
+</div>
+</div>
 <a id="a11d38478850049594eb458a3ddd4cb1e"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a11d38478850049594eb458a3ddd4cb1e">&#9670;&nbsp;</a></span>get_store_shape()</h2>
 
@@ -408,6 +500,67 @@ template&lt;typename T  = void, DimensionIndex R = dynamic_rank, ReadWriteMode M
 
 </div>
 </div>
+<a id="a8ee6f9439f537598a49460e8ed30fdc6"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a8ee6f9439f537598a49460e8ed30fdc6">&#9670;&nbsp;</a></span>get_variable_name()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T  = void, DimensionIndex R = dynamic_rank, ReadWriteMode M = ReadWriteMode::dynamic&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">const std::string&amp; <a class="el" href="structmdio_1_1Variable.html">mdio::Variable</a>&lt; T, R, M &gt;::get_variable_name </td>
+          <td>(</td>
+          <td class="paramname"></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets the name of the variable. </p>
+<dl class="section return"><dt>Returns</dt><dd>The name of the variable. </dd></dl>
+
+</div>
+</div>
+<a id="acd03f3f669daa74f6b0e4be1623cfbd7"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#acd03f3f669daa74f6b0e4be1623cfbd7">&#9670;&nbsp;</a></span>GetAttributes()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T  = void, DimensionIndex R = dynamic_rank, ReadWriteMode M = ReadWriteMode::dynamic&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">nlohmann::json <a class="el" href="structmdio_1_1Variable.html">mdio::Variable</a>&lt; T, R, M &gt;::GetAttributes </td>
+          <td>(</td>
+          <td class="paramname"></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets the User Attributes of the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> as a JSON object. Returned object is expected to have a parent key of "attributes". This is expected to be the exact copy of the attributes field. </p>
+<dl class="section see"><dt>See also</dt><dd><a href="https://mdio-python.readthedocs.io/en/v1/data_models/version_1.html#mdio.schema.v1.variable.VariableMetadata.attributes">https://mdio-python.readthedocs.io/en/v1/data_models/version_1.html#mdio.schema.v1.variable.VariableMetadata.attributes</a> </dd></dl>
+<dl class="section return"><dt>Returns</dt><dd>The User Attributes in JSON form. </dd></dl>
+
+</div>
+</div>
 <a id="a4af588da2fe10fd11f396cbc04358d2e"></a>
 <h2 class="memtitle"><span class="permalink"><a href="#a4af588da2fe10fd11f396cbc04358d2e">&#9670;&nbsp;</a></span>getMetadata()</h2>
 
@@ -433,7 +586,7 @@ template&lt;typename T  = void, DimensionIndex R = dynamic_rank, ReadWriteMode M
 </table>
 </div><div class="memdoc">
 
-<p>Gets the entire metadata of the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a>. </p>
+<p>Gets the entire metadata of the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a>. Returned object is expected to have a parent key of "metadata". </p>
 <dl class="section return"><dt>Returns</dt><dd>The metadata in JSON form </dd></dl>
 
 </div>
@@ -463,7 +616,7 @@ template&lt;typename T  = void, DimensionIndex R = dynamic_rank, ReadWriteMode M
 </table>
 </div><div class="memdoc">
 
-<p>A reduced version of the metadata NOTE: This may only be useful for internal uses. See <code><a class="el" href="structmdio_1_1Variable.html#a4af588da2fe10fd11f396cbc04358d2e" title="Gets the entire metadata of the Variable.">getMetadata()</a></code> for the full metadata. This version should lack the mutable <a class="el" href="classmdio_1_1UserAttributes.html">UserAttributes</a> portions, if they exist. </p>
+<p>A reduced version of the metadata NOTE: This may only be useful for internal uses. See <code><a class="el" href="structmdio_1_1Variable.html#a4af588da2fe10fd11f396cbc04358d2e" title="Gets the entire metadata of the Variable. Returned object is expected to have a parent key of &quot;metada...">getMetadata()</a></code> for the full metadata. This version should lack the mutable <a class="el" href="classmdio_1_1UserAttributes.html">UserAttributes</a> portions, if they exist. </p>
 <dl class="section return"><dt>Returns</dt><dd>The reduced metadata in JSON form </dd></dl>
 
 </div>
@@ -730,9 +883,9 @@ template&lt;typename... Descriptors&gt; </div>
 </div><div class="memdoc">
 
 <p>Slices the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> along the specified dimensions and returns the resulting sub-Variable. This slice is performed as a half open interval. Dimensions that are not described will remain fully intact. </p>
-<dl class="section pre"><dt>Precondition</dt><dd>The step of the slice descriptor must be 1. </dd>
+<dl class="section pre"><dt>Precondition</dt><dd>The step of the descriptor object must be 1. </dd>
 <dd>
-The start of the slice descriptor must be less than the stop. </dd></dl>
+The start of the descriptor object must be less than the stop. </dd></dl>
 <dl class="section post"><dt>Postcondition</dt><dd>The resulting <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a> will be sliced along the specified dimensions within it's domain. If the slice lay outside of the domain of the <a class="el" href="structmdio_1_1Variable.html" title="A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...">Variable</a>, the slice will be clamped to the domain. </dd></dl>
 <dl class="params"><dt>Parameters</dt><dd>
   <table class="params">
@@ -856,18 +1009,21 @@ template&lt;typename T_attrs  = float&gt; </div>
   </dd>
 </dl>
 <dl class="section return"><dt>Returns</dt><dd>An OK status if the attributes were successfully updated, otherwise an error and the attributes remain unchanged.</dd></dl>
-<p><b>Intended_Usage</b> </p><div class="fragment"><div class="line"><span class="keyword">auto</span> var = my_dataset.variables.at(<span class="stringliteral">&quot;my_variable_key&quot;</span>).value(); <span class="comment">// Status</span></div>
-<div class="line">check ignored <span class="keywordflow">for</span> berevity nlohmann::json to_update = var.GetAttributes();</div>
+<p><b>Intended_Usage</b> </p><div class="fragment"><div class="line"><span class="comment">// Status check ignored for brevity</span></div>
+<div class="line"><span class="keyword">auto</span> var = my_dataset.variables.at(<span class="stringliteral">&quot;my_variable_key&quot;</span>).value();</div>
+<div class="line">nlohmann::json to_update = var.GetAttributes();</div>
 <div class="line">to_update[<span class="stringliteral">&quot;attributes&quot;</span>][<span class="stringliteral">&quot;new_attr&quot;</span>] = <span class="stringliteral">&quot;new_value&quot;</span>;</div>
-<div class="line">std::vector&lt;int32_t&gt; binCenters; <span class="comment">// Populate with your data as needed</span></div>
+<div class="line">std::vector&lt;int32_t&gt; binCenters;</div>
+<div class="line"><span class="comment">// Populate with your data as needed</span></div>
 <div class="line">to_update[<span class="stringliteral">&quot;statsV1&quot;</span>][<span class="stringliteral">&quot;histogram&quot;</span>][<span class="stringliteral">&quot;binCenters&quot;</span>] = binCenters;</div>
-<div class="line"><span class="comment">// NOTE: The vector is of type int32_t. We should pass the type as a</span></div>
-<div class="line"><span class="keyword">template</span> argument. <span class="keyword">auto</span> update_result =</div>
-<div class="line">var.UpdateAttributes&lt;int32_t&gt;(to_update); <span class="keywordflow">if</span> (!update_result.status().ok())</div>
-<div class="line">{</div>
+<div class="line"><span class="comment">// NOTE: The vector is of type int32_t. We must pass the type as a</span></div>
+<div class="line"><span class="keyword">template</span> argument.</div>
+<div class="line">auto update_result = var.UpdateAttributes&lt;int32_t&gt;(to_update);</div>
+<div class="line"><span class="keywordflow">if</span> (!update_result.status().ok()) {</div>
 <div class="line">     <span class="comment">// In this case nothing will happen. We output an error and move on</span></div>
-<div class="line">with what previously existed. std::cerr &lt;&lt; <span class="stringliteral">&quot;Failed to update attributes: &quot;</span></div>
-<div class="line">&lt;&lt; update_result.status() &lt;&lt; std::endl;</div>
+<div class="line">     <span class="comment">// with what previously existed.</span></div>
+<div class="line">     std::cerr &lt;&lt; <span class="stringliteral">&quot;Failed to update attributes: &quot;</span> &lt;&lt;</div>
+<div class="line">     update_result.status() &lt;&lt; std::endl;</div>
 <div class="line">}</div>
 </div><!-- fragment --><p> NOTE: This does not commit changes to durable media. Please see CommitMetadata method in the <a class="el" href="classmdio_1_1Dataset.html" title="The Dataset class The dataset represents a collection of variables sharing a common grid.">Dataset</a> to commit changes. </p>
 
@@ -940,20 +1096,21 @@ template&lt;ArrayOriginKind OriginKind = offset_origin&gt; </div>
   </dd>
 </dl>
 <p><b>Usage</b> This provides an example of writing the data from the source variable data to the target variable. </p><div class="fragment"><div class="line">MDIO_ASSIGN_OR_RETURN(<span class="keyword">auto</span> velocity, <a class="code" href="structmdio_1_1Variable.html">mdio::Variable&lt;&gt;::Open</a>(velocity_path,</div>
-<div class="line"><a class="code" href="namespacemdio_1_1constants.html#a6788ecca2934df06723540a3c9ad2481">mdio::constants::kOpen</a>)); MDIO_ASSIGN_OR_RETURN(<span class="keyword">auto</span> velocityData,</div>
-<div class="line"><a class="code" href="namespacemdio.html#a235692fcef4cfccfba94767404d2b11d">mdio::from_variable</a>(velocity));</div>
+<div class="line">                                                 <a class="code" href="namespacemdio_1_1constants.html#a6788ecca2934df06723540a3c9ad2481">mdio::constants::kOpen</a>));</div>
+<div class="line"><span class="comment">// Get an empty version of the Variable.</span></div>
+<div class="line">MDIO_ASSIGN_OR_RETURN(<span class="keyword">auto</span> velocityData, <a class="code" href="namespacemdio.html#a235692fcef4cfccfba94767404d2b11d">mdio::from_variable</a>(velocity));</div>
 <div class="line"><span class="comment">// Do some manipulation of velocity here before writing it out.</span></div>
 <div class="line"><span class="keyword">auto</span> velocityWriteFuture = velocity.Write(velocityData);</div>
 <div class="line"><span class="comment">// This is a future. It will be ready when the write is complete.</span></div>
 <div class="ttc" id="anamespacemdio_1_1constants_html_a6788ecca2934df06723540a3c9ad2481"><div class="ttname"><a href="namespacemdio_1_1constants.html#a6788ecca2934df06723540a3c9ad2481">mdio::constants::kOpen</a></div><div class="ttdeci">constexpr auto kOpen</div><div class="ttdoc">Open a pre-existing file.</div><div class="ttdef"><b>Definition:</b> impl.h:110</div></div>
-<div class="ttc" id="anamespacemdio_html_a235692fcef4cfccfba94767404d2b11d"><div class="ttname"><a href="namespacemdio.html#a235692fcef4cfccfba94767404d2b11d">mdio::from_variable</a></div><div class="ttdeci">Result&lt; VariableData&lt; T, R, OriginKind &gt; &gt; from_variable(const Variable&lt;&gt; &amp;variable)</div><div class="ttdoc">If you already have a variable in memory, allocated a variableDataobject using this variable as the s...</div><div class="ttdef"><b>Definition:</b> variable.h:1801</div></div>
-<div class="ttc" id="astructmdio_1_1Variable_html"><div class="ttname"><a href="structmdio_1_1Variable.html">mdio::Variable</a></div><div class="ttdoc">A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...</div><div class="ttdef"><b>Definition:</b> variable.h:744</div></div>
+<div class="ttc" id="anamespacemdio_html_a235692fcef4cfccfba94767404d2b11d"><div class="ttname"><a href="namespacemdio.html#a235692fcef4cfccfba94767404d2b11d">mdio::from_variable</a></div><div class="ttdeci">Result&lt; VariableData&lt; T, R, OriginKind &gt; &gt; from_variable(const Variable&lt;&gt; &amp;variable)</div><div class="ttdoc">Allocates a VariableData object with the specified dtype and fill value. Intended behavior is to fill...</div><div class="ttdef"><b>Definition:</b> variable.h:1851</div></div>
+<div class="ttc" id="astructmdio_1_1Variable_html"><div class="ttname"><a href="structmdio_1_1Variable.html">mdio::Variable</a></div><div class="ttdoc">A templated struct representing an MDIO Variable with a tensorstore. This is an MDIO specified zarr V...</div><div class="ttdef"><b>Definition:</b> variable.h:754</div></div>
 </div><!-- fragment --> <dl class="section return"><dt>Returns</dt><dd>A future that will be ready when the write is complete. </dd></dl>
 
 </div>
 </div>
 <hr/>The documentation for this class was generated from the following file:<ul>
-<li><a class="el" href="variable_8h_source.html">variable.h</a></li>
+<li>mdio/<a class="el" href="variable_8h_source.html">variable.h</a></li>
 </ul>
 </div><!-- contents -->
 </div><!-- doc-content -->

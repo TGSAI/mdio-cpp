@@ -1,7 +1,5 @@
 var searchData=
 [
-  ['valuedescriptor_52',['ValueDescriptor',['../structmdio_1_1ValueDescriptor.html',1,'mdio']]],
-  ['variable_53',['Variable',['../structmdio_1_1Variable.html',1,'mdio']]],
-  ['variablecollection_54',['VariableCollection',['../classmdio_1_1VariableCollection.html',1,'mdio']]],
-  ['variabledata_55',['VariableData',['../structmdio_1_1VariableData.html',1,'mdio']]]
+  ['updateattributes_69',['UpdateAttributes',['../structmdio_1_1Variable.html#aee667e4ed0e628fda1240308a3322f23',1,'mdio::Variable']]],
+  ['userattributes_70',['UserAttributes',['../classmdio_1_1UserAttributes.html',1,'mdio::UserAttributes'],['../classmdio_1_1UserAttributes.html#a39410bb428b5358fdbac926a3c91ff8d',1,'mdio::UserAttributes::UserAttributes()']]]
 ];

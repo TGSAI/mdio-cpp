@@ -153,11 +153,12 @@ static mdio::Result&lt; <a class="el" href="classmdio_1_1UserAttributes.html">Us
   </table>
   </dd>
 </dl>
-<dl class="section note"><dt>Note</dt><dd>This constructor is intended for internal use only. Please use the static member function <code>FromJson(nlohmann::json)</code> <div class="fragment"><div class="line"><span class="keyword">auto</span> attrs = <a class="code" href="classmdio_1_1UserAttributes.html#a54686e10a9749d0f8bb3427426ef0f10">UserAttributes::FromJson</a>(j).value(); <span class="comment">// j is some valid</span></div>
-<div class="line">nlohmann::json <span class="keywordtype">object</span> nlohmann::json newAttrs = attrs.ToJson();</div>
+<dl class="section note"><dt>Note</dt><dd>This constructor is intended for internal use only. Please use the static member function <code>FromJson(nlohmann::json)</code> <div class="fragment"><div class="line"><span class="comment">// j is some valid nlohmann::json object</span></div>
+<div class="line"><span class="keyword">auto</span> attrs = <a class="code" href="classmdio_1_1UserAttributes.html#a54686e10a9749d0f8bb3427426ef0f10">UserAttributes::FromJson</a>(j).value();</div>
+<div class="line">nlohmann::json newAttrs = attrs.ToJson();</div>
 <div class="line">newAttrs[<span class="stringliteral">&quot;attributes&quot;</span>][<span class="stringliteral">&quot;newKey&quot;</span>] = <span class="stringliteral">&quot;newValue&quot;</span>;</div>
 <div class="line"><span class="keyword">auto</span> newAttrsRes = <a class="code" href="classmdio_1_1UserAttributes.html#a54686e10a9749d0f8bb3427426ef0f10">UserAttributes::FromJson</a>(newAttrs).value();</div>
-<div class="ttc" id="aclassmdio_1_1UserAttributes_html_a54686e10a9749d0f8bb3427426ef0f10"><div class="ttname"><a href="classmdio_1_1UserAttributes.html#a54686e10a9749d0f8bb3427426ef0f10">mdio::UserAttributes::FromJson</a></div><div class="ttdeci">static mdio::Result&lt; UserAttributes &gt; FromJson(const nlohmann::json &amp;j)</div><div class="ttdoc">Constructs a UserAttributes object from the JSON representation of a UserAttributes.</div><div class="ttdef"><b>Definition:</b> stats.h:407</div></div>
+<div class="ttc" id="aclassmdio_1_1UserAttributes_html_a54686e10a9749d0f8bb3427426ef0f10"><div class="ttname"><a href="classmdio_1_1UserAttributes.html#a54686e10a9749d0f8bb3427426ef0f10">mdio::UserAttributes::FromJson</a></div><div class="ttdeci">static mdio::Result&lt; UserAttributes &gt; FromJson(const nlohmann::json &amp;j)</div><div class="ttdoc">Constructs a UserAttributes object from the JSON representation of a UserAttributes.</div><div class="ttdef"><b>Definition:</b> stats.h:409</div></div>
 </div><!-- fragment --> </dd></dl>
 
 </div>
@@ -344,7 +345,7 @@ template&lt;typename T  = float&gt; </div>
 </div>
 </div>
 <hr/>The documentation for this class was generated from the following file:<ul>
-<li><a class="el" href="stats_8h_source.html">stats.h</a></li>
+<li>mdio/<a class="el" href="stats_8h_source.html">stats.h</a></li>
 </ul>
 </div><!-- contents -->
 </div><!-- doc-content -->

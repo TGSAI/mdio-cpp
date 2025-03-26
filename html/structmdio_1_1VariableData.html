@@ -297,18 +297,17 @@ template&lt;typename T , DimensionIndex R, ArrayOriginKind OriginKind&gt; </div>
 <div class="line"><a class="code" href="structmdio_1_1RangeDescriptor.html">mdio::RangeDescriptor&lt;Index&gt;</a> dim_zero_slice = {<span class="stringliteral">&quot;Dimension_0&quot;</span>, 4, 10, 1};</div>
 <div class="line">MDIO_ASSIGN_OR_RETURN(<span class="keyword">auto</span> sliced_dataset, dataset.isel(dim_zero_slice));</div>
 <div class="line">MDIO_ASSIGN_OR_RETURN(<span class="keyword">auto</span> sliced_variable,</div>
-<div class="line">sliced_dataset.variables.get&lt;mdio::dtypes::float32&gt;(<span class="stringliteral">&quot;my_variable&quot;</span>));</div>
+<div class="line">      sliced_dataset.variables.get&lt;mdio::dtypes::float32&gt;(<span class="stringliteral">&quot;my_variable&quot;</span>));</div>
 <div class="line">MDIO_ASSIGN_OR_RETURN(<span class="keyword">auto</span> sliced_data, sliced_variable.Read().result());</div>
 <div class="line"><span class="keyword">auto</span> flattened_data =</div>
 <div class="line"><span class="keyword">reinterpret_cast&lt;</span>mdio::float32_t*<span class="keyword">&gt;</span>(sliced_data.get_data_accessor().data());</div>
 <div class="line"><span class="keyword">auto</span> offset = sliced_data.get_flattened_offset();</div>
 <div class="line"><span class="comment">// We can use the method `sliced_data.get_data_accessor().num_elements()`</span></div>
-<div class="line">in conjunction with</div>
-<div class="line"><span class="comment">// `offset` instead of hardcoding 6 for n-dimensional data.</span></div>
+<div class="line"><span class="comment">// in conjunction with `offset` instead of hardcoding 6.</span></div>
 <div class="line"><span class="keywordflow">for</span> (<span class="keywordtype">size_t</span> i=0; i&lt;6; ++i) {</div>
 <div class="line">     std::cout &lt;&lt; flattened_data[i + offset] &lt;&lt; std::endl;</div>
 <div class="line">}</div>
-<div class="ttc" id="astructmdio_1_1RangeDescriptor_html"><div class="ttname"><a href="structmdio_1_1RangeDescriptor.html">mdio::RangeDescriptor</a></div><div class="ttdoc">A descriptor for slicing a Variable or Dataset.</div><div class="ttdef"><b>Definition:</b> variable.h:75</div></div>
+<div class="ttc" id="astructmdio_1_1RangeDescriptor_html"><div class="ttname"><a href="structmdio_1_1RangeDescriptor.html">mdio::RangeDescriptor</a></div><div class="ttdoc">A descriptor for slicing a Variable or Dataset.</div><div class="ttdef"><b>Definition:</b> variable.h:76</div></div>
 </div><!-- fragment --> </dd></dl>
 
 </div>
@@ -420,7 +419,7 @@ template&lt;MustAllocateConstraint alloc = MustAllocateConstraint::may_allocate,
 </div>
 </div>
 <hr/>The documentation for this struct was generated from the following file:<ul>
-<li><a class="el" href="variable_8h_source.html">variable.h</a></li>
+<li>mdio/<a class="el" href="variable_8h_source.html">variable.h</a></li>
 </ul>
 </div><!-- contents -->
 </div><!-- doc-content -->
