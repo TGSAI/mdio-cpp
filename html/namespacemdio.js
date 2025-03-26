@@ -1,8 +1,5 @@
 var namespacemdio =
 [
-    [ "Example header file defining the get_schema function", "md_USER_GUIDE.html#autotoc_md55", null ],
-    [ "Open a brand-new Dataset", "md_USER_GUIDE.html#autotoc_md56", null ],
-    [ "Open an existing Dataset", "md_USER_GUIDE.html#autotoc_md57", null ],
     [ "constants", "namespacemdio_1_1constants.html", [
       [ "kBool", "namespacemdio_1_1constants.html#a2708d3ee9a3a6d7c4724501e04cb3f7c", null ],
       [ "kByte", "namespacemdio_1_1constants.html#a373a809f28b3242eb5bef7d656bdf251", null ],

@@ -1,7 +1,6 @@
 var searchData=
 [
-  ['rangedescriptor_54',['RangeDescriptor',['../structmdio_1_1RangeDescriptor.html',1,'mdio']]],
-  ['rank_55',['rank',['../structmdio_1_1Variable.html#a81c303df039cb5b4baa21f1528c58748',1,'mdio::Variable::rank()'],['../structmdio_1_1VariableData.html#a1298198415ed2f1ed33011c84f5551bc',1,'mdio::VariableData::rank()']]],
-  ['read_56',['Read',['../structmdio_1_1Variable.html#af425045bbd682a466383dcb99e244c6e',1,'mdio::Variable']]],
-  ['readme_57',['README',['../md_README.html',1,'']]]
+  ['rangedescriptor_51',['RangeDescriptor',['../structmdio_1_1RangeDescriptor.html',1,'mdio']]],
+  ['rank_52',['rank',['../structmdio_1_1Variable.html#a81c303df039cb5b4baa21f1528c58748',1,'mdio::Variable::rank()'],['../structmdio_1_1VariableData.html#a1298198415ed2f1ed33011c84f5551bc',1,'mdio::VariableData::rank()']]],
+  ['read_53',['Read',['../structmdio_1_1Variable.html#af425045bbd682a466383dcb99e244c6e',1,'mdio::Variable']]]
 ];
