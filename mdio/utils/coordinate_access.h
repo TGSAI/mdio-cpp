@@ -26,6 +26,24 @@ const static std::string kSampleId = "SAMPLE";
 const static std::string kTileId = "_TILE";
 
 /**
+ * @brief Opens a dataset with an LRU cache.
+ * @param path The path to the dataset to open.
+ * @param cacheSize The size of the cache in bytes.
+ * @return The dataset if it can be read, otherwise an error.
+ */
+mdio::Result<mdio::Dataset> OpenWithCache(const std::string& path, const std::size_t cacheSize = 5000000000) {
+    auto cacheJson = nlohmann::json::parse(R"({"cache_pool": {"total_bytes_limit": 5000000000}})");
+    cacheJson["cache_pool"]["total_bytes_limit"] = cacheSize;
+    auto spec = mdio::Context::Spec::FromJson(cacheJson);
+    auto ctx = mdio::Context(spec.value());
+    auto datasetFut = mdio::Dataset::Open(path, mdio::constants::kOpen, ctx);
+    if (!datasetFut.status().ok()) {
+        return datasetFut.status();
+    }
+    return datasetFut.value();
+}
+
+/**
  * @brief Checks if the dataset can be read by this reader.
  * This reader is only intended to read Perseus originated datasets that have been written
  * with the version 0.1.1 Perseus stub, which will be the first version that should be written by the
@@ -48,24 +66,6 @@ mdio::Result<mdio::Dataset> CanRead(const std::string& path, const std::size_t c
         return absl::UnimplementedError("Unsupported stub version: " + ds.getMetadata()["attributes"]["stubVersion"].get<std::string>() + ". Only " + kPerseusStubVersion + " is implemented.");
     }
     return ds;
-}
-
-/**
- * @brief Opens a dataset with an LRU cache.
- * @param path The path to the dataset to open.
- * @param cacheSize The size of the cache in bytes.
- * @return The dataset if it can be read, otherwise an error.
- */
-mdio::Result<mdio::Dataset> OpenWithCache(const std::string& path, const std::size_t cacheSize = 5000000000) {
-    auto cacheJson = nlohmann::json::parse(R"({"cache_pool": {"total_bytes_limit": 5000000000}})");
-    cacheJson["cache_pool"]["total_bytes_limit"] = cacheSize;
-    auto spec = mdio::Context::Spec::FromJson(cacheJson);
-    auto ctx = mdio::Context(spec.value());
-    auto datasetFut = mdio::Dataset::Open(path, mdio::constants::kOpen, ctx);
-    if (!datasetFut.status().ok()) {
-        return datasetFut.status();
-    }
-    return datasetFut.value();
 }
 
 /**

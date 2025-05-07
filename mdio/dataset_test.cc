@@ -411,6 +411,32 @@ TEST(Dataset, isel) {
       << "Inline range should end at 5";
 }
 
+TEST(Dataset, where) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  // mdio::ListDescriptor<mdio::Index> sliceIndices = {"inline", {1,3,7}};
+  mdio::RangeDescriptor<mdio::Index> sliceIndices = {"inline", 1, 7, 2};
+  auto sliceRes = ds.isel(sliceIndices);
+  ASSERT_TRUE(sliceRes.status().ok()) << sliceRes.status();
+
+
+  mdio::ValueDescriptor<mdio::dtypes::int32_t> ilValue = {"inline", 1};
+
+  // mdio::ValueDescriptor<mdio::dtypes::int32_t> xlValue = {"inline", 1};
+
+  std::cout << "=================Full inline spec=================" << std::endl;
+  auto sliceRes1 = ds.where(ilValue);
+  std::cout << "=================Picked inline spec=================" << std::endl;
+  auto sliceRes2 = sliceRes.value().where(ilValue);
+  std::cout << "=================Picked inline spec=================" << std::endl;
+  // ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
+  ASSERT_FALSE(sliceRes1.status().ok());
+  ASSERT_FALSE(sliceRes2.status().ok()) << sliceRes2.status();
+}
+
 TEST(Dataset, selValue) {
   std::string path = "zarrs/selTester.mdio";
   auto dsRes = makePopulated(path);
