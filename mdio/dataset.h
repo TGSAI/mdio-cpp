@@ -16,6 +16,7 @@
 
 #define MDIO_API_VERSION "1.0.0"
 
+#include <algorithm>
 #include <cstddef>
 #include <fstream>
 #include <limits>
@@ -536,6 +537,12 @@ class Dataset {
   Result<Dataset> isel(Descriptors&... descriptors) {
     VariableCollection vars;
 
+    std::cout << "isel forwarded descriptors..." << std::endl;
+    ((std::cout << "Descriptor: " << descriptors.label.label() << " " 
+                << descriptors.start << " " << descriptors.stop << " " 
+                << descriptors.step << std::endl), ...);
+    std::cout << "================================================" << std::endl;
+
     // the shape of the new domain
     std::map<std::string, tensorstore::IndexDomainDimension<>> dims;
     std::vector<std::string> keys = variables.get_iterable_accessor();
@@ -611,6 +618,103 @@ class Dataset {
     return isel(slices[I]...);
   }
 
+  /// Merge overlapping or adjacent descriptors with the same label & step.
+  // std::vector<RangeDescriptor<Index>> merge_adjacent(std::vector<RangeDescriptor<Index>> descs) {
+  //   // 1) Bucket by (label, step)
+  //   using Key = std::pair<std::string,Index>;
+  //   std::map<Key, std::vector<RangeDescriptor<Index>>> buckets;
+  //   for (auto &d : descs) {
+  //     Key k = std::make_pair(std::string(d.label.label()), d.step);
+  //     buckets[k].push_back(d);
+  //   }
+
+  //   std::vector<RangeDescriptor<Index>> result;
+  //   result.reserve(descs.size());
+
+  //   // 2) For each bucket, sort & merge
+  //   for (auto &kv : buckets) {
+  //     const auto &[label, step] = kv.first;
+  //     auto &vec = kv.second;
+
+  //     std::sort(vec.begin(), vec.end(),
+  //               [](auto const &a, auto const &b) {
+  //                 return a.start < b.start;
+  //               });
+
+  //     // 3) Sweep through and merge
+  //     Index cur_start = vec[0].start;
+  //     Index cur_stop  = vec[0].stop;
+
+  //     for (size_t i = 1; i < vec.size(); ++i) {
+  //       if (vec[i].start <= cur_stop) {
+  //         // overlap or adjacent
+  //         cur_stop = std::max(cur_stop, vec[i].stop);
+  //       } else {
+  //         // emit the completed run
+  //         std::string lab = label;
+  //         result.push_back({std::move(lab), cur_start, cur_stop, step});
+  //         // start a new one
+  //         cur_start = vec[i].start;
+  //         cur_stop  = vec[i].stop;
+  //       }
+  //     }
+  //     std::string lab = label;
+  //     // emit final run for this bucket
+  //     result.push_back({std::move(lab), cur_start, cur_stop, step});
+  //   }
+
+  //   return result;
+  // }
+  std::vector<RangeDescriptor<Index>> merge_adjacent(
+    std::vector<RangeDescriptor<Index>> descs) {
+  // 1) bucket by (label, step) using a string_view key
+  using Key = std::pair<std::string_view, Index>;
+  std::map<Key, std::vector<RangeDescriptor<Index>>> buckets;
+
+  for (auto &d : descs) {
+    buckets[{ d.label.label(), d.step }].push_back(d);
+  }
+
+  std::vector<RangeDescriptor<Index>> result;
+  result.reserve(descs.size());
+
+  // 2) sort & merge each bucket
+  for (auto &kv : buckets) {
+    auto &vec = kv.second;
+    std::sort(vec.begin(), vec.end(),
+              [](auto const &a, auto const &b) {
+                return a.start < b.start;
+              });
+
+    Index cur_start = vec[0].start;
+    Index cur_stop  = vec[0].stop;
+
+    for (size_t i = 1; i < vec.size(); ++i) {
+      if (vec[i].start <= cur_stop) {
+        cur_stop = std::max(cur_stop, vec[i].stop);
+      } else {
+        // copy the *original* descriptor (with a safe label)
+        auto run = vec[0];
+        run.start = cur_start;
+        run.stop  = cur_stop;
+        result.push_back(std::move(run));
+
+        cur_start = vec[i].start;
+        cur_stop  = vec[i].stop;
+      }
+    }
+
+    // emit the last run
+    auto run = vec[0];
+    run.start = cur_start;
+    run.stop  = cur_stop;
+    result.push_back(std::move(run));
+  }
+
+  return result;
+}
+
+
   // Wrapper function that generates the index sequence
   /**
    * @brief This version of isel is only expected to be used interally.
@@ -621,30 +725,74 @@ class Dataset {
    * number of descriptors.
    */
   Result<Dataset> isel(const std::vector<RangeDescriptor<Index>>& slices) {
+
+    /*
+    What I need to do:
+    If there is a disjoint dimension coordinate, I need pass only those to the Variable slice method.
+    I can use recursion to handle this.
+    I will get all of the same labeled slices and perform that slice.
+    I will then pass the remaining slices to the recursive isel call.
+    I think this will fix my issues.
+    */
+
     if (slices.empty()) {
       return absl::InvalidArgumentError("No slices provided.");
     }
 
-    if (slices.size() > internal::kMaxNumSlices) {
-      std::size_t halfElements = slices.size() / 2;
+    auto reducedSlices = merge_adjacent(slices);
+
+    bool do_simple_slice = true;
+
+    std::set<std::string> labels;
+    if (reducedSlices.size() < 1) {
+      labels.insert(reducedSlices[0].label.label());
+      for (auto i=1; i<reducedSlices.size(); i++) {
+        if (labels.count(reducedSlices[i].label.label()) > 0) {
+          do_simple_slice = false;
+          break;
+        }
+        labels.insert(reducedSlices[i].label.label());
+      }
+    } else {
+      return absl::InvalidArgumentError("No slices provided.");
+    }
+
+    if (!do_simple_slice) {
+      std::cout << "Handling multi-dimensional slices..." << std::endl;
+
+    }
+
+    std::cout << "Reduced slices: " << std::endl;
+    for (auto &slice : reducedSlices) {
+      std::cout << "[" << slice.label.label() << ", " << slice.start << ", " << slice.stop << ", " << slice.step << "]" << std::endl;
+    }
+
+    if (reducedSlices.size() > internal::kMaxNumSlices) {
+      std::cout << "Recursively slicing the dataset..." << std::endl;
+      std::size_t halfElements = reducedSlices.size() / 2;
       if (halfElements % 2 != 0) {
         halfElements += 1;
       }
-      std::vector<RangeDescriptor<Index>> firstHalf(slices.begin(), slices.begin() + halfElements);
-      std::vector<RangeDescriptor<Index>> secondHalf(slices.begin() + halfElements, slices.end());
+      std::vector<RangeDescriptor<Index>> firstHalf(reducedSlices.begin(), reducedSlices.begin() + halfElements);
+      std::vector<RangeDescriptor<Index>> secondHalf(reducedSlices.begin() + halfElements, reducedSlices.end());
       MDIO_ASSIGN_OR_RETURN(auto ds, isel(static_cast<const std::vector<RangeDescriptor<Index>>&>(firstHalf)));
       return ds.isel(static_cast<const std::vector<RangeDescriptor<Index>>&>(secondHalf));
     }
 
-    std::vector<RangeDescriptor<Index>> slicesCopy = slices;
-    for (int i = slices.size(); i <= internal::kMaxNumSlices; i++) {
-      slicesCopy.emplace_back(
-          RangeDescriptor<Index>({internal::kInertSliceKey, 0, 1, 1}));
-    }
+    if (do_simple_slice) {
+      std::vector<RangeDescriptor<Index>> slicesCopy = reducedSlices;
+      for (int i = reducedSlices.size(); i <= internal::kMaxNumSlices; i++) {
+        slicesCopy.emplace_back(
+            RangeDescriptor<Index>({internal::kInertSliceKey, 0, 1, 1}));
+      }
 
-    // Generate the index sequence and call the implementation
-    return call_isel_with_vector_impl(
-        slicesCopy, std::make_index_sequence<internal::kMaxNumSlices>{});
+      // Generate the index sequence and call the implementation
+      return call_isel_with_vector_impl(
+          slicesCopy, std::make_index_sequence<internal::kMaxNumSlices>{});
+    } else {
+      std::vector<RangeDescriptor<Index>> slicesCopy;
+      for (int i=0; i<)
+    }
   }
 
   /**
@@ -1032,9 +1180,11 @@ class Dataset {
   std::vector<RangeDescriptor<Index>> elementwiseSlices;
   for (Index idx = offset; idx < offset + nSamples; ++idx) {
     if (data_ptr[idx] == coord_desc.value) {
+      // std::cout << "Found value at index: " << idx << std::endl;
       indices.push_back(idx);
       for (const auto& pos : currentPos) {
-        elementwiseSlices.emplace_back(RangeDescriptor<Index>({coord_desc.label.label(), pos.inclusive_min, pos.inclusive_min+1, 1}));
+        elementwiseSlices.emplace_back(RangeDescriptor<Index>({pos.label, pos.inclusive_min, pos.inclusive_min+1, 1}));
+        // std::cout << pos << std::endl;
       }
     }
     this->_current_position_increment<T>(currentPos, interval);
@@ -1047,6 +1197,12 @@ class Dataset {
   }
 
   // TODO(BrianMichell): Coalesce the slices into fewer descriptors.
+
+  std::cout << "All RangeDescriptors: " << std::endl;
+  for (const auto& slice : elementwiseSlices) {
+    // std::cout << slice << std::endl;
+    std::cout << "[" << slice.label << ", " << slice.start << ", " << slice.stop << ", " << slice.step << "]" << std::endl;
+  }
 
   MDIO_ASSIGN_OR_RETURN(auto ds, isel(static_cast<const std::vector<RangeDescriptor<Index>>&>(elementwiseSlices)));
   // TODO(BrianMichell): Make this method more async friendly.

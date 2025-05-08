@@ -733,6 +733,62 @@ TEST(Dataset, where3) {
   
 }
 
+TEST(Dataset, where4) {
+  std::string path = "zarrs/selTester.mdio";
+  auto json_vars = GetToyExample();
+  auto dsRes = mdio::Dataset::from_json(json_vars, path, mdio::constants::kCreateClean);
+  ASSERT_TRUE(dsRes.status().ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  auto cdpXVarRes = ds.variables.get<mdio::dtypes::float32_t>("cdp-x");
+  ASSERT_TRUE(cdpXVarRes.status().ok()) << cdpXVarRes.status();
+  auto cdpXVar = cdpXVarRes.value();
+  auto cdpXDataFut = cdpXVar.Read();
+  ASSERT_TRUE(cdpXDataFut.status().ok()) << cdpXDataFut.status();
+  auto cdpXData = cdpXDataFut.value();
+  auto cdpXDataAccessor = cdpXData.get_data_accessor();
+  for (auto i = 0; i < cdpXVar.num_samples(); i++) {
+    cdpXDataAccessor.data()[i+cdpXData.get_flattened_offset()] = 1000.0f;
+  }
+  cdpXDataAccessor({15, 7}) = 10.0f;
+  cdpXDataAccessor({15, 8}) = 10.0f;
+  cdpXDataAccessor({15, 9}) = 10.0f;
+  cdpXDataAccessor({117, 5}) = 10.0f;
+  // cdpXDataAccessor({117, 10}) = 10.0f;
+
+  auto writeFut = cdpXVar.Write(cdpXData);
+  ASSERT_TRUE(writeFut.status().ok()) << writeFut.status();
+  auto sliceFut = ds.where(mdio::ValueDescriptor<mdio::dtypes::float32_t>({"cdp-x", 10.0f}));
+  ASSERT_TRUE(sliceFut.status().ok()) << sliceFut.status();
+  auto slicedDs = sliceFut.value();
+  std::cout << slicedDs << std::endl;
+
+  std::set<std::string> varNames = {"cdp-x", "inline", "crossline", "depth", "image"};
+
+  for (auto &varName : varNames) {
+    std::cout << "================" << varName << "================" << std::endl;
+    auto cdps = slicedDs.variables.at(varName).value();
+
+  std::cout << cdps << std::endl;
+
+  std::cout << cdps.get_spec().value().dump(4) << std::endl;
+
+  std::cout << cdps.num_samples() << std::endl;
+  }
+
+  auto vRes = slicedDs.variables.get<mdio::dtypes::float32_t>("cdp-x");
+  ASSERT_TRUE(vRes.status().ok()) << vRes.status();
+  auto v = vRes.value();
+  auto vD = v.Read();
+  ASSERT_TRUE(vD.status().ok()) << vD.status();
+  auto vda = vD.value().get_data_accessor().data();
+  for (auto i = 0; i < v.num_samples(); i++) {
+    std::cout << "[" << i << "]: " << vda[i+vD.value().get_flattened_offset()] << std::endl;
+  }
+
+
+}
+
 TEST(Dataset, selValue) {
   std::string path = "zarrs/selTester.mdio";
   auto dsRes = makePopulated(path);

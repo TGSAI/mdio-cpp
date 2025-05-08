@@ -1043,6 +1043,8 @@ class Variable {
    */
   template <typename... Descriptors>
   Result<Variable> slice(const Descriptors&... descriptors) const {
+    std::stringstream ss;
+    ss << "Slicing variable: " << variableName << " with descriptors...";
     constexpr size_t numDescriptors = sizeof...(descriptors);
 
     auto tuple_descs = std::make_tuple(descriptors...);
@@ -1082,6 +1084,12 @@ class Variable {
         },
         tuple_descs);
 
+    for (auto i=0; i<labels.size(); ++i) {
+      ss << labels[i].label() << " " << start[i] << " " << stop[i] << " " << step[i] << std::endl;
+    }
+
+    std::cout << ss.str() << std::endl;
+
     if (preconditionStatus >= 0) {
       mdio::RangeDescriptor<Index> err;
       std::apply(
@@ -1119,6 +1127,7 @@ class Variable {
             store |
                 tensorstore::Dims(labels).HalfOpenInterval(start, stop, step));
         // return a new variable with the sliced store
+        std::cout << "Sliced variable: " << variableName << " with no cat" << std::endl;
         return Variable{variableName, longName, metadata, slice_store,
                         attributes};
       } else if (labelSet.size() != labelSize) {
@@ -1164,6 +1173,7 @@ class Variable {
               tensorstore::TensorStore<T, R, M>(tensorstore::unchecked,
                                                 catStore);
           // Return a new Variable with the concatenated store
+          std::cout <<"Sliced variable: " << variableName << "with cat" << std::endl;
           return Variable{variableName, longName, metadata, typedCatStore,
                           attributes};
         }
@@ -1174,6 +1184,7 @@ class Variable {
           "Unexpected error occured while trying to slice the Variable.");
     }
     // the slice didn't change anything in the variables dimensions.
+    std::cout << "Sliced variable: " << variableName << " didnt' change" << std::endl;
     return *this;
   }
 
