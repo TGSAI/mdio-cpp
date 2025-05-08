@@ -984,52 +984,21 @@ class Dataset {
     return absl::OkStatus();
   }
 
-  // nlohmann::json transform_to_json(const tensorstore::IndexTransform<>& transform) {
-  //   nlohmann::json j;
-  //   j["input_inclusive_min"] = std::vector<Index>(transform.input_origin().begin(), transform.input_origin().end());
-  //   j["input_shape"] = std::vector<Index>(transform.input_shape().begin(), transform.input_shape().end());
+  template <typename T>
+  void _current_position_increment(std::vector<typename Variable<T>::Interval>& positionInterval, const std::vector<typename Variable<T>::Interval>& interval) {
+    for (std::size_t d = positionInterval.size(); d-- > 0; ) {
+      if (positionInterval[d].inclusive_min + 1 < interval[d].exclusive_max) {
+        ++positionInterval[d].inclusive_min;
+        return;
+      }
+      positionInterval[d].inclusive_min = interval[d].inclusive_min;
+    }
 
-  //   // Serialize each output‐index map:
-  //   j["output"] = nlohmann::json::array();
-  //   for (DimensionIndex d = 0; d < transform.output_rank(); ++d) {
-  //     const auto& map = transform.output_index_map(d);
-  //     nlohmann::json mo;
-  //     switch (map.method()) {
-  //       case tensorstore::OutputIndexMethod::constant:
-  //         mo["method"] = "constant";
-  //         mo["offset"] = map.offset();
-  //         break;
-
-  //       case tensorstore::OutputIndexMethod::single_input_dimension:
-  //         mo["method"]          = "single_input_dimension";
-  //         mo["input_dimension"] = map.input_dimension();  // no *
-  //         mo["stride"]          = map.stride();           // no *
-  //         mo["offset"]          = map.offset();
-  //         break;
-
-  //       case tensorstore::OutputIndexMethod::array: {
-  //         mo["method"] = "array";
-  //         mo["offset"] = map.offset();
-  //         mo["stride"] = map.stride();
-  //         auto arr = map.index_array();                                      // ArrayView<const Index,1>
-  //         std::size_t n = static_cast<std::size_t>(arr.shape()[0]);
-  //         const auto* ptr = arr.data();
-  //         std::vector<Index> vec(ptr, ptr + n);
-  //         mo["index_array"] = std::move(vec);
-  //         break;
-  //       }
-
-  //       default:
-  //         // e.g. index_range, if you need it
-  //         break;
-  //     }
-  //     j["output"].push_back(std::move(mo));
-  //   }
-  //   return j;
-  // }
+    // Should be unreachable.
+  }
 
   template <typename T>
-  mdio::Result<Dataset> where(const mdio::ValueDescriptor<T>& coord_desc) const {
+  Result<Dataset> where(const ValueDescriptor<T>& coord_desc) {
   // 1) Lookup the coordinate Variable<T>
   auto varRes =
       variables.get<T>(std::string(coord_desc.label.label()));
@@ -1038,82 +1007,44 @@ class Dataset {
   }
   auto var = varRes.value();
 
-  // auto store = var.get_store();
-
-  // // MDIO_ASSIGN_OR_RETURN(auto transform, tensorstore::GetIndexTransform(store));
-  // auto transform_res = ApplyIndexTransform(
-  //   [](tensorstore::IndexTransform<> t) { return t; },
-  //   store);
-  // if (!transform_res.status().ok()) {
-  //   return transform_res.status();
-  // }
-  // auto transform = transform_res.value();
-
-  // // std::cout << "transform: " << transform << std::endl;
-  // auto json = transform_to_json(transform);
-  // std::cout << json.dump(4) << std::endl;
-
-  MDIO_ASSIGN_OR_RETURN(auto spec, var.get_spec());
-
-  std::cout << spec.dump(4) << std::endl;
-
-  return absl::UnimplementedError("where() is not yet fully implemented.");
+  MDIO_ASSIGN_OR_RETURN(auto interval, var.get_intervals());
+  std::vector<typename Variable<T>::Interval> currentPos;  // Hacky, we will use this to track our current position in the dataset.
+  for (const auto& i : interval) {
+    currentPos.push_back(i);
+  }
 
   // 2) Read its data
-  // auto varFut = var.Read();
-  // if (!varFut.status().ok()) {
-  //   return varFut.status();
-  // }
-  // auto varDat = varFut.value();
+  auto varFut = var.Read();
+  if (!varFut.status().ok()) {
+    return varFut.status();
+  }
+  auto varDat = varFut.value();
 
-  // // **Use the flattened data pointer + offset for N‑D arrays:**
-  // auto* data_ptr = varDat.get_data_accessor().data();
-  // Index offset   = varDat.get_flattened_offset();
-  // Index nSamples = var.num_samples();
+  // **Use the flattened data pointer + offset for N‑D arrays:**
+  auto* data_ptr = varDat.get_data_accessor().data();
+  Index offset   = varDat.get_flattened_offset();
+  Index nSamples = var.num_samples();
 
-  // // 3) Collect all flat indices where coord == target value
-  // std::vector<Index> indices;
-  // for (Index idx = offset; idx < offset + nSamples; ++idx) {
-  //   if (data_ptr[idx] == coord_desc.value) {
-  //     indices.push_back(idx);
-  //   }
-  // }
-  // if (indices.empty()) {
-  //   return absl::NotFoundError(
-  //     "where(): no entries match coordinate '" +
-  //     std::string(coord_desc.label.label()) + "'");
-  // }
+  // 3) Collect all flat indices where coord == target value
+  std::vector<Index> indices;
+  std::vector<RangeDescriptor<Index>> elementwiseSlices;
+  for (Index idx = offset; idx < offset + nSamples; ++idx) {
+    if (data_ptr[idx] == coord_desc.value) {
+      indices.push_back(idx);
+      for (const auto& pos : currentPos) {
+        elementwiseSlices.emplace_back(RangeDescriptor<Index>({coord_desc.label.label(), pos.inclusive_min, pos.inclusive_min+1, 1}));
+      }
+    }
+    this->_current_position_increment<T>(currentPos, interval);
+  }
 
-  // // 4) Collapse into contiguous [start,stop) runs
-  // std::vector<mdio::RangeDescriptor<Index>> runs;
-  // runs.reserve(4);
-  // Index run_start = indices[0];
-  // Index prev      = indices[0];
+  if (indices.empty()) {
+    return absl::NotFoundError(
+      "where(): no entries match coordinate '" +
+      std::string(coord_desc.label.label()) + "'");
+  }
 
-  // for (size_t j = 1; j < indices.size(); ++j) {
-  //   Index cur = indices[j];
-  //   if (cur == prev + 1) {
-  //     prev = cur;
-  //   } else {
-  //     runs.push_back({
-  //       /* label = */ coord_desc.label,
-  //       /* start = */ run_start,
-  //       /* stop  = */ prev + 1,
-  //       /* step  = */ 1
-  //     });
-  //     run_start = prev = cur;
-  //   }
-  // }
-  // // final run
-  // runs.push_back({
-  //   coord_desc.label,
-  //   run_start,
-  //   prev + 1,
-  //   1
-  // });
-
-  // // 5) Apply via your existing isel(...)
-  // return this->isel(runs);
+  return isel(elementwiseSlices);
 }
 
   /**

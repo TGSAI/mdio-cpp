@@ -656,8 +656,11 @@ TEST(Dataset, where) {
   auto ds = dsRes.value();
 
   // mdio::ListDescriptor<mdio::Index> sliceIndices = {"inline", {1,3,7}};
-  mdio::RangeDescriptor<mdio::Index> sliceIndices = {"inline", 1, 7, 2};
-  auto sliceRes = ds.isel(sliceIndices);
+  // mdio::RangeDescriptor<mdio::Index> sliceIndices = {"inline", 1, 7, 2};
+  mdio::RangeDescriptor<mdio::Index> one = {"inline", 1, 2, 1};
+  mdio::RangeDescriptor<mdio::Index> two = {"inline", 3, 4, 1};
+  mdio::RangeDescriptor<mdio::Index> three = {"inline", 7, 8, 1};
+  auto sliceRes = ds.isel(one, two, three);
   ASSERT_TRUE(sliceRes.status().ok()) << sliceRes.status();
 
 
@@ -667,12 +670,61 @@ TEST(Dataset, where) {
 
   std::cout << "=================Full inline spec=================" << std::endl;
   auto sliceRes1 = ds.where(ilValue);
+  std::cout << ds.variables.at("data").value().get_spec().value()["transform"].dump(4) << std::endl;
+  std::cout << ds.variables.at("inline").value() << std::endl;
+  std::cout << ds.variables.at("data").value() << std::endl;
   std::cout << "=================Picked inline spec=================" << std::endl;
   auto sliceRes2 = sliceRes.value().where(ilValue);
+  std::cout << sliceRes.value().variables.at("data").value().get_spec().value()["transform"].dump(4) << std::endl;
+  auto il = sliceRes.value().variables.get<mdio::dtypes::int32_t>("inline").value();
+  std::cout << il << std::endl;
+  std::cout << sliceRes.value().variables.at("data").value() << std::endl;
+  auto ilr = il.Read().value();
+  for (auto i=0; i < il.num_samples(); i++) {
+    std::cout << "[" << i << "]: " << ilr.get_data_accessor().data()[i+ilr.get_flattened_offset()] << std::endl;
+  }
   std::cout << "=================Picked inline spec=================" << std::endl;
   // ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
   ASSERT_FALSE(sliceRes1.status().ok());
   ASSERT_FALSE(sliceRes2.status().ok()) << sliceRes2.status();
+}
+
+TEST(Dataset, where2) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+  mdio::ValueDescriptor<mdio::dtypes::int32_t> ilValue = {"inline", 1};
+
+  mdio::RangeDescriptor<mdio::Index> ilRange = {"inline", 0, 10, 2};
+  auto sliceRes = ds.isel(ilRange);
+  ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
+  auto slicedDs = sliceRes.value();
+  std::cout << slicedDs.variables.at("data").value() << std::endl;
+  auto sliceRes2 = slicedDs.where(ilValue);
+  ilRange.start = 2;
+  ilRange.stop = 4;
+  ilRange.step = 1;
+  auto sliceRes3 = slicedDs.isel(ilRange);
+  std::cout << sliceRes3.value().variables.at("data").value() << std::endl;
+  auto sliceRes4 = sliceRes3.value().where(ilValue);
+  // std::cout << "===================Sliced Data=================" << std::endl;
+  // std::cout << "===================Whered Data=================" << std::endl;
+  // std::cout << sliceRes2.value().variables.at("data").value() << std::endl;
+}
+
+TEST(Dataset, where3) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  mdio::ValueDescriptor<mdio::dtypes::int32_t> ilValue = {"inline", 3};
+  auto sliceRes = ds.where(ilValue);
+  ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
+  auto slicedDs = sliceRes.value();
+  std::cout << slicedDs << std::endl;
+  
 }
 
 TEST(Dataset, selValue) {
