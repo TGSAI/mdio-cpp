@@ -998,7 +998,7 @@ class Dataset {
   }
 
   template <typename T>
-  Result<Dataset> where(const ValueDescriptor<T>& coord_desc) {
+  Future<Dataset> where(const ValueDescriptor<T>& coord_desc) {
   // 1) Lookup the coordinate Variable<T>
   auto varRes =
       variables.get<T>(std::string(coord_desc.label.label()));
@@ -1044,7 +1044,9 @@ class Dataset {
       std::string(coord_desc.label.label()) + "'");
   }
 
-  return isel(elementwiseSlices);
+  MDIO_ASSIGN_OR_RETURN(auto ds, isel(elementwiseSlices));
+  return tensorstore::ReadyFuture<Dataset>(std::move(ds));
+  // return isel(elementwiseSlices);
 }
 
   /**

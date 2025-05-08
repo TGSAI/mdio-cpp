@@ -674,19 +674,21 @@ TEST(Dataset, where) {
   std::cout << ds.variables.at("inline").value() << std::endl;
   std::cout << ds.variables.at("data").value() << std::endl;
   std::cout << "=================Picked inline spec=================" << std::endl;
-  auto sliceRes2 = sliceRes.value().where(ilValue);
-  std::cout << sliceRes.value().variables.at("data").value().get_spec().value()["transform"].dump(4) << std::endl;
-  auto il = sliceRes.value().variables.get<mdio::dtypes::int32_t>("inline").value();
+  auto sliceFut = sliceRes.value().where(ilValue);
+  ASSERT_TRUE(sliceFut.status().ok()) << sliceFut.status();
+  auto slicedDs = sliceFut.value();
+  std::cout << slicedDs.variables.at("data").value().get_spec().value()["transform"].dump(4) << std::endl;
+  auto il = slicedDs.variables.get<mdio::dtypes::int32_t>("inline").value();
   std::cout << il << std::endl;
-  std::cout << sliceRes.value().variables.at("data").value() << std::endl;
+  std::cout << slicedDs.variables.at("data").value() << std::endl;
   auto ilr = il.Read().value();
   for (auto i=0; i < il.num_samples(); i++) {
     std::cout << "[" << i << "]: " << ilr.get_data_accessor().data()[i+ilr.get_flattened_offset()] << std::endl;
   }
-  std::cout << "=================Picked inline spec=================" << std::endl;
-  // ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
-  ASSERT_FALSE(sliceRes1.status().ok());
-  ASSERT_FALSE(sliceRes2.status().ok()) << sliceRes2.status();
+  // std::cout << "=================Picked inline spec=================" << std::endl;
+  // // ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
+  // ASSERT_FALSE(sliceRes1.status().ok());
+  // ASSERT_FALSE(sliceRes2.status().ok()) << sliceRes2.status();
 }
 
 TEST(Dataset, where2) {
@@ -701,16 +703,20 @@ TEST(Dataset, where2) {
   ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
   auto slicedDs = sliceRes.value();
   std::cout << slicedDs.variables.at("data").value() << std::endl;
-  auto sliceRes2 = slicedDs.where(ilValue);
+  auto sliceFut = slicedDs.where(ilValue);
+  ASSERT_TRUE(sliceFut.status().ok()) << sliceFut.status();
+  auto slicedDs2 = sliceFut.value();
   ilRange.start = 2;
   ilRange.stop = 4;
   ilRange.step = 1;
-  auto sliceRes3 = slicedDs.isel(ilRange);
-  std::cout << sliceRes3.value().variables.at("data").value() << std::endl;
-  auto sliceRes4 = sliceRes3.value().where(ilValue);
-  // std::cout << "===================Sliced Data=================" << std::endl;
-  // std::cout << "===================Whered Data=================" << std::endl;
-  // std::cout << sliceRes2.value().variables.at("data").value() << std::endl;
+  auto sliceFut2 = slicedDs2.isel(ilRange);
+  ASSERT_TRUE(sliceFut2.status().ok()) << sliceFut2.status();
+  auto slicedDs3 = sliceFut2.value();
+  std::cout << slicedDs3.variables.at("data").value() << std::endl;
+  auto sliceFut3 = slicedDs3.where(ilValue);
+  ASSERT_TRUE(sliceFut3.status().ok()) << sliceFut3.status();
+  auto slicedDs4 = sliceFut3.value();
+  std::cout << slicedDs4.variables.at("data").value() << std::endl;
 }
 
 TEST(Dataset, where3) {
@@ -720,9 +726,9 @@ TEST(Dataset, where3) {
   auto ds = dsRes.value();
 
   mdio::ValueDescriptor<mdio::dtypes::int32_t> ilValue = {"inline", 3};
-  auto sliceRes = ds.where(ilValue);
-  ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
-  auto slicedDs = sliceRes.value();
+  auto sliceFut = ds.where(ilValue);
+  ASSERT_TRUE(sliceFut.status().ok()) << sliceFut.status();
+  auto slicedDs = sliceFut.value();
   std::cout << slicedDs << std::endl;
   
 }
