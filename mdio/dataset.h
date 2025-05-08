@@ -632,8 +632,8 @@ class Dataset {
       }
       std::vector<RangeDescriptor<Index>> firstHalf(slices.begin(), slices.begin() + halfElements);
       std::vector<RangeDescriptor<Index>> secondHalf(slices.begin() + halfElements, slices.end());
-      MDIO_ASSIGN_OR_RETURN(auto ds, isel(firstHalf));
-      return ds.isel(secondHalf);
+      MDIO_ASSIGN_OR_RETURN(auto ds, isel(static_cast<const std::vector<RangeDescriptor<Index>>&>(firstHalf)));
+      return ds.isel(static_cast<const std::vector<RangeDescriptor<Index>>&>(secondHalf));
     }
 
     std::vector<RangeDescriptor<Index>> slicesCopy = slices;
@@ -853,7 +853,7 @@ class Dataset {
       // The map 'label_to_indices' is now populated with all the relevant
       // indices. You can now proceed with further processing based on this map.
 
-      return isel(slices);
+      return isel(static_cast<const std::vector<RangeDescriptor<Index>>&>(slices));
     } else if constexpr ((std::is_same_v</*NOLINT: readability/braces*/
                                          Descriptors,
                                          ListDescriptor<
@@ -883,7 +883,7 @@ class Dataset {
       // The map 'label_to_indices' is now populated with all the relevant
       // indices. You can now proceed with further processing based on this map.
 
-      return isel(slices);
+      return isel(static_cast<const std::vector<RangeDescriptor<Index>>&>(slices));
     } else {
       std::map<std::string_view, std::pair<Index, Index>>
           label_to_range;  // pair.first = start, pair.second = stop
@@ -980,7 +980,7 @@ class Dataset {
             "No slices could be made from the given descriptors.");
       }
 
-      return isel(slices);
+      return isel(static_cast<const std::vector<RangeDescriptor<Index>>&>(slices));
     }
 
     return absl::OkStatus();
@@ -1048,7 +1048,7 @@ class Dataset {
 
   // TODO(BrianMichell): Coalesce the slices into fewer descriptors.
 
-  MDIO_ASSIGN_OR_RETURN(auto ds, isel(elementwiseSlices));
+  MDIO_ASSIGN_OR_RETURN(auto ds, isel(static_cast<const std::vector<RangeDescriptor<Index>>&>(elementwiseSlices)));
   // TODO(BrianMichell): Make this method more async friendly.
   return tensorstore::ReadyFuture<Dataset>(std::move(ds));
 }
