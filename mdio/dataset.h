@@ -626,12 +626,14 @@ class Dataset {
     }
 
     if (slices.size() > internal::kMaxNumSlices) {
-      return absl::InvalidArgumentError(
-          absl::StrCat("Too many slices provided or implicitly generated. "
-                       "Maximum number of slices is ",
-                       internal::kMaxNumSlices, " but ", slices.size(),
-                       " were provided.\n\tUse -DMAX_NUM_SLICES cmake flag to "
-                       "increase the maximum number of slices."));
+      std::size_t halfElements = slices.size() / 2;
+      if (halfElements % 2 != 0) {
+        halfElements += 1;
+      }
+      std::vector<RangeDescriptor<Index>> firstHalf(slices.begin(), slices.begin() + halfElements);
+      std::vector<RangeDescriptor<Index>> secondHalf(slices.begin() + halfElements, slices.end());
+      MDIO_ASSIGN_OR_RETURN(auto ds, isel(firstHalf));
+      return ds.isel(secondHalf);
     }
 
     std::vector<RangeDescriptor<Index>> slicesCopy = slices;
@@ -1044,9 +1046,11 @@ class Dataset {
       std::string(coord_desc.label.label()) + "'");
   }
 
+  // TODO(BrianMichell): Coalesce the slices into fewer descriptors.
+
   MDIO_ASSIGN_OR_RETURN(auto ds, isel(elementwiseSlices));
+  // TODO(BrianMichell): Make this method more async friendly.
   return tensorstore::ReadyFuture<Dataset>(std::move(ds));
-  // return isel(elementwiseSlices);
 }
 
   /**

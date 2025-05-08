@@ -1002,6 +1002,8 @@ class Variable {
     }
 
     if (slices.size() > internal::kMaxNumSlices) {
+      // We are expecting the only entry point for this method to be from the Dataset::isel method.
+      // That method should handle the partitioning of the slices.
       return absl::InvalidArgumentError(
           absl::StrCat("Too many slices provided or implicitly generated. "
                        "Maximum number of slices is ",
