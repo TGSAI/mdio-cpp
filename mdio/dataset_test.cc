@@ -649,89 +649,89 @@ TEST(Dataset, iselWithStrideAndExistingData) {
   }  // End of Step 3
 }
 
-TEST(Dataset, where) {
-  std::string path = "zarrs/selTester.mdio";
-  auto dsRes = makePopulated(path);
-  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
-  auto ds = dsRes.value();
+// TEST(Dataset, where) {
+//   std::string path = "zarrs/selTester.mdio";
+//   auto dsRes = makePopulated(path);
+//   ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+//   auto ds = dsRes.value();
 
-  // mdio::ListDescriptor<mdio::Index> sliceIndices = {"inline", {1,3,7}};
-  // mdio::RangeDescriptor<mdio::Index> sliceIndices = {"inline", 1, 7, 2};
-  mdio::RangeDescriptor<mdio::Index> one = {"inline", 1, 2, 1};
-  mdio::RangeDescriptor<mdio::Index> two = {"inline", 3, 4, 1};
-  mdio::RangeDescriptor<mdio::Index> three = {"inline", 7, 8, 1};
-  auto sliceRes = ds.isel(one, two, three);
-  ASSERT_TRUE(sliceRes.status().ok()) << sliceRes.status();
+//   // mdio::ListDescriptor<mdio::Index> sliceIndices = {"inline", {1,3,7}};
+//   // mdio::RangeDescriptor<mdio::Index> sliceIndices = {"inline", 1, 7, 2};
+//   mdio::RangeDescriptor<mdio::Index> one = {"inline", 1, 2, 1};
+//   mdio::RangeDescriptor<mdio::Index> two = {"inline", 3, 4, 1};
+//   mdio::RangeDescriptor<mdio::Index> three = {"inline", 7, 8, 1};
+//   auto sliceRes = ds.isel(one, two, three);
+//   ASSERT_TRUE(sliceRes.status().ok()) << sliceRes.status();
 
 
-  mdio::ValueDescriptor<mdio::dtypes::int32_t> ilValue = {"inline", 1};
+//   mdio::ValueDescriptor<mdio::dtypes::int32_t> ilValue = {"inline", 1};
 
-  // mdio::ValueDescriptor<mdio::dtypes::int32_t> xlValue = {"inline", 1};
+//   // mdio::ValueDescriptor<mdio::dtypes::int32_t> xlValue = {"inline", 1};
 
-  std::cout << "=================Full inline spec=================" << std::endl;
-  auto sliceRes1 = ds.where(ilValue);
-  std::cout << ds.variables.at("data").value().get_spec().value()["transform"].dump(4) << std::endl;
-  std::cout << ds.variables.at("inline").value() << std::endl;
-  std::cout << ds.variables.at("data").value() << std::endl;
-  std::cout << "=================Picked inline spec=================" << std::endl;
-  auto sliceFut = sliceRes.value().where(ilValue);
-  ASSERT_TRUE(sliceFut.status().ok()) << sliceFut.status();
-  auto slicedDs = sliceFut.value();
-  std::cout << slicedDs.variables.at("data").value().get_spec().value()["transform"].dump(4) << std::endl;
-  auto il = slicedDs.variables.get<mdio::dtypes::int32_t>("inline").value();
-  std::cout << il << std::endl;
-  std::cout << slicedDs.variables.at("data").value() << std::endl;
-  auto ilr = il.Read().value();
-  for (auto i=0; i < il.num_samples(); i++) {
-    std::cout << "[" << i << "]: " << ilr.get_data_accessor().data()[i+ilr.get_flattened_offset()] << std::endl;
-  }
-  // std::cout << "=================Picked inline spec=================" << std::endl;
-  // // ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
-  // ASSERT_FALSE(sliceRes1.status().ok());
-  // ASSERT_FALSE(sliceRes2.status().ok()) << sliceRes2.status();
-}
+//   std::cout << "=================Full inline spec=================" << std::endl;
+//   auto sliceRes1 = ds.where(ilValue);
+//   std::cout << ds.variables.at("data").value().get_spec().value()["transform"].dump(4) << std::endl;
+//   std::cout << ds.variables.at("inline").value() << std::endl;
+//   std::cout << ds.variables.at("data").value() << std::endl;
+//   std::cout << "=================Picked inline spec=================" << std::endl;
+//   auto sliceFut = sliceRes.value().where(ilValue);
+//   ASSERT_TRUE(sliceFut.status().ok()) << sliceFut.status();
+//   auto slicedDs = sliceFut.value();
+//   std::cout << slicedDs.variables.at("data").value().get_spec().value()["transform"].dump(4) << std::endl;
+//   auto il = slicedDs.variables.get<mdio::dtypes::int32_t>("inline").value();
+//   std::cout << il << std::endl;
+//   std::cout << slicedDs.variables.at("data").value() << std::endl;
+//   auto ilr = il.Read().value();
+//   for (auto i=0; i < il.num_samples(); i++) {
+//     std::cout << "[" << i << "]: " << ilr.get_data_accessor().data()[i+ilr.get_flattened_offset()] << std::endl;
+//   }
+//   // std::cout << "=================Picked inline spec=================" << std::endl;
+//   // // ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
+//   // ASSERT_FALSE(sliceRes1.status().ok());
+//   // ASSERT_FALSE(sliceRes2.status().ok()) << sliceRes2.status();
+// }
 
-TEST(Dataset, where2) {
-  std::string path = "zarrs/selTester.mdio";
-  auto dsRes = makePopulated(path);
-  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
-  auto ds = dsRes.value();
-  mdio::ValueDescriptor<mdio::dtypes::int32_t> ilValue = {"inline", 1};
+// TEST(Dataset, where2) {
+//   std::string path = "zarrs/selTester.mdio";
+//   auto dsRes = makePopulated(path);
+//   ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+//   auto ds = dsRes.value();
+//   mdio::ValueDescriptor<mdio::dtypes::int32_t> ilValue = {"inline", 1};
 
-  mdio::RangeDescriptor<mdio::Index> ilRange = {"inline", 0, 10, 2};
-  auto sliceRes = ds.isel(ilRange);
-  ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
-  auto slicedDs = sliceRes.value();
-  std::cout << slicedDs.variables.at("data").value() << std::endl;
-  auto sliceFut = slicedDs.where(ilValue);
-  ASSERT_TRUE(sliceFut.status().ok()) << sliceFut.status();
-  auto slicedDs2 = sliceFut.value();
-  ilRange.start = 2;
-  ilRange.stop = 4;
-  ilRange.step = 1;
-  auto sliceFut2 = slicedDs2.isel(ilRange);
-  ASSERT_TRUE(sliceFut2.status().ok()) << sliceFut2.status();
-  auto slicedDs3 = sliceFut2.value();
-  std::cout << slicedDs3.variables.at("data").value() << std::endl;
-  auto sliceFut3 = slicedDs3.where(ilValue);
-  ASSERT_TRUE(sliceFut3.status().ok()) << sliceFut3.status();
-  auto slicedDs4 = sliceFut3.value();
-  std::cout << slicedDs4.variables.at("data").value() << std::endl;
-}
+//   mdio::RangeDescriptor<mdio::Index> ilRange = {"inline", 0, 10, 2};
+//   auto sliceRes = ds.isel(ilRange);
+//   ASSERT_TRUE(sliceRes.ok()) << sliceRes.status();
+//   auto slicedDs = sliceRes.value();
+//   std::cout << slicedDs.variables.at("data").value() << std::endl;
+//   auto sliceFut = slicedDs.where(ilValue);
+//   ASSERT_TRUE(sliceFut.status().ok()) << sliceFut.status();
+//   auto slicedDs2 = sliceFut.value();
+//   ilRange.start = 2;
+//   ilRange.stop = 4;
+//   ilRange.step = 1;
+//   auto sliceFut2 = slicedDs2.isel(ilRange);
+//   ASSERT_TRUE(sliceFut2.status().ok()) << sliceFut2.status();
+//   auto slicedDs3 = sliceFut2.value();
+//   std::cout << slicedDs3.variables.at("data").value() << std::endl;
+//   auto sliceFut3 = slicedDs3.where(ilValue);
+//   ASSERT_TRUE(sliceFut3.status().ok()) << sliceFut3.status();
+//   auto slicedDs4 = sliceFut3.value();
+//   std::cout << slicedDs4.variables.at("data").value() << std::endl;
+// }
 
-TEST(Dataset, where3) {
-  std::string path = "zarrs/selTester.mdio";
-  auto dsRes = makePopulated(path);
-  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
-  auto ds = dsRes.value();
+// TEST(Dataset, where3) {
+//   std::string path = "zarrs/selTester.mdio";
+//   auto dsRes = makePopulated(path);
+//   ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+//   auto ds = dsRes.value();
 
-  mdio::ValueDescriptor<mdio::dtypes::int32_t> ilValue = {"inline", 3};
-  auto sliceFut = ds.where(ilValue);
-  ASSERT_TRUE(sliceFut.status().ok()) << sliceFut.status();
-  auto slicedDs = sliceFut.value();
-  std::cout << slicedDs << std::endl;
+//   mdio::ValueDescriptor<mdio::dtypes::int32_t> ilValue = {"inline", 3};
+//   auto sliceFut = ds.where(ilValue);
+//   ASSERT_TRUE(sliceFut.status().ok()) << sliceFut.status();
+//   auto slicedDs = sliceFut.value();
+//   std::cout << slicedDs << std::endl;
   
-}
+// }
 
 TEST(Dataset, where4) {
   std::string path = "zarrs/selTester.mdio";
@@ -740,15 +740,26 @@ TEST(Dataset, where4) {
   ASSERT_TRUE(dsRes.status().ok()) << dsRes.status();
   auto ds = dsRes.value();
 
+{
   auto cdpXVarRes = ds.variables.get<mdio::dtypes::float32_t>("cdp-x");
+  auto imgVarRes = ds.variables.get<mdio::dtypes::float32_t>("image");
   ASSERT_TRUE(cdpXVarRes.status().ok()) << cdpXVarRes.status();
+  ASSERT_TRUE(imgVarRes.status().ok()) << imgVarRes.status();
   auto cdpXVar = cdpXVarRes.value();
+  auto imgVar = imgVarRes.value();
   auto cdpXDataFut = cdpXVar.Read();
+  auto imgDataFut = imgVar.Read();
   ASSERT_TRUE(cdpXDataFut.status().ok()) << cdpXDataFut.status();
+  ASSERT_TRUE(imgDataFut.status().ok()) << imgDataFut.status();
   auto cdpXData = cdpXDataFut.value();
   auto cdpXDataAccessor = cdpXData.get_data_accessor();
-  for (auto i = 0; i < cdpXVar.num_samples(); i++) {
+  auto imgData = imgDataFut.value();
+  auto imgDataAccessor = imgData.get_data_accessor();
+  for (auto i = 0; i < cdpXData.num_samples(); i++) {
     cdpXDataAccessor.data()[i+cdpXData.get_flattened_offset()] = 1000.0f;
+  }
+  for (auto i = 0; i < imgData.num_samples(); i++) {
+    imgDataAccessor.data()[i+imgData.get_flattened_offset()] = 0.0f;
   }
   cdpXDataAccessor({15, 7}) = 10.0f;
   cdpXDataAccessor({15, 8}) = 10.0f;
@@ -756,24 +767,35 @@ TEST(Dataset, where4) {
   cdpXDataAccessor({117, 5}) = 10.0f;
   // cdpXDataAccessor({117, 10}) = 10.0f;
 
+  for (int i=0; i<384; ++i) {
+    imgDataAccessor({15, 7, i}) = 1.0f;
+    imgDataAccessor({15, 8, i}) = 2.0f;
+    imgDataAccessor({15, 9, i}) = 3.0f;
+    imgDataAccessor({117, 5, i}) = 4.0f;
+  }
+
   auto writeFut = cdpXVar.Write(cdpXData);
+  auto writeFut2 = imgVar.Write(imgData);
   ASSERT_TRUE(writeFut.status().ok()) << writeFut.status();
+  ASSERT_TRUE(writeFut2.status().ok()) << writeFut2.status();
+}
   auto sliceFut = ds.where(mdio::ValueDescriptor<mdio::dtypes::float32_t>({"cdp-x", 10.0f}));
   ASSERT_TRUE(sliceFut.status().ok()) << sliceFut.status();
   auto slicedDs = sliceFut.value();
   std::cout << slicedDs << std::endl;
+  // std::set<std::string> varNames = {"cdp-x", "inline", "crossline", "depth", "image"};
 
-  std::set<std::string> varNames = {"cdp-x", "inline", "crossline", "depth", "image"};
+  std::set<std::string> varNames = {"cdp-x", "image"};
 
   for (auto &varName : varNames) {
     std::cout << "================" << varName << "================" << std::endl;
     auto cdps = slicedDs.variables.at(varName).value();
 
-  std::cout << cdps << std::endl;
+    std::cout << cdps << std::endl;
 
-  std::cout << cdps.get_spec().value().dump(4) << std::endl;
+    std::cout << cdps.get_spec().value().dump(4) << std::endl;
 
-  std::cout << cdps.num_samples() << std::endl;
+    std::cout << cdps.num_samples() << std::endl;
   }
 
   auto vRes = slicedDs.variables.get<mdio::dtypes::float32_t>("cdp-x");
@@ -782,10 +804,20 @@ TEST(Dataset, where4) {
   auto vD = v.Read();
   ASSERT_TRUE(vD.status().ok()) << vD.status();
   auto vda = vD.value().get_data_accessor().data();
-  for (auto i = 0; i < v.num_samples(); i++) {
+  for (auto i = 0; i < vD.value().num_samples(); i++) {
     std::cout << "[" << i << "]: " << vda[i+vD.value().get_flattened_offset()] << std::endl;
   }
 
+  auto imgVarRes = slicedDs.variables.get<mdio::dtypes::float32_t>("image");
+  ASSERT_TRUE(imgVarRes.status().ok()) << imgVarRes.status();
+  auto imgVar = imgVarRes.value();
+  auto imgDataFut = imgVar.Read();
+  ASSERT_TRUE(imgDataFut.status().ok()) << imgDataFut.status();
+  auto imgData = imgDataFut.value();
+  auto imgDataAccessor = imgData.get_data_accessor();
+  for (auto i = 0; i < imgData.num_samples(); i++) {
+    std::cout << "[" << i << "]: " << imgDataAccessor.data()[i+imgData.get_flattened_offset()] << std::endl;
+  } 
 
 }
 

@@ -896,6 +896,8 @@ class Variable {
    * @return Index The number of samples in the variable.
    */
   Index num_samples() const {
+    std::cout << "WARNING: Calling num_samples() from Variable class may result in "
+              << "incorrect results. Consider using num_samples() from VariableData instead." << std::endl;
     // Accessing the shape
     auto shape = dimensions().shape();
     // Calculating the total number of elements
@@ -1041,152 +1043,271 @@ class Variable {
    * @endcode
    * @return An `mdio::Result` object containing the resulting sub-Variable.
    */
-  template <typename... Descriptors>
-  Result<Variable> slice(const Descriptors&... descriptors) const {
-    std::stringstream ss;
-    ss << "Slicing variable: " << variableName << " with descriptors...";
-    constexpr size_t numDescriptors = sizeof...(descriptors);
+  // template <typename... Descriptors>
+  // Result<Variable> slice(const Descriptors&... descriptors) const {
+  //   std::stringstream ss;
+  //   ss << "Slicing variable: " << variableName << " with descriptors...";
+  //   constexpr size_t numDescriptors = sizeof...(descriptors);
 
-    auto tuple_descs = std::make_tuple(descriptors...);
+  //   auto tuple_descs = std::make_tuple(descriptors...);
 
-    std::vector<DimensionIdentifier> labels;
-    labels.reserve(numDescriptors);
+  //   std::vector<DimensionIdentifier> labels;
+  //   labels.reserve(numDescriptors);
 
-    std::vector<Index> start, stop, step;
-    start.reserve(numDescriptors);
-    stop.reserve(numDescriptors);
-    step.reserve(numDescriptors);
-    // -1 Everything is ok
-    // >=0 Error: Start is greater than or equal to stop
-    int8_t preconditionStatus = -1;
+  //   std::vector<Index> start, stop, step;
+  //   start.reserve(numDescriptors);
+  //   stop.reserve(numDescriptors);
+  //   step.reserve(numDescriptors);
+  //   // -1 Everything is ok
+  //   // >=0 Error: Start is greater than or equal to stop
+  //   int8_t preconditionStatus = -1;
 
-    std::apply(
-        [&](const auto&... desc) {
-          size_t idx = 0;
-          ((
-               [&] {
-                 auto clampedDesc = sliceInRange(desc);
-                 if (clampedDesc.start > clampedDesc.stop) {
-                   preconditionStatus = idx;
-                   return 1;
-                 }
-                 if (this->hasLabel(clampedDesc.label)) {
-                   labels.push_back(clampedDesc.label);
-                   start.push_back(clampedDesc.start);
-                   stop.push_back(clampedDesc.stop);
-                   step.push_back(clampedDesc.step);
-                 }
-                 return 0;  // Return a dummy value to satisfy the comma
-                            // operator
-               }(),
-               idx++),
-           ...);
-        },
-        tuple_descs);
+  //   std::apply(
+  //       [&](const auto&... desc) {
+  //         size_t idx = 0;
+  //         ((
+  //              [&] {
+  //                auto clampedDesc = sliceInRange(desc);
+  //                if (clampedDesc.start > clampedDesc.stop) {
+  //                  preconditionStatus = idx;
+  //                  return 1;
+  //                }
+  //                if (this->hasLabel(clampedDesc.label)) {
+  //                  labels.push_back(clampedDesc.label);
+  //                  start.push_back(clampedDesc.start);
+  //                  stop.push_back(clampedDesc.stop);
+  //                  step.push_back(clampedDesc.step);
+  //                }
+  //                return 0;  // Return a dummy value to satisfy the comma
+  //                           // operator
+  //              }(),
+  //              idx++),
+  //          ...);
+  //       },
+  //       tuple_descs);
 
-    for (auto i=0; i<labels.size(); ++i) {
-      ss << labels[i].label() << " " << start[i] << " " << stop[i] << " " << step[i] << std::endl;
+  //   for (auto i=0; i<labels.size(); ++i) {
+  //     ss << labels[i].label() << " " << start[i] << " " << stop[i] << " " << step[i] << std::endl;
+  //   }
+
+  //   std::cout << ss.str() << std::endl;
+
+  //   if (preconditionStatus >= 0) {
+  //     mdio::RangeDescriptor<Index> err;
+  //     std::apply(
+  //         [&](const auto&... desc) {
+  //           size_t idx = 0;
+  //           (([&] {
+  //              if (idx == preconditionStatus) {
+  //                err = desc;
+  //              }
+  //              idx++;
+  //            }()),
+  //            ...);
+  //         },
+  //         tuple_descs);
+  //     return absl::InvalidArgumentError(
+  //         std::string("Slice descriptor for ") +
+  //         std::string(err.label.label()) +
+  //         " had an illegal configuration.\n\tStart '" +
+  //         std::to_string(err.start) + "' greater than or equal to stop '" +
+  //         std::to_string(err.stop) + "'.");
+  //   }
+
+  //   auto labelSize = labels.size();
+  //   if (labelSize) {
+  //     std::set<std::string_view> labelSet;
+  //     std::set<DimensionIndex> indexSet;
+  //     for (const auto& label : labels) {
+  //       labelSet.insert(label.label());
+  //       indexSet.insert(label.index());
+  //     }
+
+  //     if (labelSet.size() == labelSize || indexSet.size() == labelSize) {
+  //       MDIO_ASSIGN_OR_RETURN(
+  //           auto slice_store,
+  //           store |
+  //               tensorstore::Dims(labels).HalfOpenInterval(start, stop, step));
+  //       // return a new variable with the sliced store
+  //       std::cout << "Sliced variable: " << variableName << " with no cat" << std::endl;
+  //       return Variable{variableName, longName, metadata, slice_store,
+  //                       attributes};
+  //     } else if (labelSet.size() != labelSize) {
+  //       // Concat the sliced Variable together if there are duplicate
+  //       // labels(dimensions)
+  //       std::vector<Variable> fragments;
+  //       absl::Status trueStatus = absl::OkStatus();
+  //       auto fragmentStore = [&](auto& descriptor) -> absl::Status {
+  //         if (descriptor.label.label() == internal::kInertSliceKey) {
+  //           // pass on kInertSliceKey
+  //           return absl::OkStatus();
+  //         }
+  //         auto sliceRes = slice(descriptor);
+  //         if (!sliceRes.status().ok()) {
+  //           trueStatus = sliceRes.status();
+  //           return trueStatus;
+  //         }
+  //         fragments.push_back(sliceRes.value());
+  //         return absl::OkStatus();
+  //       };
+
+  //       auto status = (fragmentStore(descriptors).ok() && ...);
+  //       if (!status) {
+  //         return trueStatus;
+  //       }
+
+  //       if (!fragments.empty()) {
+  //         // Concat appears to only work with void types, so we'll strip the
+  //         // type away
+  //         tensorstore::TensorStore<void, R, M> catStore;
+  //         // Initialize catStore with the first fragment's store
+  //         catStore = fragments.front().get_store();
+
+  //         // Concatenate remaining fragments
+  //         for (size_t i = 1; i < fragments.size(); ++i) {
+  //           MDIO_ASSIGN_OR_RETURN(
+  //               catStore,
+  //               tensorstore::Concat({catStore, fragments[i].get_store()},
+  //                                   /*axis=*/0));
+  //         }
+  //         // Recast to the original type
+  //         tensorstore::TensorStore<T, R, M> typedCatStore =
+  //             tensorstore::TensorStore<T, R, M>(tensorstore::unchecked,
+  //                                               catStore);
+  //         // Return a new Variable with the concatenated store
+  //         std::cout <<"Sliced variable: " << variableName << "with cat" << std::endl;
+  //         return Variable{variableName, longName, metadata, typedCatStore,
+  //                         attributes};
+  //       }
+  //       return absl::InternalError("No fragments to concatenate.");
+  //     }
+
+  //     return absl::InvalidArgumentError(
+  //         "Unexpected error occured while trying to slice the Variable.");
+  //   }
+  //   // the slice didn't change anything in the variables dimensions.
+  //   std::cout << "Sliced variable: " << variableName << " didnt' change" << std::endl;
+  //   return *this;
+  // }
+
+template <typename... Descriptors>
+Result<Variable> slice(const Descriptors&... descriptors) const {
+  // 1) Pack descriptors
+  constexpr size_t N = sizeof...(Descriptors);
+  std::array<RangeDescriptor<Index>, N> descs = { descriptors... };
+
+  // 2) Clamp + precondition check
+  std::vector<DimensionIdentifier> labels;
+  std::vector<Index> starts, stops, steps;
+  labels.reserve(N);
+  starts.reserve(N);
+  stops.reserve(N);
+  steps.reserve(N);
+
+  int8_t bad_idx = -1;
+  for (size_t i = 0; i < N; ++i) {
+    auto d = sliceInRange(descs[i]);
+    if (d.start > d.stop) {
+      bad_idx = static_cast<int8_t>(i);
+      break;
     }
-
-    std::cout << ss.str() << std::endl;
-
-    if (preconditionStatus >= 0) {
-      mdio::RangeDescriptor<Index> err;
-      std::apply(
-          [&](const auto&... desc) {
-            size_t idx = 0;
-            (([&] {
-               if (idx == preconditionStatus) {
-                 err = desc;
-               }
-               idx++;
-             }()),
-             ...);
-          },
-          tuple_descs);
-      return absl::InvalidArgumentError(
-          std::string("Slice descriptor for ") +
-          std::string(err.label.label()) +
-          " had an illegal configuration.\n\tStart '" +
-          std::to_string(err.start) + "' greater than or equal to stop '" +
-          std::to_string(err.stop) + "'.");
+    if (this->hasLabel(d.label)) {
+      labels.push_back(d.label);
+      starts.push_back(d.start);
+      stops.push_back(d.stop);
+      steps.push_back(d.step);
     }
-
-    auto labelSize = labels.size();
-    if (labelSize) {
-      std::set<std::string_view> labelSet;
-      std::set<DimensionIndex> indexSet;
-      for (const auto& label : labels) {
-        labelSet.insert(label.label());
-        indexSet.insert(label.index());
-      }
-
-      if (labelSet.size() == labelSize || indexSet.size() == labelSize) {
-        MDIO_ASSIGN_OR_RETURN(
-            auto slice_store,
-            store |
-                tensorstore::Dims(labels).HalfOpenInterval(start, stop, step));
-        // return a new variable with the sliced store
-        std::cout << "Sliced variable: " << variableName << " with no cat" << std::endl;
-        return Variable{variableName, longName, metadata, slice_store,
-                        attributes};
-      } else if (labelSet.size() != labelSize) {
-        // Concat the sliced Variable together if there are duplicate
-        // labels(dimensions)
-        std::vector<Variable> fragments;
-        absl::Status trueStatus = absl::OkStatus();
-        auto fragmentStore = [&](auto& descriptor) -> absl::Status {
-          if (descriptor.label.label() == internal::kInertSliceKey) {
-            // pass on kInertSliceKey
-            return absl::OkStatus();
-          }
-          auto sliceRes = slice(descriptor);
-          if (!sliceRes.status().ok()) {
-            trueStatus = sliceRes.status();
-            return trueStatus;
-          }
-          fragments.push_back(sliceRes.value());
-          return absl::OkStatus();
-        };
-
-        auto status = (fragmentStore(descriptors).ok() && ...);
-        if (!status) {
-          return trueStatus;
-        }
-
-        if (!fragments.empty()) {
-          // Concat appears to only work with void types, so we'll strip the
-          // type away
-          tensorstore::TensorStore<void, R, M> catStore;
-          // Initialize catStore with the first fragment's store
-          catStore = fragments.front().get_store();
-
-          // Concatenate remaining fragments
-          for (size_t i = 1; i < fragments.size(); ++i) {
-            MDIO_ASSIGN_OR_RETURN(
-                catStore,
-                tensorstore::Concat({catStore, fragments[i].get_store()},
-                                    /*axis=*/0));
-          }
-          // Recast to the original type
-          tensorstore::TensorStore<T, R, M> typedCatStore =
-              tensorstore::TensorStore<T, R, M>(tensorstore::unchecked,
-                                                catStore);
-          // Return a new Variable with the concatenated store
-          std::cout <<"Sliced variable: " << variableName << "with cat" << std::endl;
-          return Variable{variableName, longName, metadata, typedCatStore,
-                          attributes};
-        }
-        return absl::InternalError("No fragments to concatenate.");
-      }
-
-      return absl::InvalidArgumentError(
-          "Unexpected error occured while trying to slice the Variable.");
-    }
-    // the slice didn't change anything in the variables dimensions.
-    std::cout << "Sliced variable: " << variableName << " didnt' change" << std::endl;
-    return *this;
   }
+  if (bad_idx >= 0) {
+    auto& err = descs[bad_idx];
+    return Result<Variable>{absl::InvalidArgumentError(
+      std::string("Slice descriptor for ") + std::string(err.label.label()) +
+      " is invalid: start=" + std::to_string(err.start) +
+      " > stop=" + std::to_string(err.stop)
+    )};
+  }
+
+  // 3) Fast path: all labels (or axis indices) are unique
+  if (!labels.empty()) {
+    std::set<std::string_view>  labelSet;
+    std::set<DimensionIndex>    indexSet;
+    for (auto& lab : labels) {
+      labelSet.insert(lab.label());
+      indexSet.insert(lab.index());
+    }
+    if (labelSet.size() == labels.size() ||
+        indexSet.size() == labels.size()) {
+      MDIO_ASSIGN_OR_RETURN(
+        auto slice_store,
+        store | tensorstore::Dims(labels)
+                  .HalfOpenInterval(starts, stops, steps)
+      );
+      return Variable{
+        variableName,
+        longName,
+        metadata,
+        std::move(slice_store),
+        attributes
+      };
+    }
+  }
+
+  // 4) Group by label to find any duplicates
+  std::map<std::string_view,
+           std::vector<RangeDescriptor<Index>>> by_label;
+  for (auto& d : descs) {
+    if (d.label.label() != internal::kInertSliceKey) {
+      by_label[d.label.label()].push_back(d);
+    }
+  }
+
+  // 5) Handle the first label that has >1 descriptor
+  for (auto& [label, vec] : by_label) {
+    if (vec.size() > 1) {
+      // 5a) Unwrap the Spec so we can ask for transform().input_labels()
+      MDIO_ASSIGN_OR_RETURN(auto spec, store.spec());
+      auto spec_labels = spec.transform().input_labels();
+
+      // find the numeric axis for this label
+      auto it = std::find(spec_labels.begin(),
+                          spec_labels.end(),
+                          label);
+      if (it == spec_labels.end()) {
+        // no-op if the label isn't in the spec; skip it
+        continue;
+      }
+      int axis = static_cast<int>(std::distance(spec_labels.begin(), it));
+
+      // 5b) Slice each sub‑range in isolation
+      std::vector<tensorstore::TensorStore<T, R, M>> pieces;
+      pieces.reserve(vec.size());
+      for (auto& r : vec) {
+        auto sub = slice(r);
+        if (!sub.status().ok()) return sub.status();
+        pieces.push_back(sub.value().get_store());
+      }
+
+      // 5c) Concatenate them along the correct axis
+      MDIO_ASSIGN_OR_RETURN(
+        auto cat_store,
+        tensorstore::Concat(pieces, axis)
+      );
+
+      return Variable{
+        variableName,
+        longName,
+        metadata,
+        std::move(cat_store),
+        attributes
+      };
+    }
+  }
+
+  // 6) No descriptors matched → no change
+  return *this;
+}
+
+
 
   /**
    * @brief Retrieves the spec of the Variable as a JSON object.
@@ -1741,15 +1862,20 @@ struct VariableData {
    * @brief Returns the number of samples in the variable.
    * @return Index The number of samples in the variable.
    */
+  // Index num_samples() const {
+  //   // Accessing the shape
+  //   auto shape = dimensions().shape();
+  //   // Calculating the total number of elements
+  //   size_t totalElements = 1;
+  //   for (auto dim_size : shape) {
+  //     totalElements *= dim_size;
+  //   }
+  //   return totalElements;
+  // }
   Index num_samples() const {
-    // Accessing the shape
-    auto shape = dimensions().shape();
-    // Calculating the total number of elements
-    size_t totalElements = 1;
-    for (auto dim_size : shape) {
-      totalElements *= dim_size;
-    }
-    return totalElements;
+    // TODO(BrianMichell): The const_cast is a hack to satisfy the compiler without changing the function signature
+    auto accessor = const_cast<VariableData*>(this)->get_data_accessor();
+    return static_cast<Index>(accessor.num_elements());
   }
 
   /**
@@ -1806,17 +1932,35 @@ struct VariableData {
    * }
    * @endcode
    */
+  // ptrdiff_t get_flattened_offset() {
+  //   auto accessor = get_data_accessor();
+  //   // The raw pointer to the data. May not start at 0.
+  //   auto origin_ptr = accessor.data();
+  //   // The raw pointer to the first element of the data.
+  //   auto offset_ptr = accessor.byte_strided_origin_pointer();
+  //   char* origin_addr = reinterpret_cast<char*>(origin_ptr);
+  //   // We have to get the raw pointer
+  //   char* offset_addr = reinterpret_cast<char*>(offset_ptr.get());
+  //   ptrdiff_t byte_diff = offset_addr - origin_addr;
+  //   return byte_diff / dtype().size();
+  // }
   ptrdiff_t get_flattened_offset() {
     auto accessor = get_data_accessor();
-    // The raw pointer to the data. May not start at 0.
-    auto origin_ptr = accessor.data();
-    // The raw pointer to the first element of the data.
-    auto offset_ptr = accessor.byte_strided_origin_pointer();
-    char* origin_addr = reinterpret_cast<char*>(origin_ptr);
-    // We have to get the raw pointer
-    char* offset_addr = reinterpret_cast<char*>(offset_ptr.get());
-    ptrdiff_t byte_diff = offset_addr - origin_addr;
-    return byte_diff / dtype().size();
+
+    // 1) get the domain origin (inclusive min) for each dim
+    auto origin = dimensions().origin();           // vector<Index>
+
+    // 2) get the byte‑stride for advancing 1 element in each dim
+    auto byte_strides = accessor.byte_strides();   // vector<ptrdiff_t>
+
+    // 3) dot(origin, byte_strides)
+    ptrdiff_t byte_offset = 0;
+    for (size_t i = 0; i < origin.size(); ++i) {
+      byte_offset += origin[i] * byte_strides[i];
+    }
+
+    // 4) convert from bytes → element‑counts
+    return byte_offset / dtype().size();
   }
 
   // An identifier for the variable.

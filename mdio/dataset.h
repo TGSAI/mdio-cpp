@@ -537,19 +537,25 @@ class Dataset {
   Result<Dataset> isel(Descriptors&... descriptors) {
     VariableCollection vars;
 
-    std::cout << "isel forwarded descriptors..." << std::endl;
-    ((std::cout << "Descriptor: " << descriptors.label.label() << " " 
-                << descriptors.start << " " << descriptors.stop << " " 
-                << descriptors.step << std::endl), ...);
-    std::cout << "================================================" << std::endl;
+    // std::cout << "isel forwarded descriptors..." << std::endl;
+    // ((std::cout << "Descriptor: " << descriptors.label.label() << " " 
+    //             << descriptors.start << " " << descriptors.stop << " " 
+    //             << descriptors.step << std::endl), ...);
+    // std::cout << "================================================" << std::endl;
 
     // the shape of the new domain
     std::map<std::string, tensorstore::IndexDomainDimension<>> dims;
     std::vector<std::string> keys = variables.get_iterable_accessor();
 
+    // std::cout << "keys: " << std::endl;
+    // for (const auto& key : keys) {
+    //   std::cout << key << std::endl;
+    // }
+
     for (const auto& name : keys) {
+      MDIO_ASSIGN_OR_RETURN(auto retreivedVar, variables.at(name));
       MDIO_ASSIGN_OR_RETURN(auto variable,
-                            variables.at(name).value().slice(
+                            retreivedVar.slice(
                                 std::forward<Descriptors>(descriptors)...))
       // add to variable
       vars.add(name, variable);
@@ -726,15 +732,6 @@ class Dataset {
    */
   Result<Dataset> isel(const std::vector<RangeDescriptor<Index>>& slices) {
 
-    /*
-    What I need to do:
-    If there is a disjoint dimension coordinate, I need pass only those to the Variable slice method.
-    I can use recursion to handle this.
-    I will get all of the same labeled slices and perform that slice.
-    I will then pass the remaining slices to the recursive isel call.
-    I think this will fix my issues.
-    */
-
     if (slices.empty()) {
       return absl::InvalidArgumentError("No slices provided.");
     }
@@ -743,32 +740,32 @@ class Dataset {
 
     bool do_simple_slice = true;
 
-    std::set<std::string> labels;
-    if (reducedSlices.size() < 1) {
-      labels.insert(reducedSlices[0].label.label());
-      for (auto i=1; i<reducedSlices.size(); i++) {
-        if (labels.count(reducedSlices[i].label.label()) > 0) {
-          do_simple_slice = false;
-          break;
-        }
-        labels.insert(reducedSlices[i].label.label());
+    // Build a set of just the labels
+    std::set<std::string_view> labels;
+    labels.insert(reducedSlices[0].label.label());
+    for (auto i=1; i<reducedSlices.size(); i++) {
+      if (labels.count(reducedSlices[i].label.label()) > 0) {
+        do_simple_slice = false;
+        // break;  // Don't break here, we can check all the labels and see if we are left with a single dimension.
       }
-    } else {
-      return absl::InvalidArgumentError("No slices provided.");
+      labels.insert(reducedSlices[i].label.label());
     }
 
-    if (!do_simple_slice) {
-      std::cout << "Handling multi-dimensional slices..." << std::endl;
-
+    // If we are left with a single dimension, we can just do a simple slice.
+    if (labels.size() == 1) {
+      do_simple_slice = true;
     }
 
-    std::cout << "Reduced slices: " << std::endl;
-    for (auto &slice : reducedSlices) {
-      std::cout << "[" << slice.label.label() << ", " << slice.start << ", " << slice.stop << ", " << slice.step << "]" << std::endl;
-    }
+    // Debugging print for all RangeDescriptors pending
+    // std::cout << "Reduced slices: " << std::endl;
+    // for (auto &slice : reducedSlices) {
+    //   std::cout << "[" << slice.label.label() << ", " << slice.start << ", " << slice.stop << ", " << slice.step << "]" << std::endl;
+    // }
 
+    // Pre-emptively split the RangeDescriptors if there are too many.
+    // This is not the final logic that we want.
     if (reducedSlices.size() > internal::kMaxNumSlices) {
-      std::cout << "Recursively slicing the dataset..." << std::endl;
+      // std::cout << "Recursively slicing the dataset..." << std::endl;
       std::size_t halfElements = reducedSlices.size() / 2;
       if (halfElements % 2 != 0) {
         halfElements += 1;
@@ -790,8 +787,18 @@ class Dataset {
       return call_isel_with_vector_impl(
           slicesCopy, std::make_index_sequence<internal::kMaxNumSlices>{});
     } else {
-      std::vector<RangeDescriptor<Index>> slicesCopy;
-      for (int i=0; i<)
+      std::vector<RangeDescriptor<Index>> simpleSlices;
+      std::vector<RangeDescriptor<Index>> complexSlices;
+      auto simpleLabel = reducedSlices[0].label.label();
+      for (auto &slice : reducedSlices) {
+        if (slice.label.label() != simpleLabel) {
+          complexSlices.push_back(slice);
+        } else {
+          simpleSlices.push_back(slice);
+        }
+      }
+      MDIO_ASSIGN_OR_RETURN(auto ds, isel(static_cast<const std::vector<RangeDescriptor<Index>>&>(simpleSlices)));
+      return ds.isel(static_cast<const std::vector<RangeDescriptor<Index>>&>(complexSlices));
     }
   }
 
@@ -840,7 +847,7 @@ class Dataset {
           }
           values.insert(val);
           bool found = false;
-          for (Index i = offset; i < var.num_samples() + offset; ++i) {
+          for (Index i = offset; i < varDat.num_samples() + offset; ++i) {
             if (varAccessor({i}) == val) {
               if (found) {
                 trueStatus = absl::InvalidArgumentError(
@@ -859,7 +866,7 @@ class Dataset {
         }
       } else {
         // We must check for every occurance of the value
-        for (Index i = offset; i < var.num_samples() + offset; ++i) {
+        for (Index i = offset; i < varDat.num_samples() + offset; ++i) {
           if (varAccessor({i}) == descriptor.value) {
             label_to_indices[descriptor.label.label()].push_back(i);
           }
@@ -1068,7 +1075,7 @@ class Dataset {
         std::pair<bool, Index> stop = {false, 0};
         auto offset = varDat.get_flattened_offset();
 
-        for (Index i = offset; i < var.num_samples() + offset; i++) {
+        for (Index i = offset; i < varDat.num_samples() + offset; i++) {
           if (varAccessor({i}) == descriptor.start) {
             if (start.first) {
               trueStatus = absl::InvalidArgumentError("Repeated start value.");
@@ -1173,7 +1180,7 @@ class Dataset {
   // **Use the flattened data pointer + offset for N‑D arrays:**
   auto* data_ptr = varDat.get_data_accessor().data();
   Index offset   = varDat.get_flattened_offset();
-  Index nSamples = var.num_samples();
+  Index nSamples = varDat.num_samples();
 
   // 3) Collect all flat indices where coord == target value
   std::vector<Index> indices;
@@ -1198,11 +1205,11 @@ class Dataset {
 
   // TODO(BrianMichell): Coalesce the slices into fewer descriptors.
 
-  std::cout << "All RangeDescriptors: " << std::endl;
-  for (const auto& slice : elementwiseSlices) {
-    // std::cout << slice << std::endl;
-    std::cout << "[" << slice.label << ", " << slice.start << ", " << slice.stop << ", " << slice.step << "]" << std::endl;
-  }
+  // std::cout << "All RangeDescriptors: " << std::endl;
+  // for (const auto& slice : elementwiseSlices) {
+  //   // std::cout << slice << std::endl;
+  //   std::cout << "[" << slice.label << ", " << slice.start << ", " << slice.stop << ", " << slice.step << "]" << std::endl;
+  // }
 
   MDIO_ASSIGN_OR_RETURN(auto ds, isel(static_cast<const std::vector<RangeDescriptor<Index>>&>(elementwiseSlices)));
   // TODO(BrianMichell): Make this method more async friendly.
