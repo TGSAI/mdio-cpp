@@ -796,6 +796,18 @@ TEST(Dataset, where4) {
     std::cout << cdps.get_spec().value().dump(4) << std::endl;
 
     std::cout << cdps.num_samples() << std::endl;
+
+    auto true_domain_res = cdps.get_true_domain();
+    ASSERT_TRUE(true_domain_res.status().ok()) << true_domain_res.status();
+    auto true_domain = true_domain_res.value();
+    for (auto i = 0; i < true_domain.first.size(); i++) {
+      std::cout << "True internal domain: " << true_domain.first[i] << " " << true_domain.second[i] << " resulting in number of samples: " << (true_domain.second[i] - true_domain.first[i]) << std::endl;
+    }
+    auto true_offset_res = cdps.get_true_offset();
+    ASSERT_TRUE(true_offset_res.status().ok()) << true_offset_res.status();
+    auto true_offset = true_offset_res.value();
+    std::cout << "True offset: " << true_offset << std::endl;
+    // std::cout << "True internal domain: " << true_domain.first << " " << true_domain.second << " resulting in number of samples: " << (true_domain.second - true_domain.first) << std::endl;
   }
 
   auto vRes = slicedDs.variables.get<mdio::dtypes::float32_t>("cdp-x");
@@ -804,8 +816,16 @@ TEST(Dataset, where4) {
   auto vD = v.Read();
   ASSERT_TRUE(vD.status().ok()) << vD.status();
   auto vda = vD.value().get_data_accessor().data();
+  auto vOrigin = vD.value().get_data_accessor().layout().origin();
+  std::cout << "=======Origin span of cdp-x=======" << std::endl;
+  for (const auto& span : vOrigin) {
+    std::cout << span << std::endl;
+  }
+  std::cout << "=======End of origin span of cdp-x=======" << std::endl;
+  auto offset = vD.value().get_flattened_offset();
+  std::cout << "vD.value().get_flattened_offset(): " << offset << std::endl;
   for (auto i = 0; i < vD.value().num_samples(); i++) {
-    std::cout << "[" << i << "]: " << vda[i+vD.value().get_flattened_offset()] << std::endl;
+    std::cout << "[" << i << "]: " << vda[i+offset] << std::endl;
   }
 
   auto imgVarRes = slicedDs.variables.get<mdio::dtypes::float32_t>("image");
@@ -815,9 +835,20 @@ TEST(Dataset, where4) {
   ASSERT_TRUE(imgDataFut.status().ok()) << imgDataFut.status();
   auto imgData = imgDataFut.value();
   auto imgDataAccessor = imgData.get_data_accessor();
+  auto imgOrigin = imgDataAccessor.layout().origin();
+  std::cout << "=======Origin span of image=======" << std::endl;
+  for (const auto& span : imgOrigin) {
+    std::cout << span << std::endl;
+  }
+  std::cout << "=======End of origin span of image=======" << std::endl;
+  auto offset2 = imgData.get_flattened_offset();
+  std::cout << "imgData.get_flattened_offset(): " << offset2 << std::endl;
   for (auto i = 0; i < imgData.num_samples(); i++) {
-    std::cout << "[" << i << "]: " << imgDataAccessor.data()[i+imgData.get_flattened_offset()] << std::endl;
+    std::cout << "[" << i << "]: " << imgDataAccessor.data()[i+offset2] << std::endl;
   } 
+
+  std::cout << "Performing a slow lookup of of the origin for cdp-x: " << vD.value().get_data_accessor()({15,5}) << std::endl;
+  std::cout << "Performing a slow lookup of of the origin for image: " << imgDataAccessor({15,5,0}) << std::endl;
 
 }
 

@@ -1644,6 +1644,244 @@ Result<Variable> slice(const Descriptors&... descriptors) const {
     return intervals;
   }
 
+  Result<std::pair<std::vector<Index>,std::vector<Index>>> get_true_domain() {
+  // 1) grab the full TensorStore spec
+  MDIO_ASSIGN_OR_RETURN(auto spec, get_spec());
+
+  // 2) parse the *final* global domain
+  auto global_min = spec["transform"]["input_inclusive_min"].template get<std::vector<Index>>();
+  auto global_max = spec["transform"]["input_exclusive_max"].template get<std::vector<Index>>();
+  const size_t rank = global_min.size();
+
+  // 3) initialize our “true” domain to extreme values
+  std::vector<Index> true_min(rank, std::numeric_limits<Index>::max());
+  std::vector<Index> true_max(rank, std::numeric_limits<Index>::min());
+
+  // 4) for each top‐level layer in the stack…
+  for (auto const& layer : spec["layers"]) {
+    auto const& transform = layer["transform"];
+
+    // 4a) its local domain
+    auto layer_min = transform["input_inclusive_min"].template get<std::vector<Index>>();
+    auto layer_max = transform["input_exclusive_max"].template get<std::vector<Index>>();
+
+    // 4b) pull out any per‐dim offsets (default = 0)
+    std::vector<Index> offsets(rank, 0);
+    if (transform.contains("output")) {
+      for (size_t i = 0; i < transform["output"].size() && i < rank; ++i) {
+        auto const& out_i = transform["output"][i];
+        if (out_i.contains("offset")) {
+          offsets[i] = out_i["offset"].template get<Index>();
+        }
+      }
+    }
+
+    // 4c) compute the *global* slice‐domain for this layer,
+    //     intersect with the full domain, and see if non‐empty
+    bool contributes = true;
+    std::vector<Index> intersect_min(rank), intersect_max(rank);
+    for (size_t i = 0; i < rank; ++i) {
+      Index leaf_min = layer_min[i] + offsets[i];
+      Index leaf_max = layer_max[i] + offsets[i];
+      intersect_min[i] = std::max(global_min[i], leaf_min);
+      intersect_max[i] = std::min(global_max[i], leaf_max);
+      if (intersect_min[i] >= intersect_max[i]) {
+        contributes = false;
+        break;
+      }
+    }
+    if (!contributes) continue;
+
+    // 4d) merge into our running true‐domain bbox
+    for (size_t i = 0; i < rank; ++i) {
+      true_min[i] = std::min(true_min[i], intersect_min[i]);
+      true_max[i] = std::max(true_max[i], intersect_max[i]);
+    }
+  }
+
+  // 5) if nothing ever contributed, error out
+  if (true_min[0] == std::numeric_limits<Index>::max()) {
+    return absl::NotFoundError("No layers intersect the final domain");
+  }
+
+  // 6) done!
+  return std::make_pair(std::move(true_min), std::move(true_max));
+}
+
+
+  static Index parse_index(const nlohmann::json &j) {
+    if (j.is_array()) return parse_index(j.at(0));
+    return j.template get<Index>();
+  }
+  static std::vector<Index> parse_vector(const nlohmann::json &j) {
+    std::vector<Index> out;
+    out.reserve(j.size());
+    for (auto &e : j) out.push_back(parse_index(e));
+    return out;
+  }
+
+    Result<Index> compute_volume(
+      nlohmann::json const &node,
+      std::vector<Index> const &dom_min_out,
+      std::vector<Index> const &dom_max_out) 
+  {
+    auto driver = node["driver"].get<std::string>();
+    // --- invert this node’s transform to find its local domain slice ---
+    auto const &transform = node["transform"];
+    auto input_min = parse_vector(transform["input_inclusive_min"]);
+    auto input_max = parse_vector(transform["input_exclusive_max"]);
+    size_t rank = input_min.size();
+
+    // build inv_map[input_dim] = { output_dim, offset }
+    std::vector<std::pair<size_t,Index>> inv_map(rank);
+    if (transform.contains("output")) {
+      auto out = transform["output"];
+      for (size_t j = 0; j < out.size() && j < rank; ++j) {
+        size_t idim = out[j]["input_dimension"].get<size_t>();
+        Index off = out[j].contains("offset")
+                    ? parse_index(out[j]["offset"])
+                    : 0;
+        inv_map[idim] = {j, off};
+      }
+    } else {
+      for (size_t i = 0; i < rank; ++i) inv_map[i] = {i, 0};
+    }
+
+    // compute this node’s *input* slice by intersecting
+    // input_[inclusive|exclusive] with (dom_out - offset)
+    std::vector<Index> local_min(rank), local_max(rank);
+    for (size_t i = 0; i < rank; ++i) {
+      auto [j, off] = inv_map[i];
+      Index lo = dom_min_out[j] - off;
+      Index hi = dom_max_out[j] - off;
+      local_min[i] = std::max(input_min[i], lo);
+      local_max[i] = std::min(input_max[i], hi);
+      if (local_min[i] >= local_max[i]) {
+        // no overlap → zero volume
+        return 0;
+      }
+    }
+
+    if (driver == "zarr") {
+      // leaf: just multiply extents
+      Index vol = 1;
+      for (size_t i = 0; i < rank; ++i) {
+        vol *= (local_max[i] - local_min[i]);
+      }
+      return vol;
+    }
+
+    // stack: sum child volumes
+    Index sum = 0;
+    for (auto const &child : node["layers"]) {
+      MDIO_ASSIGN_OR_RETURN(
+        Index child_vol,
+        compute_volume(child, local_min, local_max));
+      sum += child_vol;
+    }
+    return sum;
+  }
+
+  // ——— flatten an output‐coord `coord_out` into a flat offset ———
+  Result<Index> flatten_offset(
+      nlohmann::json const &node,
+      std::vector<Index> const &coord_out,
+      std::vector<Index> const &dom_min_out,
+      std::vector<Index> const &dom_max_out)
+  {
+    auto driver = node["driver"].get<std::string>();
+    auto const &transform = node["transform"];
+    auto input_min = parse_vector(transform["input_inclusive_min"]);
+    auto input_max = parse_vector(transform["input_exclusive_max"]);
+    size_t rank = input_min.size();
+
+    // build inv_map[input_dim] = { output_dim, offset }
+    std::vector<std::pair<size_t,Index>> inv_map(rank);
+    if (transform.contains("output")) {
+      auto out = transform["output"];
+      for (size_t j = 0; j < out.size() && j < rank; ++j) {
+        size_t idim = out[j]["input_dimension"].get<size_t>();
+        Index off = out[j].contains("offset")
+                    ? parse_index(out[j]["offset"])
+                    : 0;
+        inv_map[idim] = {j, off};
+      }
+    } else {
+      for (size_t i = 0; i < rank; ++i) inv_map[i] = {i, 0};
+    }
+
+    // compute this node’s *input* slice
+    std::vector<Index> local_min(rank), local_max(rank);
+    for (size_t i = 0; i < rank; ++i) {
+      auto [j, off] = inv_map[i];
+      Index lo = dom_min_out[j] - off;
+      Index hi = dom_max_out[j] - off;
+      local_min[i] = std::max(input_min[i], lo);
+      local_max[i] = std::min(input_max[i], hi);
+      if (local_min[i] >= local_max[i]) {
+        return absl::NotFoundError("No overlap in flatten_offset");
+      }
+    }
+
+    if (driver == "zarr") {
+      // leaf: map coord_out → local input coords, then dot with strides
+      std::vector<Index> idx(rank);
+      for (size_t i = 0; i < rank; ++i) {
+        auto [j, off] = inv_map[i];
+        idx[i] = coord_out[j] - off - input_min[i];
+      }
+      // compute C-order strides from the *full* metadata.shape
+      auto shape = node["metadata"]["shape"]
+                     .template get<std::vector<Index>>();
+      std::vector<Index> stride(rank,1);
+      for (int d = int(rank)-2; d >= 0; --d) {
+        stride[d] = stride[d+1] * shape[d+1];
+      }
+      Index off = 0;
+      for (size_t i = 0; i < rank; ++i) {
+        off += idx[i] * stride[i];
+      }
+      return off;
+    }
+
+    // stack: find which child holds coord_out, summing skips
+    Index base = 0;
+    for (auto const &child : node["layers"]) {
+      // compute this child’s volume IN THIS NODE’S slice:
+      MDIO_ASSIGN_OR_RETURN(
+        Index child_vol,
+        compute_volume(child, local_min, local_max));
+
+      // but also test whether coord_out lives in that child:
+      // we can re‑use flatten_offset(child, coord_out, local_min, local_max)
+      // but guard against NotFound to decide skip vs descend:
+      auto try_descend = flatten_offset(child, coord_out, local_min, local_max);
+      if (try_descend.ok()) {
+        return base + try_descend.value();
+      }
+      // else: coord not here ⇒ skip its volume
+      base += child_vol;
+    }
+
+    return absl::NotFoundError("Coordinate fell into no stack child");
+  }
+
+mdio::Result<Index> get_true_offset() {
+  // 1) pull the full spec
+  MDIO_ASSIGN_OR_RETURN(nlohmann::json spec, get_spec());
+
+  // 2) compute the true N‑D domain [inclusive_min,exclusive_max)
+  MDIO_ASSIGN_OR_RETURN(auto true_dom, get_true_domain());
+  auto const &true_min = true_dom.first;
+
+  // 3) global domain = root transform
+  auto global_min = parse_vector(spec["transform"]["input_inclusive_min"]);
+  auto global_max = parse_vector(spec["transform"]["input_exclusive_max"]);
+
+  // 4) flatten!
+  return flatten_offset(spec, true_min, global_min, global_max);
+}
+
   // ===========================Member data getters===========================
   /**
    * @brief Gets the name of the variable.
@@ -1932,35 +2170,26 @@ struct VariableData {
    * }
    * @endcode
    */
-  // ptrdiff_t get_flattened_offset() {
-  //   auto accessor = get_data_accessor();
-  //   // The raw pointer to the data. May not start at 0.
-  //   auto origin_ptr = accessor.data();
-  //   // The raw pointer to the first element of the data.
-  //   auto offset_ptr = accessor.byte_strided_origin_pointer();
-  //   char* origin_addr = reinterpret_cast<char*>(origin_ptr);
-  //   // We have to get the raw pointer
-  //   char* offset_addr = reinterpret_cast<char*>(offset_ptr.get());
-  //   ptrdiff_t byte_diff = offset_addr - origin_addr;
-  //   return byte_diff / dtype().size();
-  // }
   ptrdiff_t get_flattened_offset() {
     auto accessor = get_data_accessor();
+    // The raw pointer to the data. May not start at 0.
+    auto origin_ptr = accessor.data();
+    // The raw pointer to the first element of the data.
+    auto offset_ptr = accessor.byte_strided_origin_pointer();
+    char* origin_addr = reinterpret_cast<char*>(origin_ptr);
+    // We have to get the raw pointer
+    char* offset_addr = reinterpret_cast<char*>(offset_ptr.get());
+    ptrdiff_t byte_diff = offset_addr - origin_addr;
 
-    // 1) get the domain origin (inclusive min) for each dim
-    auto origin = dimensions().origin();           // vector<Index>
-
-    // 2) get the byte‑stride for advancing 1 element in each dim
-    auto byte_strides = accessor.byte_strides();   // vector<ptrdiff_t>
-
-    // 3) dot(origin, byte_strides)
-    ptrdiff_t byte_offset = 0;
-    for (size_t i = 0; i < origin.size(); ++i) {
-      byte_offset += origin[i] * byte_strides[i];
-    }
-
-    // 4) convert from bytes → element‑counts
-    return byte_offset / dtype().size();
+    // auto true_domain_res = get_true_domain();
+    // if (!true_domain_res.status().ok()) {
+    //   std::cerr << "Error getting true domain: " << true_domain_res.status() << std::endl;
+    // } else {
+    //   auto true_domain = true_domain_res.value();
+    //   std::cout << "To access the true domain, you must offset the returned offset by " << true_domain.first << std::endl;
+    // }
+    
+    return byte_diff / dtype().size();
   }
 
   // An identifier for the variable.
