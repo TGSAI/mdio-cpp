@@ -51,14 +51,15 @@
  *
  * @code
  * // NOTE: We do not verify the status of `dataset.variables.at("variable")` in
- * this example code. This is for brevity. mdio::UserAttributes userAttrs =
- * dataset.variables.at("variable").value().userAttrs; nlohmann::json
- * updatedAttrs = userAttrs.ToJson();
+ * this example code. This is for brevity.
+ * mdio::UserAttributes userAttrs =
+ *                         dataset.variables.at("variable").value().userAttrs;
+ * nlohmann::json updatedAttrs = userAttrs.ToJson();
  * // Modify updatedAttrs as any normal JSON object
  * // NOTE: FromJson can take an optional template of `int32_t` default to
- * `float` to specify the type of the histogram. auto updatedUserAttrsResult =
- * mdio::UserAttributes::FromJson(updatedAttrs); if
- * (!updatedUserAttrsResult.ok()) {
+ * `float` to specify the type of the histogram.
+ * auto updatedUserAttrsResult = mdio::UserAttributes::FromJson(updatedAttrs);
+ * if (!updatedUserAttrsResult.ok()) {
  *   // Handle error
  * }
  * mdio::UserAttributes updatedUserAttrs = updatedUserAttrsResult.value();
@@ -343,8 +344,9 @@ class UserAttributes {
    * @note This constructor is intended for internal use only. Please use the
    * static member function `FromJson(nlohmann::json)`
    * @code
-   * auto attrs = UserAttributes::FromJson(j).value(); // j is some valid
-   * nlohmann::json object nlohmann::json newAttrs = attrs.ToJson();
+   * // j is some valid nlohmann::json object
+   * auto attrs = UserAttributes::FromJson(j).value();
+   * nlohmann::json newAttrs = attrs.ToJson();
    * newAttrs["attributes"]["newKey"] = "newValue";
    * auto newAttrsRes = UserAttributes::FromJson(newAttrs).value();
    * @endcode

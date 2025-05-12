@@ -1311,4 +1311,42 @@ TEST(Dataset, kCreateOverExisting) {
          "one without error!";
 }
 
+TEST(Dataset, mockV0) {
+  // TODO(BriaMich): Update this test to do a full mock of the v0 dataset schema
+  std::string path = "zarrs/acceptance";
+
+  // Build a v1 Dataset on disk
+  auto json_vars = GetToyExample();
+  auto datasetRes =
+      mdio::Dataset::from_json(json_vars, path, mdio::constants::kCreateClean);
+  ASSERT_TRUE(datasetRes.status().ok()) << datasetRes.status();
+
+  auto dataset = datasetRes.value();
+
+  // Update the api version metadata to follow the v0 standard
+  const nlohmann::json& immutable_metadata = dataset.getMetadata();
+  nlohmann::json& mutable_metadata =
+      const_cast<nlohmann::json&>(immutable_metadata);
+  mutable_metadata["api_version"] = "0.8.3";
+  mutable_metadata.erase("apiVersion");
+
+  // Do an on-disk manipulation of the v1 dataset
+  // We also need to make an update to a Variable's metadata
+  // This is an unsafe workaround to mutate the Dataset's metadata
+  nlohmann::json attrs = {{"foo", "bar"}};
+  auto varRes = dataset.get_variable("image");
+  ASSERT_TRUE(varRes.ok()) << varRes.status();
+  auto var = varRes.value();
+  auto varUpdateRes = var.UpdateAttributes<>(attrs);
+  ASSERT_TRUE(varUpdateRes.status().ok()) << varUpdateRes.status();
+
+  auto commitFut = dataset.CommitMetadata();
+  ASSERT_TRUE(commitFut.status().ok()) << commitFut.status();
+
+  auto reopenedDsFut = mdio::Dataset::Open(path, mdio::constants::kOpen);
+  ASSERT_FALSE(reopenedDsFut.status().ok())
+      << "Opened a v0 dataset without error!" << std::endl
+      << reopenedDsFut.value();
+}
+
 }  // namespace

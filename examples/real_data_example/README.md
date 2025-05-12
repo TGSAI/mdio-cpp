@@ -32,7 +32,7 @@ This tool allows users to extract specific slices from 3D seismic data stored in
 - `--xline_range`: Crossline range in format {crossline,start,end,step} (default: "{crossline,500,700,1}")
 - `--depth_range`: Optional depth range in format {depth,start,end,step}
 - `--variable_name`: Name of the seismic variable to extract (default: "seismic")
-- `--print_dataset`: Print the dataset URL and return without processing
+- `--print_dataset`: Print the dataset metadata and return without processing
 
 ### Example
 
