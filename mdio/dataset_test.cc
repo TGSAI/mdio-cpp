@@ -1577,22 +1577,21 @@ TEST(Dataset, coordinateTransformDimensionSwap) {
   std::cout << ds << std::endl;
   std::cout << "===========After===========" << std::endl;
   std::cout << transformedDs << std::endl;
-  // auto one_d = res.value();
-  // auto domain = one_d.domain;
-  // EXPECT_EQ(domain.rank(), 1);
-  // // merged size should be crossline * inline
-  // auto merged_size = domain[0].interval().size();
-  // EXPECT_EQ(merged_size,
-  //           ds.domain[1].interval().size() * ds.domain[0].interval().size());
 }
 
-// TEST(Dataset, CoordinateTransform_InvalidDimension) {
-//   auto json_vars = GetToyExample();
-//   auto dsRes = mdio::Dataset::from_json(json_vars, "zarrs/acceptance", mdio::constants::kCreateClean);
-//   ASSERT_TRUE(dsRes.status().ok()) << dsRes.status();
-//   auto ds = dsRes.value();
-//   auto res = ds.CoordinateTransform({"cdp-x", "depth"});
-//   EXPECT_FALSE(res.ok());
-// }
+TEST(Dataset, coordinateTransformCoordiante) {
+  auto json_vars = GetToyExample();
+  auto dsRes = mdio::Dataset::from_json(json_vars, "zarrs/acceptance", mdio::constants::kCreateClean);
+  ASSERT_TRUE(dsRes.status().ok()) << dsRes.status();
+  auto ds = dsRes.value();
+  auto res = ds.CoordinateTransform({"cdp-x", "depth"});
+  ASSERT_TRUE(res.status().ok()) << res.status();
+  auto transformedDs = res.value();
+
+  std::cout << "===========Before===========" << std::endl;
+  std::cout << ds << std::endl;
+  std::cout << "===========After===========" << std::endl;
+  std::cout << transformedDs << std::endl;
+} 
 
 }  // namespace

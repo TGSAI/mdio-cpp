@@ -447,102 +447,125 @@ class Dataset {
     return os;
   }
 
+  // Result<Dataset> CoordinateTransform(const std::vector<std::string>& new_domain_dims) const {
+  //   bool dimensionTransform = true;
+  //   for (const auto& dim : new_domain_dims) {
+  //     MDIO_ASSIGN_OR_RETURN(auto var, variables.at(dim));
+  //     MDIO_ASSIGN_OR_RETURN(auto shape, var.get_store_shape());
+  //     if (shape.size() != 1) {
+  //       dimensionTransform = false;
+  //       return absl::UnimplementedError("Only Dimension Coordinate Transforms are supported currently.");
+  //     }
+  //   }
+
+  //   if (dimensionTransform) {
+  //     std::vector<Index> new_order;
+  //     MDIO_ASSIGN_OR_RETURN(auto imageVar, variables.at("image"));
+  //     MDIO_ASSIGN_OR_RETURN(auto imageIntervals, imageVar.get_intervals());
+  //     for (std::size_t imageDimIdx = 0; imageDimIdx < imageIntervals.size(); ++imageDimIdx) {
+  //       std::string dimLabel(imageIntervals[imageDimIdx].label.label());
+  //       for (std::size_t newDimIdx = 0; newDimIdx < new_domain_dims.size(); ++newDimIdx) {
+  //         if (new_domain_dims[newDimIdx] == dimLabel) {
+  //           new_order.push_back(newDimIdx);
+  //           break;
+  //         }
+  //       }
+  //     }
+  //     MDIO_ASSIGN_OR_RETURN(auto flipped, imageVar.get_mutable_store() | tensorstore::AllDims().Transpose(new_order));
+  //     std::cout << "The flipped order should be: " << std::endl;
+  //     for (const auto& dim : new_order) {
+  //       std::cout << "\t" << dim << std::endl;
+  //     }
+  //     std::cout << std::endl;
+  //     std::cout << "Image variable before setting flipped store: " << std::endl;
+  //     std::cout << imageVar << std::endl;
+  //     imageVar.set_store(flipped);
+  //     std::cout << "Image variable after setting flipped store: " << std::endl;
+  //     std::cout << imageVar << std::endl;
+  //     return Dataset{metadata, variables, coordinates, domain};
+  //   }
+
+  //   return absl::UnimplementedError("CoordinateTransform reached unexpected path.");
+  // }
+
   Result<Dataset> CoordinateTransform(
     const std::vector<std::string>& new_domain_dims) const {
-  // 1) Collect all current dimension names
-  std::vector<std::string> all_dims;
-  all_dims.reserve(domain.rank());
-  for (auto const& label : domain.labels()) {
-    all_dims.emplace_back(label);
-  }
-
-  // 2) Quick membership test
-  std::unordered_set<std::string> all_set(all_dims.begin(), all_dims.end());
-
-  // 3) Validate inputs
-  for (auto const& d : new_domain_dims) {
-    if (!all_set.count(d)) {
-      return absl::InvalidArgumentError("Unknown dimension: " + d);
+  // 1) Determine if this is the “all 1‑D coords” fast path
+  bool dimensionTransform = true;
+  for (const auto& dim : new_domain_dims) {
+    MDIO_ASSIGN_OR_RETURN(auto var, variables.at(dim));
+    MDIO_ASSIGN_OR_RETURN(auto shape, var.get_store_shape());
+    if (shape.size() != 1) {
+      dimensionTransform = false;
+      break;
     }
   }
 
-  // 4) Build permutation: requested dims first, then the rest
-  std::vector<std::string> perm_labels = new_domain_dims;
-  perm_labels.reserve(all_dims.size());
-  for (auto const& d : all_dims) {
-    if (std::find(new_domain_dims.begin(),
-                  new_domain_dims.end(), d)
-        == new_domain_dims.end()) {
-      perm_labels.push_back(d);
+  // 2) Make mutable copies of everything you’ll need
+  auto new_vars = variables;
+  // NOTE: domain is a tensorstore::IndexDomain<…>, so we won’t index it by string
+  auto new_coords = coordinates;
+
+  // 3) Grab a reference to the real “image” variable in your map
+  MDIO_ASSIGN_OR_RETURN(auto imageVar, new_vars.at("image"));
+
+  // 4) Build a map: original_axis_label → its numeric index
+  MDIO_ASSIGN_OR_RETURN(auto imageIntervals, imageVar.get_intervals());
+  absl::flat_hash_map<std::string, tensorstore::DimensionIndex> axis_map;
+  for (tensorstore::DimensionIndex i = 0; i < imageIntervals.size(); ++i) {
+    axis_map[imageIntervals[i].label.label()] = i;
+  }
+
+  // 5) Compute the run‑time permutation vector
+  std::vector<tensorstore::DimensionIndex> permuted_axes;
+  permuted_axes.reserve(imageIntervals.size());
+
+  if (dimensionTransform) {
+    // Simple 1‑D case — each new_domain_dims entry is exactly one axis:
+    for (const auto& label : new_domain_dims) {
+      permuted_axes.push_back(axis_map[label]);
     }
-  }
 
-  // 5) Convert those labels into integer indices
-  std::vector<tensorstore::DimensionIndex> perm_indices;
-  perm_indices.reserve(perm_labels.size());
-  for (auto const& lbl : perm_labels) {
-    auto it = std::find(all_dims.begin(), all_dims.end(), lbl);
-    perm_indices.push_back(static_cast<tensorstore::DimensionIndex>(
-      std::distance(all_dims.begin(), it)));
-  }
-
-  // 6) How many dims are we merging?
-  const size_t K = new_domain_dims.size();
-  // Fuse the first K axes into one
-  auto dims_to_merge = tensorstore::DimRange(
-    0, static_cast<tensorstore::DimensionIndex>(K));
-
-  // 7) Compute the length of the new 1D domain
-  auto origin = domain.origin();  // span<const Index, rank>
-  auto shape  = domain.shape();   // span<const Index, rank>
-  tensorstore::Index merged_length = 1;
-  for (auto const& d : new_domain_dims) {
-    auto idx = static_cast<size_t>(std::distance(
-      all_dims.begin(),
-      std::find(all_dims.begin(), all_dims.end(), d)));
-    merged_length *= shape[idx];
-  }
-
-  // 8) Build the new 1D domain with static rank=1
-  auto new_dom = tensorstore::IndexDomainBuilder<1>()
-    .origin({0})
-    .shape({merged_length})
-    .labels({"coordinate"})
-    .Finalize()
-    .value();
-
-  // 9) Apply Transpose→MergeDims→DropDims to every variable
-  VariableCollection new_vars;
-  for (auto const& key : variables.get_iterable_accessor()) {
-    auto var   = variables.at(key).value();
-    auto store = var.get_store();
-
-    // a) bring selected dims to front
-    auto transposed = tensorstore::Transpose(store, perm_indices);
-
-    // b) fuse the first K dims into one
-    auto merged = tensorstore::MergeDims(transposed, dims_to_merge);
-
-    // c) drop all axes except the new axis 0
-    std::vector<tensorstore::DimensionIndex> to_drop;
-    for (tensorstore::DimensionIndex d = 1; d < merged.rank(); ++d) {
-      to_drop.push_back(d);
+  } else {
+    // Mixed 1‑D & N‑D coordinates:
+    for (const auto& coord_label : new_domain_dims) {
+      // coordVar may have shape.size()>1, so it contributes multiple axes
+      MDIO_ASSIGN_OR_RETURN(auto coordVar, new_vars.at(coord_label));
+      MDIO_ASSIGN_OR_RETURN(auto coordIntervals, coordVar.get_intervals());
+      for (const auto& iv : coordIntervals) {
+        permuted_axes.push_back(axis_map[iv.label.label()]);
+      }
     }
-    auto final_ts = tensorstore::DropDims(merged, to_drop);
 
-    // d) Create new Variable preserving attributes
-    Variable<> new_var(
-      var.get_variable_name(),
-      var.get_long_name(),
-      var.getReducedMetadata(),
-      final_ts,
-      var.attributes);
-    new_vars.add(key, std::move(new_var));
+    // If you want to track the new list of coordinate names *for* “image”:
+    new_coords["image"] = new_domain_dims;
+    // (We leave `domain` alone here, since it’s an IndexDomain and must be
+    // reordered via a TensorStore‐style transpose if you really need it.)
   }
 
-  // 10) Construct and return the new Dataset
-  return Dataset(metadata, new_vars, coordinates, new_dom);
+  // 6) Apply the zero‑copy transpose to the store
+  MDIO_ASSIGN_OR_RETURN(
+      auto flipped_store,
+      imageVar
+        .get_mutable_store()
+        | tensorstore::AllDims().Transpose(permuted_axes));
+
+
+  std::cout << "Image variable before setting flipped store: " << std::endl;
+  std::cout << imageVar << std::endl;
+  imageVar.set_store(flipped_store);
+  std::cout << "Image variable after setting flipped store: " << std::endl;
+  std::cout << imageVar << std::endl;
+
+  // 7) Return a new Dataset with the updated image var (and coords, if you set them)
+  return Dataset{metadata,
+                 std::move(new_vars),
+                 std::move(new_coords),
+                 domain  // unchanged; reorder via domain.Transform if/when needed
+  };
 }
+
+
 
 
   /**
