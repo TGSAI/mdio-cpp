@@ -74,6 +74,48 @@ using byte_t = tensorstore::dtypes::byte_t;
 using bool_t = tensorstore::dtypes::bool_t;
 }  // namespace dtypes
 
+namespace units {
+// Angle units
+constexpr std::string_view kDegrees = "deg";
+constexpr std::string_view kRadians = "rad";
+
+// Density units
+constexpr std::string_view kGramsPerCubicCentimeter = "g/cm**3";
+constexpr std::string_view kKilogramsPerCubicMeter = "kg/m**3";
+constexpr std::string_view kPoundsPerGallon = "lb/gal";
+
+// Frequency units
+constexpr std::string_view kHertz = "Hz";
+
+// Length units
+constexpr std::string_view kMillimeters = "mm";
+constexpr std::string_view kCentimeters = "cm";
+constexpr std::string_view kMeters = "m";
+constexpr std::string_view kKilometers = "km";
+constexpr std::string_view kInches = "in";
+constexpr std::string_view kFeet = "ft";
+constexpr std::string_view kYards = "yd";
+constexpr std::string_view kMiles = "mi";
+
+// Speed units
+constexpr std::string_view kMetersPerSecond = "m/s";
+constexpr std::string_view kFeetPerSecond = "ft/s";
+
+// Time units
+constexpr std::string_view kNanoseconds = "ns";
+constexpr std::string_view kMicroseconds = "µs";
+constexpr std::string_view kMilliseconds = "ms";
+constexpr std::string_view kSeconds = "s";
+constexpr std::string_view kMinutes = "min";
+constexpr std::string_view kHours = "h";
+constexpr std::string_view kDays = "d";
+
+// Voltage units
+constexpr std::string_view kMicrovolts = "µV";
+constexpr std::string_view kMillivolts = "mV";
+constexpr std::string_view kVolts = "V";
+}  // namespace units
+
 // Special constants bleeds
 constexpr DimensionIndex dynamic_rank = tensorstore::dynamic_rank;
 constexpr ArrayOriginKind zero_origin = tensorstore::zero_origin;

@@ -454,4 +454,43 @@ TEST(UserAttributes, locationAndReassignment) {
   // auto newAttrs = std::move(attr)
 }
 
+TEST(Units, unitsFromJsonObject) {
+  // Test when unitsV1 is provided as an object.
+  nlohmann::json json_input = {{"unitsV1", {{"length", "m"}}}};
+  auto uaRes = mdio::UserAttributes::FromJson(json_input);
+  ASSERT_TRUE(uaRes.status().ok()) << uaRes.status();
+  mdio::UserAttributes ua = uaRes.value();
+  // When an object is provided, the FromJson implementation pushes back the
+  // unit value, so with one element it will return directly (not wrapped in an
+  // array)
+  nlohmann::json ua_json = ua.ToJson();
+  EXPECT_TRUE(ua_json.contains("unitsV1"));
+  EXPECT_EQ(ua_json["unitsV1"], "m");
+}
+
+TEST(Units, unitsFromJsonArrayOfObjects) {
+  // Test when unitsV1 is provided as an array of objects.
+  nlohmann::json json_input = {
+      {"unitsV1", {{{"length", "m"}}, {{"time", "s"}}}}};
+  auto uaRes = mdio::UserAttributes::FromJson(json_input);
+  ASSERT_TRUE(uaRes.status().ok()) << uaRes.status();
+  mdio::UserAttributes ua = uaRes.value();
+  nlohmann::json ua_json = ua.ToJson();
+  EXPECT_TRUE(ua_json.contains("unitsV1"));
+  // With more than one unit, the units-bindable returns an array.
+  nlohmann::json expected = {"m", "s"};
+  EXPECT_EQ(ua_json["unitsV1"], expected);
+}
+
+TEST(Units, unitsFromJsonString) {
+  // Test when unitsV1 is provided as a plain string.
+  nlohmann::json json_input = {{"unitsV1", "rad"}};
+  auto uaRes = mdio::UserAttributes::FromJson(json_input);
+  ASSERT_TRUE(uaRes.status().ok()) << uaRes.status();
+  mdio::UserAttributes ua = uaRes.value();
+  nlohmann::json ua_json = ua.ToJson();
+  EXPECT_TRUE(ua_json.contains("unitsV1"));
+  EXPECT_EQ(ua_json["unitsV1"], "rad");
+}
+
 }  // namespace
