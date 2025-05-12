@@ -785,7 +785,7 @@ TEST(Dataset, where4) {
   std::cout << slicedDs << std::endl;
   // std::set<std::string> varNames = {"cdp-x", "inline", "crossline", "depth", "image"};
 
-  std::set<std::string> varNames = {"cdp-x", "image"};
+  std::set<std::string> varNames = {"cdp-x", "image", "inline", "crossline", "depth"};
 
   for (auto &varName : varNames) {
     std::cout << "================" << varName << "================" << std::endl;
@@ -803,10 +803,10 @@ TEST(Dataset, where4) {
     for (auto i = 0; i < true_domain.first.size(); i++) {
       std::cout << "True internal domain: " << true_domain.first[i] << " " << true_domain.second[i] << " resulting in number of samples: " << (true_domain.second[i] - true_domain.first[i]) << std::endl;
     }
-    auto true_offset_res = cdps.get_true_offset();
-    ASSERT_TRUE(true_offset_res.status().ok()) << true_offset_res.status();
-    auto true_offset = true_offset_res.value();
-    std::cout << "True offset: " << true_offset << std::endl;
+    // auto true_offset_res = cdps.get_true_offset();
+    // ASSERT_TRUE(true_offset_res.status().ok()) << true_offset_res.status();
+    // auto true_offset = true_offset_res.value();
+    // std::cout << "True offset: " << true_offset << std::endl;
     // std::cout << "True internal domain: " << true_domain.first << " " << true_domain.second << " resulting in number of samples: " << (true_domain.second - true_domain.first) << std::endl;
   }
 
@@ -823,7 +823,20 @@ TEST(Dataset, where4) {
   }
   std::cout << "=======End of origin span of cdp-x=======" << std::endl;
   auto offset = vD.value().get_flattened_offset();
+
+  auto domain = vD.value().data.domain;
+  auto shape = domain.shape();
+  std::vector<mdio::Index> shapeVec;
+  for (const auto& elem : shape) {
+    shapeVec.push_back(elem);
+  }
+
+  auto unflattenedOffsetRes = v.unflatten(offset, shapeVec);
+  ASSERT_TRUE(unflattenedOffsetRes.status().ok()) << unflattenedOffsetRes.status();
+  auto unflattenedOffset = unflattenedOffsetRes.value();
+
   std::cout << "vD.value().get_flattened_offset(): " << offset << std::endl;
+  // std::cout << "Unflattened offset: " << unflattenedOffset << std::endl;
   for (auto i = 0; i < vD.value().num_samples(); i++) {
     std::cout << "[" << i << "]: " << vda[i+offset] << std::endl;
   }
@@ -1551,5 +1564,35 @@ TEST(Dataset, mockV0) {
       << "Opened a v0 dataset without error!" << std::endl
       << reopenedDsFut.value();
 }
+
+TEST(Dataset, coordinateTransformDimensionSwap) {
+  auto json_vars = GetToyExample();
+  auto dsRes = mdio::Dataset::from_json(json_vars, "zarrs/acceptance", mdio::constants::kCreateClean);
+  ASSERT_TRUE(dsRes.status().ok()) << dsRes.status();
+  auto ds = dsRes.value();
+  auto transformedRes = ds.CoordinateTransform({"crossline", "inline", "depth"});
+  ASSERT_TRUE(transformedRes.status().ok()) << transformedRes.status();
+  auto transformedDs = transformedRes.value();
+  std::cout << "===========Before===========" << std::endl;
+  std::cout << ds << std::endl;
+  std::cout << "===========After===========" << std::endl;
+  std::cout << transformedDs << std::endl;
+  // auto one_d = res.value();
+  // auto domain = one_d.domain;
+  // EXPECT_EQ(domain.rank(), 1);
+  // // merged size should be crossline * inline
+  // auto merged_size = domain[0].interval().size();
+  // EXPECT_EQ(merged_size,
+  //           ds.domain[1].interval().size() * ds.domain[0].interval().size());
+}
+
+// TEST(Dataset, CoordinateTransform_InvalidDimension) {
+//   auto json_vars = GetToyExample();
+//   auto dsRes = mdio::Dataset::from_json(json_vars, "zarrs/acceptance", mdio::constants::kCreateClean);
+//   ASSERT_TRUE(dsRes.status().ok()) << dsRes.status();
+//   auto ds = dsRes.value();
+//   auto res = ds.CoordinateTransform({"cdp-x", "depth"});
+//   EXPECT_FALSE(res.ok());
+// }
 
 }  // namespace

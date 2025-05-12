@@ -37,7 +37,14 @@
 #include "tensorstore/driver/zarr/metadata.h"
 #include "tensorstore/util/future.h"
 
-#include "tensorstore/index_space/index_transform.h"
+#include "tensorstore/index_space/index_transform.h"      // Transpose, MergeDims, DropDims
+#include "tensorstore/index_space/index_domain_builder.h" // IndexDomainBuilder<1>
+#include "tensorstore/index_space/index_domain.h"         // IndexDomainView, .origin(), .shape()
+#include "tensorstore/index_space/dim_expression.h"       // DimRange, Dims
+
+// #include "tensorstore/transformations/transpose.h"
+// #include "tensorstore/transformations/merge_dims.h"
+// #include "tensorstore/transformations/drop_dims.h"
 
 // clang-format off
 #include <nlohmann/json-schema.hpp>  // NOLINT
@@ -439,6 +446,104 @@ class Dataset {
 
     return os;
   }
+
+  Result<Dataset> CoordinateTransform(
+    const std::vector<std::string>& new_domain_dims) const {
+  // 1) Collect all current dimension names
+  std::vector<std::string> all_dims;
+  all_dims.reserve(domain.rank());
+  for (auto const& label : domain.labels()) {
+    all_dims.emplace_back(label);
+  }
+
+  // 2) Quick membership test
+  std::unordered_set<std::string> all_set(all_dims.begin(), all_dims.end());
+
+  // 3) Validate inputs
+  for (auto const& d : new_domain_dims) {
+    if (!all_set.count(d)) {
+      return absl::InvalidArgumentError("Unknown dimension: " + d);
+    }
+  }
+
+  // 4) Build permutation: requested dims first, then the rest
+  std::vector<std::string> perm_labels = new_domain_dims;
+  perm_labels.reserve(all_dims.size());
+  for (auto const& d : all_dims) {
+    if (std::find(new_domain_dims.begin(),
+                  new_domain_dims.end(), d)
+        == new_domain_dims.end()) {
+      perm_labels.push_back(d);
+    }
+  }
+
+  // 5) Convert those labels into integer indices
+  std::vector<tensorstore::DimensionIndex> perm_indices;
+  perm_indices.reserve(perm_labels.size());
+  for (auto const& lbl : perm_labels) {
+    auto it = std::find(all_dims.begin(), all_dims.end(), lbl);
+    perm_indices.push_back(static_cast<tensorstore::DimensionIndex>(
+      std::distance(all_dims.begin(), it)));
+  }
+
+  // 6) How many dims are we merging?
+  const size_t K = new_domain_dims.size();
+  // Fuse the first K axes into one
+  auto dims_to_merge = tensorstore::DimRange(
+    0, static_cast<tensorstore::DimensionIndex>(K));
+
+  // 7) Compute the length of the new 1D domain
+  auto origin = domain.origin();  // span<const Index, rank>
+  auto shape  = domain.shape();   // span<const Index, rank>
+  tensorstore::Index merged_length = 1;
+  for (auto const& d : new_domain_dims) {
+    auto idx = static_cast<size_t>(std::distance(
+      all_dims.begin(),
+      std::find(all_dims.begin(), all_dims.end(), d)));
+    merged_length *= shape[idx];
+  }
+
+  // 8) Build the new 1D domain with static rank=1
+  auto new_dom = tensorstore::IndexDomainBuilder<1>()
+    .origin({0})
+    .shape({merged_length})
+    .labels({"coordinate"})
+    .Finalize()
+    .value();
+
+  // 9) Apply Transpose→MergeDims→DropDims to every variable
+  VariableCollection new_vars;
+  for (auto const& key : variables.get_iterable_accessor()) {
+    auto var   = variables.at(key).value();
+    auto store = var.get_store();
+
+    // a) bring selected dims to front
+    auto transposed = tensorstore::Transpose(store, perm_indices);
+
+    // b) fuse the first K dims into one
+    auto merged = tensorstore::MergeDims(transposed, dims_to_merge);
+
+    // c) drop all axes except the new axis 0
+    std::vector<tensorstore::DimensionIndex> to_drop;
+    for (tensorstore::DimensionIndex d = 1; d < merged.rank(); ++d) {
+      to_drop.push_back(d);
+    }
+    auto final_ts = tensorstore::DropDims(merged, to_drop);
+
+    // d) Create new Variable preserving attributes
+    Variable<> new_var(
+      var.get_variable_name(),
+      var.get_long_name(),
+      var.getReducedMetadata(),
+      final_ts,
+      var.attributes);
+    new_vars.add(key, std::move(new_var));
+  }
+
+  // 10) Construct and return the new Dataset
+  return Dataset(metadata, new_vars, coordinates, new_dom);
+}
+
 
   /**
    * @brief Retrieves a variable from within the dataset.

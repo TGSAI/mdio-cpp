@@ -1644,68 +1644,92 @@ Result<Variable> slice(const Descriptors&... descriptors) const {
     return intervals;
   }
 
-  Result<std::pair<std::vector<Index>,std::vector<Index>>> get_true_domain() {
-  // 1) grab the full TensorStore spec
-  MDIO_ASSIGN_OR_RETURN(auto spec, get_spec());
+  mdio::Result<std::vector<Index>> unflatten(Index f,
+                             std::vector<Index> const &shape) {
+  size_t rank = shape.size();
+  // build C‑order strides
+  std::vector<Index> stride(rank, 1);
+  for (int d = int(rank) - 2; d >= 0; --d) {
+    stride[d] = stride[d+1] * shape[d+1];
+  }
+  // unflatten
+  std::vector<Index> idx(rank);
+  for (size_t d = 0; d < rank; ++d) {
+    idx[d]    = f / stride[d];
+    f        %= stride[d];
+  }
+  return idx;
+}
 
-  // 2) parse the *final* global domain
-  auto global_min = spec["transform"]["input_inclusive_min"].template get<std::vector<Index>>();
-  auto global_max = spec["transform"]["input_exclusive_max"].template get<std::vector<Index>>();
+  Result<std::pair<std::vector<Index>,std::vector<Index>>> get_true_domain() {
+  // 1) grab the spec
+  MDIO_ASSIGN_OR_RETURN(nlohmann::json spec, get_spec());
+
+  // 2) parse the *global* domain bounds
+  auto global_min = parse_vector(
+      spec["transform"]["input_inclusive_min"]);
+  auto global_max = parse_vector(
+      spec["transform"]["input_exclusive_max"]);
   const size_t rank = global_min.size();
 
-  // 3) initialize our “true” domain to extreme values
+  // 3) if there are no "layers", it's an unsliced Zarr → done
+  if (!spec.contains("layers") || !spec["layers"].is_array()) {
+    return std::make_pair(global_min, global_max);
+  }
+
+  // 4) otherwise initialize our true‐domain bbox
   std::vector<Index> true_min(rank, std::numeric_limits<Index>::max());
   std::vector<Index> true_max(rank, std::numeric_limits<Index>::min());
 
-  // 4) for each top‐level layer in the stack…
-  for (auto const& layer : spec["layers"]) {
-    auto const& transform = layer["transform"];
+  // 5) for each top‐level stack layer...
+  for (auto const &layer : spec["layers"]) {
+    auto const &transform = layer["transform"];
 
-    // 4a) its local domain
-    auto layer_min = transform["input_inclusive_min"].template get<std::vector<Index>>();
-    auto layer_max = transform["input_exclusive_max"].template get<std::vector<Index>>();
+    // 5a) layer’s local slice bounds
+    auto layer_min = parse_vector(transform["input_inclusive_min"]);
+    auto layer_max = parse_vector(transform["input_exclusive_max"]);
 
-    // 4b) pull out any per‐dim offsets (default = 0)
+    // 5b) any per‐dim offsets at this stack level
     std::vector<Index> offsets(rank, 0);
     if (transform.contains("output")) {
-      for (size_t i = 0; i < transform["output"].size() && i < rank; ++i) {
-        auto const& out_i = transform["output"][i];
-        if (out_i.contains("offset")) {
-          offsets[i] = out_i["offset"].template get<Index>();
+      auto &out = transform["output"];
+      for (size_t i = 0; i < out.size() && i < rank; ++i) {
+        if (out[i].contains("offset")) {
+          offsets[i] = parse_index(out[i]["offset"]);
         }
       }
     }
 
-    // 4c) compute the *global* slice‐domain for this layer,
-    //     intersect with the full domain, and see if non‐empty
+    // 5c) compute the *global* box of this layer, then intersect
     bool contributes = true;
-    std::vector<Index> intersect_min(rank), intersect_max(rank);
+    std::vector<Index> imin(rank), imax(rank);
     for (size_t i = 0; i < rank; ++i) {
-      Index leaf_min = layer_min[i] + offsets[i];
-      Index leaf_max = layer_max[i] + offsets[i];
-      intersect_min[i] = std::max(global_min[i], leaf_min);
-      intersect_max[i] = std::min(global_max[i], leaf_max);
-      if (intersect_min[i] >= intersect_max[i]) {
+      Index lo = layer_min[i] + offsets[i];
+      Index hi = layer_max[i] + offsets[i];
+      imin[i] = std::max(global_min[i], lo);
+      imax[i] = std::min(global_max[i], hi);
+      if (imin[i] >= imax[i]) {
         contributes = false;
         break;
       }
     }
     if (!contributes) continue;
 
-    // 4d) merge into our running true‐domain bbox
+    // 5d) merge into our running true_min/true_max
     for (size_t i = 0; i < rank; ++i) {
-      true_min[i] = std::min(true_min[i], intersect_min[i]);
-      true_max[i] = std::max(true_max[i], intersect_max[i]);
+      true_min[i] = std::min(true_min[i], imin[i]);
+      true_max[i] = std::max(true_max[i], imax[i]);
     }
   }
 
-  // 5) if nothing ever contributed, error out
+  // 6) if nothing ever contributed, that's an error
   if (true_min[0] == std::numeric_limits<Index>::max()) {
-    return absl::NotFoundError("No layers intersect the final domain");
+    return absl::NotFoundError(
+        "No layers intersect the final domain");
   }
 
-  // 6) done!
-  return std::make_pair(std::move(true_min), std::move(true_max));
+  return std::make_pair(std::move(true_min),
+                        std::move(true_max));
 }
 
 
