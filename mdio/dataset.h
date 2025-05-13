@@ -41,6 +41,8 @@
 #include "tensorstore/index_space/index_domain_builder.h" // IndexDomainBuilder<1>
 #include "tensorstore/index_space/index_domain.h"         // IndexDomainView, .origin(), .shape()
 #include "tensorstore/index_space/dim_expression.h"       // DimRange, Dims
+#include "tensorstore/array.h"
+#include "tensorstore/index_space/index_transform_builder.h"
 
 // #include "tensorstore/transformations/transpose.h"
 // #include "tensorstore/transformations/merge_dims.h"
@@ -527,20 +529,207 @@ class Dataset {
     }
 
   } else {
-    // Mixed 1‑D & N‑D coordinates:
-    for (const auto& coord_label : new_domain_dims) {
-      // coordVar may have shape.size()>1, so it contributes multiple axes
-      MDIO_ASSIGN_OR_RETURN(auto coordVar, new_vars.at(coord_label));
-      MDIO_ASSIGN_OR_RETURN(auto coordIntervals, coordVar.get_intervals());
-      for (const auto& iv : coordIntervals) {
-        permuted_axes.push_back(axis_map[iv.label.label()]);
+    // Mixed 1‑D & N‑D: flatten any N‑D coords into one axis, keep the 1‑D coords.
+    // Build a label→axis index map from the image’s own intervals:
+    MDIO_ASSIGN_OR_RETURN(auto imageVar, variables.at("image"));
+    // MDIO_ASSIGN_OR_RETURN(auto store, imageVar.get_mutable_store());
+    auto store = imageVar.get_mutable_store();
+
+    // 1) Build a map from label → input‐axis index
+    MDIO_ASSIGN_OR_RETURN(auto intervals, imageVar.get_intervals());
+    absl::flat_hash_map<std::string, DimensionIndex> axis_map;
+    for (DimensionIndex i = 0; i < intervals.size(); ++i) {
+      axis_map[intervals[i].label.label()] = i;
+    }
+
+    // 2) Figure out which axes to flatten (N‑D coords) vs. keep (1‑D coords)
+    std::vector<DimensionIndex> flatten_axes, keep_axes;
+    for (const auto& label : new_domain_dims) {
+      MDIO_ASSIGN_OR_RETURN(auto var, variables.at(label));
+      MDIO_ASSIGN_OR_RETURN(auto shape, var.get_store_shape());
+      if (shape.size() > 1) {
+        // flatten *all* of that variable’s dimensions
+        MDIO_ASSIGN_OR_RETURN(auto ivs, var.get_intervals());
+        for (auto& iv : ivs) {
+          flatten_axes.push_back(axis_map[iv.label.label()]);
+        }
+      } else {
+        keep_axes.push_back(axis_map[label]);
       }
     }
 
-    // If you want to track the new list of coordinate names *for* “image”:
-    new_coords["image"] = new_domain_dims;
+    std::cout << imageVar << std::endl;
+
+    std::cout << "Flatten axes: " << std::endl;
+    for (const auto& axis : flatten_axes) {
+      std::cout << "\t" << axis << std::endl;
+    }
+    std::cout << "Keep axes: " << std::endl;
+    for (const auto& axis : keep_axes) {
+      std::cout << "\t" << axis << std::endl;
+    }
+    // 3) Compute row‑major strides for the flatten group
+    MDIO_ASSIGN_OR_RETURN(auto full_shape, imageVar.get_store_shape());
+    std::vector<Index> strides(flatten_axes.size());
+    if (!strides.empty()) {
+      strides.back() = 1;
+      for (int i = (int)flatten_axes.size() - 2; i >= 0; --i) {
+        strides[i] = strides[i+1] * full_shape[ flatten_axes[i+1] ];
+      }
+    }
+
+    std::cout << "Strides: " << std::endl;
+    for (const auto& stride : strides) {
+      std::cout << "\t" << stride << std::endl;
+    }
+
+    // // 4) Create the builder
+    // const auto input_rank  = static_cast<DimensionIndex>(full_shape.size());
+    // const auto output_rank = static_cast<DimensionIndex>(new_domain_dims.size());
+    // auto builder = tensorstore::IndexTransformBuilder<>(input_rank, output_rank)
+    //   .input_domain(store.domain());
+
+    // auto transform = tensorstore::IndexTransformBuilder<>(3,2)
+    //   .input_origin({0,0,0})
+    //   .input_shape({256, 512, 384})
+    //   .output_constant(0, 0)
+    //   .output_constant(1, 0)
+    //   .Finalize()
+    //   .value();
+
+    // auto transform = tensorstore::IndexTransformBuilder<>(3, 2)
+    //   .input_origin({0,0,0})
+    //   .input_shape({256, 512, 384})
+    //   .output_map(0)
+    //     .input_dimension(0)
+    //     .offset(0)
+    //     .stride(1)
+    //   .output_map(1)
+    //     .input_dimension(1)
+    //     .offset(0)
+    //     .stride(1)
+    //   .Finalize()
+    //   .value();
+
+    // auto transform = tensorstore::IndexTransformBuilder<>(3, 2)
+    //   .input_origin({0,0,0})
+    //   .input_shape({256, 512, 384})
+    //   .output_map({
+    //     tensorstore::OutputIndexMap()
+    //       .input_dimension(0)
+    //       .offset(0)
+    //       .stride(1),
+    //     tensorstore::OutputIndexMap()
+    //       .input_dimension(1)
+    //       .offset(0)
+    //       .stride(1)
+    //   })
+    //   .Finalize()
+    //   .value();
+
+    // auto transform = tensorstore::IndexTransformBuilder<2, 3>()
+    // .input_origin({0, 0})
+    // .input_shape({256 * 512, 384})
+    // .output_maps({
+    //     tensorstore::OutputIndexMap::SingleInputDimension(0, /*stride=*/1, /*offset=*/0),  // flat
+    //     tensorstore::OutputIndexMap::SingleInputDimension(1, /*stride=*/1, /*offset=*/0),  // depth
+    //     tensorstore::OutputIndexMap::Constant(0)                                           // dummy (dropped axis)
+    // })
+    // .Finalize()
+    // .value();
+    // auto transform = tensorstore::IndexTransformBuilder<2, 3>()
+    // .input_origin({0, 0})
+    // .input_shape({256 * 512, 384})
+    // .output(0, /*offset=*/0, /*stride=*/1, /*input_dimension=*/0)
+    // .output(1, /*offset=*/0, /*stride=*/1, /*input_dimension=*/1)
+    // .output(2, /*offset=*/0)  // constant output
+    // .Finalize()
+    // .value();
+
+    // auto transform = tensorstore::IndexTransformBuilder<>(3,2)
+    std::string transform_str = R"(
+    {
+  "input_inclusive_min": [0, 0, 0],
+  "input_exclusive_max": [256, 512, 384],
+  "output": [
+    {
+      "input_dimensions": [0, 1],
+      "offset": 0,
+      "strides": [512, 1]
+    },
+    {
+      "input_dimension": 2
+    }
+  ]
+})";
+
+    auto transform = tensorstore::IndexTransformBuilder<>(3,2)
+      .input_inclusive_min({0, 0, 0})
+      .input_exclusive_max({256, 512, 384})
+      .output({
+        
+      })
+
+    auto transform_json = nlohmann::json::parse(transform_str);
+
+    // auto transform = tensorstore::IndexTransform(transform_json);
+    // MDIO_ASSIGN_OR_RETURN(auto transform, tensorstore::IndexTransform<>::FromJson(transform_json));
+    MDIO_ASSIGN_OR_RETURN(auto transform, tensorstore::ParseIndexTransform(transform_json));
+
+
+    MDIO_ASSIGN_OR_RETURN(auto flattened, imageVar.get_mutable_store() | transform);
+
+    std::cout << "Before: " << std::endl;
+    std::cout << imageVar << std::endl;
+    std::cout << "After: " << std::endl;
+    imageVar.set_store(flattened);
+    std::cout << imageVar << std::endl;
+
+
+    // // 5) First output dimension = the flatten group (if any)
+    // if (!flatten_axes.empty()) {
+    //   // Make an OffsetArrayView that maps each multi‑index to a linear index.
+    //   auto offset_array = tensorstore::MakeOffsetArrayView<Index>(
+    //     /*origin=*/tensorstore::span<const Index, 1>({0}),
+    //     /*strides=*/tensorstore::span<const Index, 1>({1}));
+    //   builder.output_index_array(
+    //     /*output_dim=*/0,
+    //     offset_array,
+    //     /*offset=*/0);
+    // }
+
+    // // 6) Then one single‑input map per kept axis
+    // for (size_t i = 0; i < keep_axes.size(); ++i) {
+    //   // If you flattened you’ve already used output slot 0, so start at 1
+    //   const DimensionIndex out_dim = 
+    //     flatten_axes.empty() ? i : (i + 1);
+    //   builder.output_single_input_dimension(
+    //     /*output_dim=*/out_dim,
+    //     /*input_dim=*/keep_axes[i],
+    //     /*offset=*/0);
+    // }
+
+    // // 7) Finally give the outputs their labels
+    // {
+    //   // builder.output_labels() expects a C‐array of absl::string_view
+    //   std::vector<absl::string_view> olabels;
+    //   olabels.reserve(new_domain_dims.size());
+    //   for (auto& s : new_domain_dims) olabels.push_back(s);
+    //   builder.output_labels(
+    //     *reinterpret_cast<const absl::string_view(*)[]>(
+    //         olabels.data()));
+    // }
+
+    // // 8) Finish and apply
+    // MDIO_ASSIGN_OR_RETURN(auto transform, builder.Finalize());
+    // MDIO_ASSIGN_OR_RETURN(auto new_store, transform | store);
+    // imageVar.set_store(std::move(new_store));
+
+    // // Replace the image’s coord list
+    // new_coords["image"] = new_domain_dims;
     // (We leave `domain` alone here, since it’s an IndexDomain and must be
     // reordered via a TensorStore‐style transpose if you really need it.)
+    return absl::UnimplementedError("CoordinateTransform WIP...");
   }
 
   // 6) Apply the zero‑copy transpose to the store
