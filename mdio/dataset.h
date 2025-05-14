@@ -609,55 +609,6 @@ class Dataset {
     return isel(slices[I]...);
   }
 
-  std::vector<RangeDescriptor<Index>> merge_adjacent(
-    std::vector<RangeDescriptor<Index>> descs) {
-  // 1) bucket by (label, step) using a string_view key
-  using Key = std::pair<std::string_view, Index>;
-  std::map<Key, std::vector<RangeDescriptor<Index>>> buckets;
-
-  for (auto &d : descs) {
-    buckets[{ d.label.label(), d.step }].push_back(d);
-  }
-
-  std::vector<RangeDescriptor<Index>> result;
-  result.reserve(descs.size());
-
-  // 2) sort & merge each bucket
-  for (auto &kv : buckets) {
-    auto &vec = kv.second;
-    std::sort(vec.begin(), vec.end(),
-              [](auto const &a, auto const &b) {
-                return a.start < b.start;
-              });
-
-    Index cur_start = vec[0].start;
-    Index cur_stop  = vec[0].stop;
-
-    for (size_t i = 1; i < vec.size(); ++i) {
-      if (vec[i].start <= cur_stop) {
-        cur_stop = std::max(cur_stop, vec[i].stop);
-      } else {
-        // copy the *original* descriptor (with a safe label)
-        auto run = vec[0];
-        run.start = cur_start;
-        run.stop  = cur_stop;
-        result.push_back(std::move(run));
-
-        cur_start = vec[i].start;
-        cur_stop  = vec[i].stop;
-      }
-    }
-
-    // emit the last run
-    auto run = vec[0];
-    run.start = cur_start;
-    run.stop  = cur_stop;
-    result.push_back(std::move(run));
-  }
-
-  return result;
-}
-
   // Wrapper function that generates the index sequence
   /**
    * @brief This version of isel is only expected to be used interally.
@@ -668,67 +619,56 @@ class Dataset {
    * number of descriptors.
    */
   Result<Dataset> isel(const std::vector<RangeDescriptor<Index>>& slices) {
+    // Validate input
     if (slices.empty()) {
-      return absl::InvalidArgumentError("No slices provided.");
+        return absl::InvalidArgumentError("No slices provided.");
     }
 
-    auto reducedSlices = merge_adjacent(slices);
-
-    bool do_simple_slice = true;
-
-    // Build a set of just the labels
-    std::set<std::string_view> labels;
-    labels.insert(reducedSlices[0].label.label());
-    for (auto i=1; i<reducedSlices.size(); i++) {
-      if (labels.count(reducedSlices[i].label.label()) > 0) {
-        do_simple_slice = false;
-        // break;  // Don't break here, we can check all the labels and see if we are left with a single dimension.
-      }
-      labels.insert(reducedSlices[i].label.label());
-    }
-
-    // If we are left with a single dimension, we can just do a simple slice.
-    if (labels.size() == 1) {
-      do_simple_slice = true;
-    }
-
-    // Pre-emptively split the RangeDescriptors if there are too many.
-    // This is not the final logic that we want.
-    if (reducedSlices.size() > internal::kMaxNumSlices) {
-      std::size_t halfElements = reducedSlices.size() / 2;
-      if (halfElements % 2 != 0) {
-        halfElements += 1;
-      }
-      std::vector<RangeDescriptor<Index>> firstHalf(reducedSlices.begin(), reducedSlices.begin() + halfElements);
-      std::vector<RangeDescriptor<Index>> secondHalf(reducedSlices.begin() + halfElements, reducedSlices.end());
-      MDIO_ASSIGN_OR_RETURN(auto ds, isel(static_cast<const std::vector<RangeDescriptor<Index>>&>(firstHalf)));
-      return ds.isel(static_cast<const std::vector<RangeDescriptor<Index>>&>(secondHalf));
-    }
-
-    if (do_simple_slice) {
-      std::vector<RangeDescriptor<Index>> slicesCopy = reducedSlices;
-      for (int i = reducedSlices.size(); i <= internal::kMaxNumSlices; i++) {
-        slicesCopy.emplace_back(
-            RangeDescriptor<Index>({internal::kInertSliceKey, 0, 1, 1}));
-      }
-
-      // Generate the index sequence and call the implementation
-      return call_isel_with_vector_impl(
-          slicesCopy, std::make_index_sequence<internal::kMaxNumSlices>{});
-    } else {
-      std::vector<RangeDescriptor<Index>> simpleSlices;
-      std::vector<RangeDescriptor<Index>> complexSlices;
-      auto simpleLabel = reducedSlices[0].label.label();
-      for (auto &slice : reducedSlices) {
-        if (slice.label.label() != simpleLabel) {
-          complexSlices.push_back(slice);
-        } else {
-          simpleSlices.push_back(slice);
+    // If we exceed the maximum descriptors, split into two calls
+    if (slices.size() > internal::kMaxNumSlices) {
+        std::size_t half = slices.size() / 2;
+        if (half % 2 != 0) {
+            ++half;
         }
-      }
-      MDIO_ASSIGN_OR_RETURN(auto ds, isel(static_cast<const std::vector<RangeDescriptor<Index>>&>(simpleSlices)));
-      return ds.isel(static_cast<const std::vector<RangeDescriptor<Index>>&>(complexSlices));
+
+        std::vector<RangeDescriptor<Index>> firstHalf(
+            slices.begin(), slices.begin() + half);
+        std::vector<RangeDescriptor<Index>> secondHalf(
+            slices.begin() + half, slices.end());
+
+        MDIO_ASSIGN_OR_RETURN(auto firstResult, isel(firstHalf));
+        return firstResult.isel(secondHalf);
     }
+
+    // Group slices by their dimension label
+    std::map<std::string_view, std::vector<RangeDescriptor<Index>>> groups;
+    for (const auto& slice : slices) {
+        groups[slice.label.label()].push_back(slice);
+    }
+
+    // Apply slices for each group sequentially
+    Dataset current = *this;
+    for (auto& [label, group] : groups) {
+        // Pad with inert slices up to kMaxNumSlices
+        std::vector<RangeDescriptor<Index>> padded = group;
+        padded.reserve(internal::kMaxNumSlices);
+        for (std::size_t i = padded.size(); i < internal::kMaxNumSlices; ++i) {
+            padded.emplace_back(RangeDescriptor<Index>({
+                internal::kInertSliceKey, 0, 1, 1
+            }));
+        }
+
+        // Invoke the core vector-based slice for this dimension
+        MDIO_ASSIGN_OR_RETURN(
+            current,
+            current.call_isel_with_vector_impl(
+                padded,
+                std::make_index_sequence<internal::kMaxNumSlices>{}
+            )
+        );
+    }
+
+    return current;
   }
 
   /**
