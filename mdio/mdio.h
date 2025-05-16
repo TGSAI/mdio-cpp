@@ -22,5 +22,6 @@
 #define MDIO_MDIO_H_
 
 #include "mdio/dataset.h"
+#include "mdio/intersection.h"
 
 #endif  // MDIO_MDIO_H_

@@ -5,6 +5,15 @@
 #include "mdio/dataset.h"
 #include "mdio/impl.h"
 
+#include "tensorstore/index_space/index_transform.h"
+#include "tensorstore/index_space/index_domain_builder.h"
+#include "tensorstore/index_space/index_domain.h"
+#include "tensorstore/index_space/dim_expression.h"
+#include "tensorstore/array.h"
+#include "tensorstore/util/span.h"
+#include "tensorstore/index_space/index_transform_builder.h"
+#include "tensorstore/box.h"
+
 namespace mdio {
 
 /// \brief Collects valid index selections per dimension for a Dataset without
@@ -134,6 +143,89 @@ public:
   /// Dimensions not present imply full range.
   const std::map<std::string, std::vector<mdio::Index>>& selections() const {
     return selections_;
+  }
+
+  /*
+  Future<Dataset> SliceAndSort(std::vector<std::string> to_sort_by) {
+    // Ensure that all the keys in to_sort_by are present in the Dataset.
+    // If not, return an error.
+    
+    // isel the dataset by `range_descriptors`
+    // Begin reading in the Variables and VariableData contained by to_sort_by.
+
+    // Solicit the futures.
+    
+    // Perform the appropriate sorts. What I need to do for the sorting is map the actual values to the indices.
+    // That means that I should be able to sort by value AND have an index mapping which Tensorstore should be able to take as an IndexTransform.
+    // If it doesn't accept the full list for sorting, then we are in for sad times! 
+    // I'm not sure what it means for this method if 
+  }
+  */
+
+  Future<Dataset> SliceAndSort(std::string to_sort_by) {
+    auto non_const_ds = dataset_;
+    MDIO_ASSIGN_OR_RETURN(auto ds, non_const_ds.isel(static_cast<std::vector<RangeDescriptor<mdio::Index>>&>(range_descriptors())));
+    MDIO_ASSIGN_OR_RETURN(auto var, ds.variables.get<mdio::dtypes::int32_t>(to_sort_by));
+    auto fut = var.Read();
+    MDIO_ASSIGN_OR_RETURN(auto intervals, var.get_intervals());
+    auto currentPosition = intervals;
+    if (!fut.status().ok()) {
+      return fut.status();
+    }
+    auto dataVar = fut.value();
+    auto accessor = dataVar.get_data_accessor().data();
+    auto numSamples = dataVar.num_samples();
+    auto flattenedOffset = dataVar.get_flattened_offset();
+
+    std::vector<std::pair<int32_t, std::vector<mdio::Variable<int32_t>::Interval>>> indexed_values;
+    indexed_values.reserve(numSamples);
+    for (mdio::Index i = 0; i < numSamples; ++i) {
+      indexed_values.emplace_back(accessor[i], currentPosition);
+      _current_position_increment<int32_t>(currentPosition, intervals);
+    }
+    std::stable_sort(
+      indexed_values.begin(),
+      indexed_values.end(),
+      [](const auto& a, const auto& b) {
+        return a.first < b.first;
+      }
+    );
+
+    std::vector<mdio::Index> trace_indices;
+    MDIO_ASSIGN_OR_RETURN(auto transformVar, ds.variables.at("depth_data"));
+    auto numTraceSamples = transformVar.num_samples();
+    trace_indices.reserve(numTraceSamples);
+    for (mdio::Index i = 0; i < numTraceSamples; ++i) {
+      trace_indices.push_back(i);
+    }
+
+    std::vector<Index> idx0;
+    std::vector<Index> idx1;
+    std::vector<Index> idx2;
+    for (const auto& [_coord, intervals] : indexed_values) {
+      idx0.push_back(intervals[0].inclusive_min);
+      idx1.push_back(intervals[1].inclusive_min);
+      idx2.push_back(intervals[2].inclusive_min);
+    }
+
+    auto store = transformVar.get_mutable_store();
+    auto input_domain = store.domain();
+    auto rank = static_cast<tensorstore::DimensionIndex>(input_domain.rank());
+    using ::tensorstore::MakeArrayView;
+
+    // Build an index transform here using array mapping for sorted dimensions
+    MDIO_ASSIGN_OR_RETURN(auto transform,
+        tensorstore::IndexTransformBuilder<>(rank, rank)
+            .input_domain(input_domain)
+            .output_index_array(0, 0, 1, ::tensorstore::MakeCopy(::tensorstore::MakeArrayView(idx0)))
+            .output_index_array(1, 0, 1, ::tensorstore::MakeCopy(::tensorstore::MakeArrayView(idx1)))
+            .output_index_array(2, 0, 1, ::tensorstore::MakeCopy(::tensorstore::MakeArrayView(idx2)))
+            .output_single_input_dimension(3, 3)
+            .Finalize());
+
+    MDIO_ASSIGN_OR_RETURN(auto new_store, store | transform);
+    transformVar.set_store(new_store);
+    return ds;
   }
 
 private:

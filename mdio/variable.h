@@ -1512,6 +1512,9 @@ Result<Variable> slice(const Descriptors&... descriptors) const {
    */
   const tensorstore::TensorStore<T, R, M>& get_store() const { return store; }
 
+  tensorstore::TensorStore<T, R, M>& get_mutable_store() { return store; }
+  void set_store(tensorstore::TensorStore<T, R, M>& new_store) { store = new_store; }
+
   // The data that should remain static, but MAY need to be updated.
   std::shared_ptr<std::shared_ptr<UserAttributes>> attributes;
 
