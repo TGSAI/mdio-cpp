@@ -619,57 +619,44 @@ class Dataset {
    * number of descriptors.
    */
   Result<Dataset> isel(const std::vector<RangeDescriptor<Index>>& slices) {
-    // Validate input
-    if (slices.empty()) {
-        return absl::InvalidArgumentError("No slices provided.");
-    }
-
-    // If we exceed the maximum descriptors, split into two calls
-    if (slices.size() > internal::kMaxNumSlices) {
-        std::size_t half = slices.size() / 2;
-        if (half % 2 != 0) {
-            ++half;
-        }
-
-        std::vector<RangeDescriptor<Index>> firstHalf(
-            slices.begin(), slices.begin() + half);
-        std::vector<RangeDescriptor<Index>> secondHalf(
-            slices.begin() + half, slices.end());
-
-        MDIO_ASSIGN_OR_RETURN(auto firstResult, isel(firstHalf));
-        return firstResult.isel(secondHalf);
-    }
-
-    // Group slices by their dimension label
-    std::map<std::string_view, std::vector<RangeDescriptor<Index>>> groups;
-    for (const auto& slice : slices) {
-        groups[slice.label.label()].push_back(slice);
-    }
-
-    // Apply slices for each group sequentially
-    Dataset current = *this;
-    for (auto& [label, group] : groups) {
-        // Pad with inert slices up to kMaxNumSlices
-        std::vector<RangeDescriptor<Index>> padded = group;
-        padded.reserve(internal::kMaxNumSlices);
-        for (std::size_t i = padded.size(); i < internal::kMaxNumSlices; ++i) {
-            padded.emplace_back(RangeDescriptor<Index>({
-                internal::kInertSliceKey, 0, 1, 1
-            }));
-        }
-
-        // Invoke the core vector-based slice for this dimension
-        MDIO_ASSIGN_OR_RETURN(
-            current,
-            current.call_isel_with_vector_impl(
-                padded,
-                std::make_index_sequence<internal::kMaxNumSlices>{}
-            )
-        );
-    }
-
-    return current;
+  if (slices.empty()) {
+    return absl::InvalidArgumentError("No slices provided.");
   }
+
+  // 1) Group descriptors by their dimension label
+  std::map<std::string_view, std::vector<RangeDescriptor<Index>>> groups;
+  for (auto& desc : slices) {
+    groups[desc.label.label()].push_back(desc);
+  }
+
+  // 2) Walk through each dimension-group and break it into kMax-sized windows
+  Dataset current = *this;
+  for (auto& [label, descs] : groups) {
+    for (size_t i = 0; i < descs.size(); i += internal::kMaxNumSlices) {
+      size_t end = std::min(i + internal::kMaxNumSlices, descs.size());
+      std::vector<RangeDescriptor<Index>> window(
+          descs.begin() + i, descs.begin() + end);
+
+      // 3) Pad this window up to kMax (if your impl still needs padding)
+      window.reserve(internal::kMaxNumSlices);
+      for (size_t p = window.size(); p < internal::kMaxNumSlices; ++p) {
+        window.emplace_back(RangeDescriptor<Index>{
+            internal::kInertSliceKey, 0, 1, 1
+        });
+      }
+
+      MDIO_ASSIGN_OR_RETURN(
+          current,
+          current.call_isel_with_vector_impl(
+              window,
+              std::make_index_sequence<internal::kMaxNumSlices>{}
+          )
+      );
+    }
+  }
+
+  return current;
+}
 
   /**
    * @brief Internal use only.

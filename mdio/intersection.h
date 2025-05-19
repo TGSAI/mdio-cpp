@@ -16,27 +16,25 @@
 
 namespace mdio {
 
+
 /// \brief Collects valid index selections per dimension for a Dataset without
 /// performing slicing immediately.
 ///
 /// Only dimensions explicitly filtered via add_selection appear in the map;
 /// any dimension not present should be treated as having its full index range.
 class IndexSelection {
+struct IndexedInterval;  // Forward declaration
 public:
   /// Construct from an existing Dataset (captures its full domain).
   explicit IndexSelection(const Dataset& dataset)
       : dataset_(dataset), base_domain_(dataset.domain) {}
 
-  /// Add or intersect selection of indices where the coordinate variable equals
-  /// descriptor.value. Returns a Future for async compatibility.
-  ///
-  /// For each dimension of the coordinate variable, records the index positions
-  /// where the value matches, then intersects with any prior selections on that
-  /// dimension.
+  /// Add or intersect selection of indices where the coordinate variable equals descriptor.value,
+  /// preserving full N-D tuple of IndexedInterval metadata.
   template <typename T>
   mdio::Future<void> add_selection(const ValueDescriptor<T>& descriptor) {
     using Index = mdio::Index;
-    using Interval = typename Variable<T>::Interval;
+    using VarInterval = typename Variable<T>::Interval;
 
     // Lookup coordinate variable by label
     MDIO_ASSIGN_OR_RETURN(auto var,
@@ -47,103 +45,124 @@ public:
 
     // Read coordinate data
     auto fut = var.Read();
-    if (!fut.status().ok()) {
-      return fut.status();
-    }
+    if (!fut.status().ok()) return fut.status();
     auto data = fut.value();
 
-    // Access flattened buffer
     const T* data_ptr     = data.get_data_accessor().data();
     Index offset          = data.get_flattened_offset();
     Index n_samples       = data.num_samples();
-    std::vector<Interval> current_pos = intervals;
+    auto current_pos      = intervals;
 
-    // Local map: dimension label -> matching indices
-    std::map<std::string, std::vector<Index>> local_matched;
+    // Collect all matching N-D IndexedInterval tuples in this pass
+    std::vector<std::vector<IndexedInterval>> local_tuples;
+    local_tuples.reserve(n_samples);
 
-    // Scan all elements
     for (Index idx = offset; idx < offset + n_samples; ++idx) {
       if (data_ptr[idx] == descriptor.value) {
-        // On match, capture each dimension's index
-        for (const auto& pos : current_pos) {
-          std::string dim(pos.label.label());
-          local_matched[dim].push_back(pos.inclusive_min);
+        std::vector<IndexedInterval> tuple;
+        tuple.reserve(current_pos.size());
+        for (auto const& pos : current_pos) {
+          IndexedInterval iv;
+          iv.label         = pos.label;
+          iv.inclusive_min = pos.inclusive_min;
+          tuple.push_back(iv);
         }
+        local_tuples.push_back(std::move(tuple));
       }
       _current_position_increment<T>(current_pos, intervals);
     }
 
-    if (local_matched.empty()) {
-      return absl::NotFoundError(
-          "No matches for coordinate '" + std::string(descriptor.label.label()) + "'");
+    if (local_tuples.empty()) {
+      std::stringstream ss;
+      ss << "No matches for coordinate '" << descriptor.label.label() << "'";
+      return absl::NotFoundError(ss.str());
     }
 
-    // Merge into global selections_
-    for (auto& kv : local_matched) {
-      const std::string& dim = kv.first;
-      auto& vec = kv.second;
-
-      // Deduplicate
-      std::sort(vec.begin(), vec.end());
-      vec.erase(std::unique(vec.begin(), vec.end()), vec.end());
-
-      // Intersect or assign
-      auto it = selections_.find(dim);
-      if (it == selections_.end()) {
-        selections_.emplace(dim, std::move(vec));
-      } else {
-        auto& existing = it->second;
-        std::vector<Index> intersected;
-        std::set_intersection(
-            existing.begin(), existing.end(),
-            vec.begin(), vec.end(),
-            std::back_inserter(intersected));
-        existing = std::move(intersected);
+    // Comparator for IndexedInterval tuples: lexicographic by (label, inclusive_min)
+    auto tuple_cmp = [](auto const& a, auto const& b) {
+      size_t na = a.size(), nb = b.size();
+      for (size_t i = 0; i < na && i < nb; ++i) {
+        const auto& ai = a[i];
+        const auto& bi = b[i];
+        auto al = ai.label.label();
+        auto bl = bi.label.label();
+        if (al != bl) return al < bl;
+        if (ai.inclusive_min != bi.inclusive_min) return ai.inclusive_min < bi.inclusive_min;
       }
+      return na < nb;
+    };
+
+    if (kept_tuples_.empty()) {
+      // First descriptor seeds the full tuple set
+      kept_tuples_ = std::move(local_tuples);
+    } else {
+      std::sort(kept_tuples_.begin(), kept_tuples_.end(), tuple_cmp);
+      std::sort(local_tuples.begin(),    local_tuples.end(),    tuple_cmp);
+      std::vector<std::vector<IndexedInterval>> new_kept;
+      std::set_intersection(
+        kept_tuples_.begin(), kept_tuples_.end(),
+        local_tuples.begin(),  local_tuples.end(),
+        std::back_inserter(new_kept),
+        tuple_cmp);
+      kept_tuples_.swap(new_kept);
     }
 
     return absl::OkStatus();
   }
 
-  /// \brief Build contiguous RangeDescriptors (stride=1) from selections.
-  ///
-  /// For each dimension in selections_, coalesces consecutive indices into
-  /// RangeDescriptor<Index> with step=1, emitting the minimal set covering all.
+  /// \brief Emit a RangeDescriptor per surviving tuple coordinate, without coalescing.
   std::vector<RangeDescriptor<Index>> range_descriptors() const {
     using Index = mdio::Index;
     std::vector<RangeDescriptor<Index>> result;
+    if (kept_tuples_.empty()) return result;
 
-    for (const auto& kv : selections_) {
-      const auto& dim = kv.first;
-      const auto& idxs = kv.second;
-      if (idxs.empty()) continue;
-
-      Index start = idxs.front();
-      Index prev = start;
-
-      for (size_t i = 1; i < idxs.size(); ++i) {
-        if (idxs[i] == prev + 1) {
-          prev = idxs[i];
-        } else {
-          // close out the current range [start, prev+1)
-          result.emplace_back(RangeDescriptor<Index>{dim, start, prev + 1, 1});
-          // begin new range
-          start = idxs[i];
-          prev = idxs[i];
-        }
+    size_t rank = kept_tuples_[0].size();
+    // For each dimension from fastest (last) to slowest (0)
+    for (int d = static_cast<int>(rank) - 1; d >= 0; --d) {
+      // Map context of higher dims -> list of positions in dim d
+      std::map<std::vector<Index>, std::vector<Index>> context_map;
+      for (auto const& tup : kept_tuples_) {
+        std::vector<Index> context;
+        context.reserve(rank - d - 1);
+        for (size_t k = d + 1; k < rank; ++k)
+          context.push_back(tup[k].inclusive_min);
+        context_map[context].push_back(tup[d].inclusive_min);
       }
-      // flush last range
-      result.emplace_back(RangeDescriptor<Index>{dim, start, prev + 1, 1});
-    }
 
+      // For each context, coalesce runs and emit RangeDescriptors
+      for (auto& [ctx, coords] : context_map) {
+        std::sort(coords.begin(), coords.end());
+        coords.erase(std::unique(coords.begin(), coords.end()), coords.end());
+        if (coords.empty()) continue;
+        Index start = coords.front();
+        Index prev = start;
+        for (size_t i = 1; i < coords.size(); ++i) {
+          if (coords[i] == prev + 1) {
+            prev = coords[i];
+          } else {
+            result.emplace_back(RangeDescriptor<Index>{
+              tup_label(d), start, prev + 1, 1});
+            start = coords[i]; prev = start;
+          }
+        }
+        result.emplace_back(RangeDescriptor<Index>{
+          tup_label(d), start, prev + 1, 1});
+      }
+    }
     return result;
+  }
+
+  // Helper to get dimension label by position d
+  std::string_view tup_label(size_t d) const {
+    // All tuples have same order of labels
+    return kept_tuples_[0][d].label.label();
   }
 
   /// \brief Get the current selection map: dimension name -> indices.
   /// Dimensions not present imply full range.
-  const std::map<std::string, std::vector<mdio::Index>>& selections() const {
-    return selections_;
-  }
+  // const std::map<std::string, std::vector<mdio::Index>>& selections() const {
+  //   return selections_;
+  // }
 
   /*
   Future<Dataset> SliceAndSort(std::vector<std::string> to_sort_by) {
@@ -162,83 +181,92 @@ public:
   }
   */
 
-  Future<Dataset> SliceAndSort(std::string to_sort_by) {
+  /// \brief Slice the dataset by current selections and then stable-sort by one coordinate
+  Future<Dataset> SliceAndSort(const std::string& sort_key) {
+    // 1. Apply current selections
     auto non_const_ds = dataset_;
-    MDIO_ASSIGN_OR_RETURN(auto ds, non_const_ds.isel(static_cast<std::vector<RangeDescriptor<mdio::Index>>&>(range_descriptors())));
-    MDIO_ASSIGN_OR_RETURN(auto var, ds.variables.get<mdio::dtypes::int32_t>(to_sort_by));
-    auto fut = var.Read();
+    const auto& descs = range_descriptors();
+    std::cout << "Number of range descriptors: " << descs.size() << std::endl;
+    MDIO_ASSIGN_OR_RETURN(auto ds, non_const_ds.isel(descs));
+    
+    // 2. Read the sort variable
+    MDIO_ASSIGN_OR_RETURN(
+      auto var, ds.variables.get<mdio::dtypes::int32_t>(sort_key));
     MDIO_ASSIGN_OR_RETURN(auto intervals, var.get_intervals());
-    auto currentPosition = intervals;
-    if (!fut.status().ok()) {
-      return fut.status();
-    }
+    auto fut = var.Read();
+    if (!fut.status().ok()) return fut.status();
     auto dataVar = fut.value();
-    auto accessor = dataVar.get_data_accessor().data();
-    auto numSamples = dataVar.num_samples();
-    auto flattenedOffset = dataVar.get_flattened_offset();
 
-    std::vector<std::pair<int32_t, std::vector<mdio::Variable<int32_t>::Interval>>> indexed_values;
-    indexed_values.reserve(numSamples);
-    for (mdio::Index i = 0; i < numSamples; ++i) {
-      indexed_values.emplace_back(accessor[i], currentPosition);
-      _current_position_increment<int32_t>(currentPosition, intervals);
-    }
-    std::stable_sort(
-      indexed_values.begin(),
-      indexed_values.end(),
-      [](const auto& a, const auto& b) {
-        return a.first < b.first;
+    // 3. Gather values and corresponding tuples
+    std::vector<typename Variable<int32_t>::Interval> pos = intervals;
+    const int32_t* acc = dataVar.get_data_accessor().data();
+    mdio::Index offset = dataVar.get_flattened_offset();
+    mdio::Index n = dataVar.num_samples();
+
+    std::vector<std::pair<int32_t, std::vector<IndexedInterval>>> indexed;
+    indexed.reserve(n);
+    for (mdio::Index i = 0; i < n; ++i) {
+      // build tuple of IndexedInterval
+      std::vector<IndexedInterval> tup;
+      tup.reserve(pos.size());
+      for (auto const& iv : pos) {
+        IndexedInterval tmp{iv.label, iv.inclusive_min};
+        tup.push_back(tmp);
       }
-    );
-
-    std::vector<mdio::Index> trace_indices;
-    MDIO_ASSIGN_OR_RETURN(auto transformVar, ds.variables.at("depth_data"));
-    auto numTraceSamples = transformVar.num_samples();
-    trace_indices.reserve(numTraceSamples);
-    for (mdio::Index i = 0; i < numTraceSamples; ++i) {
-      trace_indices.push_back(i);
+      indexed.emplace_back(acc[i + offset], tup);
+      _current_position_increment<int32_t>(pos, intervals);
     }
 
-    std::vector<Index> idx0;
-    std::vector<Index> idx1;
-    std::vector<Index> idx2;
-    for (const auto& [_coord, intervals] : indexed_values) {
-      idx0.push_back(intervals[0].inclusive_min);
-      idx1.push_back(intervals[1].inclusive_min);
-      idx2.push_back(intervals[2].inclusive_min);
+    // 4. Stable sort by value
+    std::stable_sort(
+      indexed.begin(), indexed.end(),
+      [](auto const& a, auto const& b){ return a.first < b.first; });
+
+    // 5. Extract new tuples into kept_tuples_
+    kept_tuples_.clear();
+    kept_tuples_.reserve(indexed.size());
+    for (auto& pr : indexed) {
+      kept_tuples_.push_back(std::move(pr.second));
     }
 
-    auto store = transformVar.get_mutable_store();
-    auto input_domain = store.domain();
-    auto rank = static_cast<tensorstore::DimensionIndex>(input_domain.rank());
-    using ::tensorstore::MakeArrayView;
-
-    // Build an index transform here using array mapping for sorted dimensions
-    MDIO_ASSIGN_OR_RETURN(auto transform,
-        tensorstore::IndexTransformBuilder<>(rank, rank)
-            .input_domain(input_domain)
-            .output_index_array(0, 0, 1, ::tensorstore::MakeCopy(::tensorstore::MakeArrayView(idx0)))
-            .output_index_array(1, 0, 1, ::tensorstore::MakeCopy(::tensorstore::MakeArrayView(idx1)))
-            .output_index_array(2, 0, 1, ::tensorstore::MakeCopy(::tensorstore::MakeArrayView(idx2)))
-            .output_single_input_dimension(3, 3)
-            .Finalize());
-
-    MDIO_ASSIGN_OR_RETURN(auto new_store, store | transform);
-    transformVar.set_store(new_store);
     return ds;
+  }
+
+  /// \brief Access the surviving N-D IndexedInterval tuples directly.
+  const std::vector<std::vector<IndexedInterval>>& tuples() const {
+    return kept_tuples_;
   }
 
 private:
   const Dataset& dataset_;
   tensorstore::IndexDomain<> base_domain_;
-  std::map<std::string, std::vector<mdio::Index>> selections_;
+  std::vector<std::vector<IndexedInterval>> kept_tuples_;
+
+  /// A minimal struct carrying label and position
+  struct IndexedInterval {
+    mdio::DimensionIdentifier label;
+    mdio::Index inclusive_min;
+    IndexedInterval() = default;
+    IndexedInterval(mdio::DimensionIdentifier l, mdio::Index i)
+      : label(l), inclusive_min(i) {}
+
+    bool operator<(IndexedInterval const& o) const {
+      auto a = label.label();
+      auto b = o.label.label();
+      if (a != b) return a < b;
+      return inclusive_min < o.inclusive_min;
+    }
+    bool operator==(IndexedInterval const& o) const {
+      return label.label() == o.label.label() &&
+             inclusive_min  == o.inclusive_min;
+    }
+  };
 
   /// Advance a multidimensional odometer position by one step.
   template <typename T>
   void _current_position_increment(
       std::vector<typename Variable<T>::Interval>& position,
       const std::vector<typename Variable<T>::Interval>& interval) const {
-    // Walk dimensions from fastest (last) to slowest (first)
     for (std::size_t d = position.size(); d-- > 0; ) {
       if (position[d].inclusive_min + 1 < interval[d].exclusive_max) {
         ++position[d].inclusive_min;
@@ -246,7 +274,6 @@ private:
       }
       position[d].inclusive_min = interval[d].inclusive_min;
     }
-    // Should never reach here
   }
 };
 
