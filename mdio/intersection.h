@@ -31,101 +31,107 @@ public:
 
   template <typename T>
   mdio::Future<void> add_selection(const ValueDescriptor<T>& descriptor) {
-    using Interval = typename Variable<T>::Interval;
+    // using Interval = typename Variable<T>::Interval;
 
-    MDIO_ASSIGN_OR_RETURN(auto var, dataset_.variables.get<T>(std::string(descriptor.label.label())));
-    auto fut = var.Read();
-    MDIO_ASSIGN_OR_RETURN(auto intervals, var.get_intervals());
-    if (!fut.status().ok()) return fut.status();
+    // MDIO_ASSIGN_OR_RETURN(auto var, dataset_.variables.get<T>(std::string(descriptor.label.label())));
+    // auto fut = var.Read();
+    // MDIO_ASSIGN_OR_RETURN(auto intervals, var.get_intervals());
+    // if (!fut.status().ok()) return fut.status();
 
-    auto data = fut.value();
-    const T* data_ptr = data.get_data_accessor().data();
-    Index offset = data.get_flattened_offset();
-    Index n_samples = data.num_samples();
+    // auto data = fut.value();
+    // const T* data_ptr = data.get_data_accessor().data();
+    // Index offset = data.get_flattened_offset();
+    // Index n_samples = data.num_samples();
 
-    auto current_pos = intervals;
-    bool isInRun = false;
-    std::vector<std::vector<Interval>> local_runs;
+    // auto current_pos = intervals;
+    // bool isInRun = false;
+    // std::vector<std::vector<Interval>> local_runs;
 
-    for (mdio::Index idx = offset; idx < offset + n_samples; ++idx) {
-      if (data_ptr[idx] == descriptor.value) {
-        if (!isInRun) {
-          isInRun = true;
-          std::vector<Interval> run = current_pos;
-          for (auto& pos : run) {
-            pos.exclusive_max = pos.inclusive_min + 1;
-          }
-          local_runs.push_back(std::move(run));
-        } else {
-          auto& run = local_runs.back();
-          for (auto i=0; i<current_pos.size(); ++i) {
-            run[i].exclusive_max = current_pos[i].inclusive_min + 1;
-          }
-        } 
-      } else {
-        isInRun = false;
-      }
-      _current_position_increment<T>(current_pos, intervals);
-    }
+    // for (mdio::Index idx = offset; idx < offset + n_samples; ++idx) {
+    //   if (data_ptr[idx] == descriptor.value) {
+    //     if (!isInRun) {
+    //       isInRun = true;
+    //       std::vector<Interval> run = current_pos;
+    //       for (auto& pos : run) {
+    //         pos.exclusive_max = pos.inclusive_min + 1;
+    //       }
+    //       local_runs.push_back(std::move(run));
+    //     } else {
+    //       auto& run = local_runs.back();
+    //       for (auto i=0; i<current_pos.size(); ++i) {
+    //         run[i].exclusive_max = current_pos[i].inclusive_min + 1;
+    //       }
+    //     } 
+    //   } else {
+    //     isInRun = false;
+    //   }
+    //   _current_position_increment<T>(current_pos, intervals);
+    // }
 
-    if (local_runs.empty()) {
-      std::stringstream ss;
-      ss << "No matches for coordinate '" << descriptor.label.label() << "'";
-      return absl::NotFoundError(ss.str());
-    }
+    // if (local_runs.empty()) {
+    //   std::stringstream ss;
+    //   ss << "No matches for coordinate '" << descriptor.label.label() << "'";
+    //   return absl::NotFoundError(ss.str());
+    // }
 
-    auto new_runs = _from_intervals<T>(local_runs);
+    // auto new_runs = _from_intervals<T>(local_runs);
 
-    // First time calling add_selection_2
+    // // First time calling add_selection_2
+    // if (kept_runs_.empty()) {
+    //   kept_runs_ = std::move(new_runs);
+    // } else {
+    //   // now intersect each kept_run with each new local run
+    //   std::vector<std::vector<mdio::RangeDescriptor<mdio::Index>>> new_kept;
+    //   new_kept.reserve(kept_runs_.size() * local_runs.size());
+
+    //   for (const auto& kept : kept_runs_) {
+    //     for (const auto& run : new_runs) {
+    //       // start from the old run
+    //       auto intersection = kept;
+    //       bool empty = false;
+
+    //       // for each descriptor in the new run...
+    //       for (const auto& d_new : run) {
+    //         // try to find the same label in the kept run
+    //         auto it = std::find_if(
+    //           intersection.begin(), intersection.end(),
+    //           [&](auto const& d_old) {
+    //             return d_old.label.label() == d_new.label.label();
+    //           });
+
+    //         if (it != intersection.end()) {
+    //           // intersect intervals
+    //           auto& d_old = *it;
+    //           auto new_min = std::max(d_old.start, d_new.start);
+    //           auto new_max = std::min(d_old.stop, d_new.stop);
+    //           if (new_min >= new_max) {
+    //             empty = true;
+    //             break;
+    //           }
+    //           d_old.start = new_min;
+    //           d_old.stop = new_max;
+    //         } else {
+    //           // brand-new dimension: append it
+    //           intersection.push_back(d_new);
+    //         }
+    //       }
+
+    //       if (!empty) {
+    //         new_kept.push_back(std::move(intersection));
+    //       }
+    //     }
+    //   }
+
+    //   kept_runs_ = std::move(new_kept);
+    // }
+
+    // return absl::OkStatus();
+
     if (kept_runs_.empty()) {
-      kept_runs_ = std::move(new_runs);
+      return _init_runs(descriptor);
     } else {
-      // now intersect each kept_run with each new local run
-      std::vector<std::vector<mdio::RangeDescriptor<mdio::Index>>> new_kept;
-      new_kept.reserve(kept_runs_.size() * local_runs.size());
-
-      for (const auto& kept : kept_runs_) {
-        for (const auto& run : new_runs) {
-          // start from the old run
-          auto intersection = kept;
-          bool empty = false;
-
-          // for each descriptor in the new run...
-          for (const auto& d_new : run) {
-            // try to find the same label in the kept run
-            auto it = std::find_if(
-              intersection.begin(), intersection.end(),
-              [&](auto const& d_old) {
-                return d_old.label.label() == d_new.label.label();
-              });
-
-            if (it != intersection.end()) {
-              // intersect intervals
-              auto& d_old = *it;
-              auto new_min = std::max(d_old.start, d_new.start);
-              auto new_max = std::min(d_old.stop, d_new.stop);
-              if (new_min >= new_max) {
-                empty = true;
-                break;
-              }
-              d_old.start = new_min;
-              d_old.stop = new_max;
-            } else {
-              // brand-new dimension: append it
-              intersection.push_back(d_new);
-            }
-          }
-
-          if (!empty) {
-            new_kept.push_back(std::move(intersection));
-          }
-        }
-      }
-
-      kept_runs_ = std::move(new_kept);
+      return _add_new_run(descriptor);
     }
-
-    return absl::OkStatus();
   }
 
   /// \brief Emit a RangeDescriptor per surviving tuple coordinate, without coalescing.
@@ -157,10 +163,15 @@ public:
     std::vector<T> keys;
     keys.reserve(n);
     for (auto &f : reads) {
-      if (!f.status().ok()) return f.status();
-      auto data = f.value();
-      keys.push_back(data.get_data_accessor().data()[data.get_flattened_offset()]
-      );
+      // if (!f.status().ok()) return f.status();
+      // auto data = f.value();
+      // keys.push_back(data.get_data_accessor().data()[data.get_flattened_offset()]);
+      MDIO_ASSIGN_OR_RETURN(auto resolution, _resolve_future<T>(f));
+      auto data = std::get<0>(resolution);
+      auto data_ptr = std::get<1>(resolution);
+      auto offset = std::get<2>(resolution);
+      // auto n = std::get<3>(resolution);  // Not required
+      keys.push_back(data_ptr[offset]);
     }
 
     // 2) Build and stable-sort an index array [0…n-1] by key
@@ -193,11 +204,11 @@ public:
       MDIO_ASSIGN_OR_RETURN(auto ds, non_const_ds.isel(desc));
       MDIO_ASSIGN_OR_RETURN(auto var, ds.variables.get<T>(output_variable));
       auto fut = var.Read();
-      if (!fut.status().ok()) return fut.status();
-      auto data = fut.value();
-      T* data_ptr = data.get_data_accessor().data();
-      Index n = data.num_samples();
-      Index offset = data.get_flattened_offset();
+      MDIO_ASSIGN_OR_RETURN(auto resolution, _resolve_future<T>(fut));
+      auto data = std::get<0>(resolution);
+      auto data_ptr = std::get<1>(resolution);
+      auto offset = std::get<2>(resolution);
+      auto n = std::get<3>(resolution);
       std::vector<T> buffer(n);
       std::memcpy(buffer.data(), data_ptr + offset, n * sizeof(T));
       ret.insert(ret.end(), buffer.begin(), buffer.end());
@@ -212,6 +223,58 @@ private:
   const Dataset& dataset_;
   tensorstore::IndexDomain<> base_domain_;
   std::vector<std::vector<mdio::RangeDescriptor<mdio::Index>>> kept_runs_;
+
+  template <typename T>
+  Future<void> _init_runs(const ValueDescriptor<T>& descriptor) {
+    using Interval = typename Variable<T>::Interval;
+    MDIO_ASSIGN_OR_RETURN(auto var, dataset_.variables.get<T>(std::string(descriptor.label.label())));
+    auto fut = var.Read();
+    MDIO_ASSIGN_OR_RETURN(auto intervals, var.get_intervals());
+    MDIO_ASSIGN_OR_RETURN(auto resolution, _resolve_future<T>(fut));
+    auto data = std::get<0>(resolution);
+    auto data_ptr = std::get<1>(resolution);
+    auto offset = std::get<2>(resolution);
+    auto n_samples = std::get<3>(resolution);
+
+    auto current_pos = intervals;
+    bool isInRun = false;
+    std::vector<std::vector<Interval>> local_runs;
+
+    for (mdio::Index idx = offset; idx < offset + n_samples; ++idx) {
+      if (data_ptr[idx] == descriptor.value) {
+        if (!isInRun) {
+          isInRun = true;
+          std::vector<Interval> run = current_pos;
+          for (auto& pos : run) {
+            pos.exclusive_max = pos.inclusive_min + 1;
+          }
+          local_runs.push_back(std::move(run));
+        } else {
+          auto& run = local_runs.back();
+          for (auto i=0; i<current_pos.size(); ++i) {
+            run[i].exclusive_max = current_pos[i].inclusive_min + 1;
+          }
+        } 
+      } else {
+        isInRun = false;
+      }
+      _current_position_increment<T>(current_pos, intervals);
+    }
+
+    if (local_runs.empty()) {
+      std::stringstream ss;
+      ss << "No matches for coordinate '" << descriptor.label.label() << "'";
+      return absl::NotFoundError(ss.str());
+    }
+
+    kept_runs_ = _from_intervals<T>(local_runs);
+    return absl::OkStatus();
+  }
+
+  template <typename T>
+  Future<void> _add_new_run(const ValueDescriptor<T>& descriptor) {
+    return absl::UnimplementedError("Adding selection to an existing IndexSelection is not yet implemented");
+  }
 
   template <typename T>
   std::vector<std::vector<mdio::RangeDescriptor<mdio::Index>>> _from_intervals(std::vector<std::vector<typename mdio::Variable<T>::Interval>>& intervals) {
@@ -240,6 +303,16 @@ private:
       }
       position[d].inclusive_min = interval[d].inclusive_min;
     }
+  }
+
+  template <typename T>
+  Result<std::tuple<VariableData<T>, const T*, Index, Index>> _resolve_future(Future<VariableData<T>>& fut) {
+    if (!fut.status().ok()) return fut.status();
+    auto data = fut.value();
+    const T* data_ptr = data.get_data_accessor().data();
+    Index offset = data.get_flattened_offset();
+    Index n_samples = data.num_samples();
+    return std::make_tuple(std::move(data), data_ptr, offset, n_samples);
   }
 };
 
