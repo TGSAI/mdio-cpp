@@ -102,13 +102,23 @@ public:
   template <typename T>
   Future<std::vector<T>> run_values(const std::string& output_variable) {
     auto non_const_ds = dataset_;
+    std::vector<Future<VariableData<T>>> reads;
+    reads.reserve(kept_runs_.size());
     std::vector<T> ret;
 
     for (const auto& desc : kept_runs_) {
       MDIO_ASSIGN_OR_RETURN(auto ds, non_const_ds.isel(desc));
       MDIO_ASSIGN_OR_RETURN(auto var, ds.variables.get<T>(output_variable));
       auto fut = var.Read();
-      MDIO_ASSIGN_OR_RETURN(auto resolution, _resolve_future<T>(fut));
+      reads.push_back(fut);
+      if (var.rank() == 1) {
+        break;
+      }
+    }
+
+
+    for (auto& f : reads) {
+      MDIO_ASSIGN_OR_RETURN(auto resolution, _resolve_future<T>(f));
       auto data = std::get<0>(resolution);
       auto data_ptr = std::get<1>(resolution);
       auto offset = std::get<2>(resolution);
@@ -116,9 +126,6 @@ public:
       std::vector<T> buffer(n);
       std::memcpy(buffer.data(), data_ptr + offset, n * sizeof(T));
       ret.insert(ret.end(), buffer.begin(), buffer.end());
-      if (var.rank() == 1) {
-        return ret;
-      }
     }
     return ret;
   }
