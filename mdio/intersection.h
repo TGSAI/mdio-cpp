@@ -140,79 +140,71 @@ public:
     return ret;
   }
 
-  template <typename InputType, typename OutputType>
-  Future<std::vector<OutputType>> run_view(const std::string& sort_key, const std::string& output_variable) {
+  template <typename T>
+  Future<void> sort_runs(const std::string& sort_key) {
     auto non_const_ds = dataset_;
-    // const auto& descs = range_descriptors();
-    const auto& descs = kept_runs_;
+    const size_t n = kept_runs_.size();
 
-    std::vector<OutputType> ret;
-
-    std::size_t descs_idx = 0;
-    std::vector<std::pair<std::size_t, Future<VariableData<InputType>>>> run_list_fut;
-    std::vector<std::pair<std::size_t, InputType>> run_list;
-
-    bool sort_key_is_dimension = false;
-    std::size_t total_volume = 0;
-
-    run_list.reserve(descs.size());
-    std::cout << "Grabbing " << descs.size() << " coordinates from " << sort_key << std::endl;
-    for (const auto& desc : descs) {
-      MDIO_ASSIGN_OR_RETURN(auto segmentedDs, non_const_ds.isel(desc));
-      MDIO_ASSIGN_OR_RETURN(auto var, segmentedDs.variables.get<InputType>(sort_key));
-      auto fut = var.Read();
-      run_list_fut.emplace_back(descs_idx, fut);
-      descs_idx++;
-
-      total_volume += var.num_samples();
-
-      if (var.rank() == 1) {
-        sort_key_is_dimension = true;
-        break;
-      }
+    // 1) Fire off all reads in parallel and gather the key values
+    std::vector<Future<VariableData<T>>> reads;
+    reads.reserve(n);
+    for (auto const& desc : kept_runs_) {
+      MDIO_ASSIGN_OR_RETURN(auto ds, non_const_ds.isel(desc));
+      MDIO_ASSIGN_OR_RETURN(auto var, ds.variables.get<T>(sort_key));
+      reads.push_back(var.Read());
     }
 
-    ret.reserve(total_volume);
-    run_list.reserve(run_list_fut.size());
-
-    // std::cout << "Awaiting futures..." << std::endl;
-    for (auto& fut : run_list_fut) {
-      if (!fut.second.status().ok()) return fut.second.status();
-      auto data = fut.second.value();
-      auto val = data.get_data_accessor().data()[data.get_flattened_offset()];
-      run_list.emplace_back(fut.first, val);
+    std::vector<T> keys;
+    keys.reserve(n);
+    for (auto &f : reads) {
+      if (!f.status().ok()) return f.status();
+      auto data = f.value();
+      keys.push_back(data.get_data_accessor().data()[data.get_flattened_offset()]
+      );
     }
-    run_list_fut.clear(); // Clear to save memory
 
-    // std::cout << "Sorting..." << std::endl;
-    std::stable_sort(run_list.begin(), run_list.end(), [](auto const& a, auto const& b) {
-      return a.second < b.second;
-    });
+    // 2) Build and stable-sort an index array [0…n-1] by key
+    std::vector<size_t> idx(n);
+    std::iota(idx.begin(), idx.end(), 0);
+    std::stable_sort(
+      idx.begin(), idx.end(),
+      [&](size_t a, size_t b) { return keys[a] < keys[b]; }
+    );
 
-    // std::cout << "Building longest-run based vector..." << std::endl;
-    // Now we build the Run<T> object.
-    for (const auto& run : run_list) {
-      auto desc = descs[run.first];
-      MDIO_ASSIGN_OR_RETURN(auto segmentedDs, non_const_ds.isel(desc));
-      MDIO_ASSIGN_OR_RETURN(auto var, segmentedDs.variables.template get<OutputType>(output_variable));
+    // 3) One linear, move-only pass into a temp buffer
+    using Desc = std::decay_t<decltype(kept_runs_)>::value_type;
+    std::vector<Desc> tmp;
+    tmp.reserve(n);
+    for (size_t new_pos = 0; new_pos < n; ++new_pos) {
+      tmp.emplace_back(std::move(kept_runs_[ idx[new_pos] ]));
+    }
+
+    // 4) Steal the buffer back
+    kept_runs_ = std::move(tmp);
+    return absl::OkStatus();
+  }
+
+  template <typename T>
+  Future<std::vector<T>> run_values(const std::string& output_variable) {
+    auto non_const_ds = dataset_;
+    std::vector<T> ret;
+
+    for (const auto& desc : kept_runs_) {
+      MDIO_ASSIGN_OR_RETURN(auto ds, non_const_ds.isel(desc));
+      MDIO_ASSIGN_OR_RETURN(auto var, ds.variables.get<T>(output_variable));
       auto fut = var.Read();
       if (!fut.status().ok()) return fut.status();
       auto data = fut.value();
-      OutputType* data_ptr = data.get_data_accessor().data();
-      Index offset = data.get_flattened_offset();
+      T* data_ptr = data.get_data_accessor().data();
       Index n = data.num_samples();
-      std::vector<OutputType> buffer(n);
-      std::memcpy(buffer.data(), data_ptr + offset, n * sizeof(OutputType));
+      Index offset = data.get_flattened_offset();
+      std::vector<T> buffer(n);
+      std::memcpy(buffer.data(), data_ptr + offset, n * sizeof(T));
       ret.insert(ret.end(), buffer.begin(), buffer.end());
-
-      if (sort_key_is_dimension) {
-        // std::cout << "Returning early due to sort key being dimension" << std::endl;
+      if (var.rank() == 1) {
         return ret;
       }
-
     }
-
-    // std::cout << "Done!" << std::endl;
     return ret;
   }
 
