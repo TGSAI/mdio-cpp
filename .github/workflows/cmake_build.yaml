@@ -51,4 +51,5 @@ jobs:
           && ./mdio_stats_test \
           && ./mdio_utils_trim_test \
           && ./mdio_utils_delete_test \
-          && ./mdio_variable_collection_test
+          && ./mdio_variable_collection_test \
+          && ./mdio_coordinate_selector_test
