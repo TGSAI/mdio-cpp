@@ -21,7 +21,7 @@
 #ifndef MDIO_MDIO_H_
 #define MDIO_MDIO_H_
 
-#include "mdio/dataset.h"
 #include "mdio/coordinate_selector.h"
+#include "mdio/dataset.h"
 
 #endif  // MDIO_MDIO_H_

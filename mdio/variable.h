@@ -1002,8 +1002,9 @@ class Variable {
     }
 
     if (slices.size() > internal::kMaxNumSlices) {
-      // We are expecting the only entry point for this method to be fro mthe Dataset::isel method.
-      // That method should handle the partitioning of the slices.
+      // We are expecting the only entry point for this method to be fro mthe
+      // Dataset::isel method. That method should handle the partitioning of the
+      // slices.
       return absl::InvalidArgumentError(
           absl::StrCat("Too many slices provided or implicitly generated. "
                        "Maximum number of slices is ",
@@ -1042,121 +1043,104 @@ class Variable {
    * @return An `mdio::Result` object containing the resulting sub-Variable.
    */
   template <typename... Descriptors>
-Result<Variable> slice(const Descriptors&... descriptors) const {
-  // 1) Pack descriptors
-  constexpr size_t N = sizeof...(Descriptors);
-  std::array<RangeDescriptor<Index>, N> descs = { descriptors... };
+  Result<Variable> slice(const Descriptors&... descriptors) const {
+    // 1) Pack descriptors
+    constexpr size_t N = sizeof...(Descriptors);
+    std::array<RangeDescriptor<Index>, N> descs = {descriptors...};
 
-  // 2) Clamp + precondition check
-  std::vector<DimensionIdentifier> labels;
-  std::vector<Index> starts, stops, steps;
-  labels.reserve(N);
-  starts.reserve(N);
-  stops.reserve(N);
-  steps.reserve(N);
+    // 2) Clamp + precondition check
+    std::vector<DimensionIdentifier> labels;
+    std::vector<Index> starts, stops, steps;
+    labels.reserve(N);
+    starts.reserve(N);
+    stops.reserve(N);
+    steps.reserve(N);
 
-  int8_t bad_idx = -1;
-  for (size_t i = 0; i < N; ++i) {
-    auto d = sliceInRange(descs[i]);
-    if (d.start > d.stop) {
-      bad_idx = static_cast<int8_t>(i);
-      break;
-    }
-    if (this->hasLabel(d.label)) {
-      labels.push_back(d.label);
-      starts.push_back(d.start);
-      stops.push_back(d.stop);
-      steps.push_back(d.step);
-    }
-  }
-  if (bad_idx >= 0) {
-    auto& err = descs[bad_idx];
-    return Result<Variable>{absl::InvalidArgumentError(
-      std::string("Slice descriptor for ") + std::string(err.label.label()) +
-      " is invalid: start=" + std::to_string(err.start) +
-      " > stop=" + std::to_string(err.stop)
-    )};
-  }
-
-  // 3) Fast path: all labels (or axis indices) are unique
-  if (!labels.empty()) {
-    std::set<std::string_view>  labelSet;
-    std::set<DimensionIndex>    indexSet;
-    for (auto& lab : labels) {
-      labelSet.insert(lab.label());
-      indexSet.insert(lab.index());
-    }
-    if (labelSet.size() == labels.size() ||
-        indexSet.size() == labels.size()) {
-      MDIO_ASSIGN_OR_RETURN(
-        auto slice_store,
-        store | tensorstore::Dims(labels)
-                  .HalfOpenInterval(starts, stops, steps)
-      );
-      return Variable{
-        variableName,
-        longName,
-        metadata,
-        std::move(slice_store),
-        attributes
-      };
-    }
-  }
-
-  // 4) Group by label to find any duplicates
-  std::map<std::string_view,
-           std::vector<RangeDescriptor<Index>>> by_label;
-  for (auto& d : descs) {
-    if (d.label.label() != internal::kInertSliceKey) {
-      by_label[d.label.label()].push_back(d);
-    }
-  }
-
-  // 5) Handle the first label that has >1 descriptor
-  for (auto& [label, vec] : by_label) {
-    if (vec.size() > 1) {
-      // 5a) Unwrap the Spec so we can ask for transform().input_labels()
-      MDIO_ASSIGN_OR_RETURN(auto spec, store.spec());
-      auto spec_labels = spec.transform().input_labels();
-
-      // find the numeric axis for this label
-      auto it = std::find(spec_labels.begin(),
-                          spec_labels.end(),
-                          label);
-      if (it == spec_labels.end()) {
-        // no-op if the label isn't in the spec; skip it
-        continue;
+    int8_t bad_idx = -1;
+    for (size_t i = 0; i < N; ++i) {
+      auto d = sliceInRange(descs[i]);
+      if (d.start > d.stop) {
+        bad_idx = static_cast<int8_t>(i);
+        break;
       }
-      int axis = static_cast<int>(std::distance(spec_labels.begin(), it));
-
-      // 5b) Slice each sub‑range in isolation
-      std::vector<tensorstore::TensorStore<T, R, M>> pieces;
-      pieces.reserve(vec.size());
-      for (auto& r : vec) {
-        auto sub = slice(r);
-        if (!sub.status().ok()) return sub.status();
-        pieces.push_back(sub.value().get_store());
+      if (this->hasLabel(d.label)) {
+        labels.push_back(d.label);
+        starts.push_back(d.start);
+        stops.push_back(d.stop);
+        steps.push_back(d.step);
       }
-
-      // 5c) Concatenate them along the correct axis
-      MDIO_ASSIGN_OR_RETURN(
-        auto cat_store,
-        tensorstore::Concat(pieces, axis)
-      );
-
-      return Variable{
-        variableName,
-        longName,
-        metadata,
-        std::move(cat_store),
-        attributes
-      };
     }
-  }
+    if (bad_idx >= 0) {
+      auto& err = descs[bad_idx];
+      return Result<Variable>{absl::InvalidArgumentError(
+          std::string("Slice descriptor for ") +
+          std::string(err.label.label()) + " is invalid: start=" +
+          std::to_string(err.start) + " > stop=" + std::to_string(err.stop))};
+    }
 
-  // 6) No descriptors matched → no change
-  return *this;
-}
+    // 3) Fast path: all labels (or axis indices) are unique
+    if (!labels.empty()) {
+      std::set<std::string_view> labelSet;
+      std::set<DimensionIndex> indexSet;
+      for (auto& lab : labels) {
+        labelSet.insert(lab.label());
+        indexSet.insert(lab.index());
+      }
+      if (labelSet.size() == labels.size() ||
+          indexSet.size() == labels.size()) {
+        MDIO_ASSIGN_OR_RETURN(
+            auto slice_store,
+            store | tensorstore::Dims(labels).HalfOpenInterval(starts, stops,
+                                                               steps));
+        return Variable{variableName, longName, metadata,
+                        std::move(slice_store), attributes};
+      }
+    }
+
+    // 4) Group by label to find any duplicates
+    std::map<std::string_view, std::vector<RangeDescriptor<Index>>> by_label;
+    for (auto& d : descs) {
+      if (d.label.label() != internal::kInertSliceKey) {
+        by_label[d.label.label()].push_back(d);
+      }
+    }
+
+    // 5) Handle the first label that has >1 descriptor
+    for (auto& [label, vec] : by_label) {
+      if (vec.size() > 1) {
+        // 5a) Unwrap the Spec so we can ask for transform().input_labels()
+        MDIO_ASSIGN_OR_RETURN(auto spec, store.spec());
+        auto spec_labels = spec.transform().input_labels();
+
+        // find the numeric axis for this label
+        auto it = std::find(spec_labels.begin(), spec_labels.end(), label);
+        if (it == spec_labels.end()) {
+          // no-op if the label isn't in the spec; skip it
+          continue;
+        }
+        int axis = static_cast<int>(std::distance(spec_labels.begin(), it));
+
+        // 5b) Slice each sub‑range in isolation
+        std::vector<tensorstore::TensorStore<T, R, M>> pieces;
+        pieces.reserve(vec.size());
+        for (auto& r : vec) {
+          auto sub = slice(r);
+          if (!sub.status().ok()) return sub.status();
+          pieces.push_back(sub.value().get_store());
+        }
+
+        // 5c) Concatenate them along the correct axis
+        MDIO_ASSIGN_OR_RETURN(auto cat_store,
+                              tensorstore::Concat(pieces, axis));
+
+        return Variable{variableName, longName, metadata, std::move(cat_store),
+                        attributes};
+      }
+    }
+
+    // 6) No descriptors matched → no change
+    return *this;
+  }
 
   /**
    * @brief Retrieves the spec of the Variable as a JSON object.
@@ -1513,7 +1497,9 @@ Result<Variable> slice(const Descriptors&... descriptors) const {
   const tensorstore::TensorStore<T, R, M>& get_store() const { return store; }
 
   tensorstore::TensorStore<T, R, M>& get_mutable_store() { return store; }
-  void set_store(tensorstore::TensorStore<T, R, M>& new_store) { store = new_store; }
+  void set_store(tensorstore::TensorStore<T, R, M>& new_store) {
+    store = new_store;
+  }
 
   // The data that should remain static, but MAY need to be updated.
   std::shared_ptr<std::shared_ptr<UserAttributes>> attributes;
