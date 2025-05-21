@@ -26,6 +26,25 @@ void timer(std::chrono::high_resolution_clock::time_point start) {
 }
 #endif
 
+//— helper to tag multi-key sorts ——
+template<typename T>
+struct SortKey {
+  std::string key;
+  using value_type = T;
+};
+
+//— trait to detect ValueDescriptor<T> ——
+template<typename D> struct is_value_descriptor : std::false_type {};
+template<typename T> struct is_value_descriptor<ValueDescriptor<T>> : std::true_type {};
+template<typename D>
+inline constexpr bool is_value_descriptor_v = is_value_descriptor<std::decay_t<D>>::value;
+
+//— trait to detect SortKey<T> ——
+template<typename D> struct is_sort_key : std::false_type {};
+template<typename T> struct is_sort_key<SortKey<T>> : std::true_type {};
+template<typename D>
+inline constexpr bool is_sort_key_v = is_sort_key<std::decay_t<D>>::value;
+
 /// \brief Collects valid index selections per dimension for a Dataset without
 /// performing slicing immediately.
 ///
@@ -37,7 +56,24 @@ public:
   explicit CoordinateSelector(const Dataset& dataset)
       : dataset_(dataset), base_domain_(dataset.domain) {}
 
+template <typename OutT, typename... Ops>
+Future<std::vector<OutT>> ReadDataVariable(const std::string& data_variable, Ops const&... ops) {
+  // 1) apply filters & sorts in the exact order given
+  absl::Status st = absl::OkStatus();
+  ((st = st.ok() ? _applyOp(ops).status() : st), ...);
+  if (!st.ok()) return st;
 
+  // 2) finally read out the requested variable
+  return readSelection<OutT>(data_variable);
+}
+
+  /**
+   * @brief Filter the Dataset by the given coordinate.
+   * Limitations: 
+   * - Only a single filter is currently tested.
+   * - A bug exists if the filter value does not make a perfect hyper-rectangle within its dimensions.
+   * 
+   */
   template <typename T>
   mdio::Future<void> filterByCoordinate(const ValueDescriptor<T>& descriptor) {
     if (kept_runs_.empty()) {
@@ -166,6 +202,28 @@ private:
   const Dataset& dataset_;
   tensorstore::IndexDomain<> base_domain_;
   std::vector<std::vector<mdio::RangeDescriptor<mdio::Index>>> kept_runs_;
+
+  template<typename D>
+  Future<void> _applyOp(D const& op) {
+    if constexpr (is_value_descriptor_v<D>) {
+      auto fut = filterByCoordinate(op);
+      if (!fut.status().ok()) {
+        return fut.status();
+      }
+      return absl::OkStatus();
+    } else if constexpr (is_sort_key_v<D>) {
+      using SortT = typename std::decay_t<D>::value_type;
+      auto fut = sortSelectionByKey<SortT>(op.key);
+      if (!fut.status().ok()) {
+        return fut.status();
+      }
+      return absl::OkStatus();
+    } else {
+      return absl::UnimplementedError(
+        "query(): RangeDescriptor and ListDescriptor not supported");
+    }
+  }
+
 
   /*
   TODO: The built RangeDescriptors aren't behaving as I hoped.
