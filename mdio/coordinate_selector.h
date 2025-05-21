@@ -274,11 +274,22 @@ private:
 
     auto non_const_ds = dataset_;
 
+    bool is_first_run = true;
+
     for (const auto& desc : kept_runs_) {
       MDIO_ASSIGN_OR_RETURN(auto ds, non_const_ds.isel(desc));
       MDIO_ASSIGN_OR_RETURN(auto var, ds.variables.get<T>(std::string(descriptor.label.label())));
       auto fut = var.Read();
       MDIO_ASSIGN_OR_RETURN(auto intervals, var.get_intervals());
+
+      if (is_first_run) {
+        is_first_run = false;
+        if (intervals.size() != kept_runs_[0].size()) {
+          std::cout << "WARNING: Different coordinate dimensions detected. This behavior is not yet supported." << std::endl;
+          std::cout << "\tFor expected behavior, please ensure all previous dimensions are less than or equal to the current dimension." << std::endl;
+        }
+      }
+
       stored_intervals.push_back(std::move(intervals));  // Just to ensure nothing gets freed prematurely.
       MDIO_ASSIGN_OR_RETURN(auto resolution, _resolve_future<T>(fut));
       auto data = std::get<0>(resolution);
