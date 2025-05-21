@@ -14,7 +14,7 @@
 #include "tensorstore/index_space/index_transform_builder.h"
 #include "tensorstore/box.h"
 
-#define MDIO_INTERNAL_PROFILING 0  // TODO(BrianMichell): Remove simple profiling code once we approach a more mature API access.
+// #define MDIO_INTERNAL_PROFILING 0  // TODO(BrianMichell): Remove simple profiling code once we approach a more mature API access.
 
 namespace mdio {
 
@@ -56,16 +56,16 @@ public:
   explicit CoordinateSelector(const Dataset& dataset)
       : dataset_(dataset), base_domain_(dataset.domain) {}
 
-template <typename OutT, typename... Ops>
-Future<std::vector<OutT>> ReadDataVariable(const std::string& data_variable, Ops const&... ops) {
-  // 1) apply filters & sorts in the exact order given
-  absl::Status st = absl::OkStatus();
-  ((st = st.ok() ? _applyOp(ops).status() : st), ...);
-  if (!st.ok()) return st;
+  template <typename OutT, typename... Ops>
+  Future<std::vector<OutT>> ReadDataVariable(const std::string& data_variable, Ops const&... ops) {
+    // 1) apply filters & sorts in the exact order given
+    absl::Status st = absl::OkStatus();
+    ((st = st.ok() ? _applyOp(ops).status() : st), ...);
+    if (!st.ok()) return st;
 
-  // 2) finally read out the requested variable
-  return readSelection<OutT>(data_variable);
-}
+    // 2) finally read out the requested variable
+    return readSelection<OutT>(data_variable);
+  }
 
   /**
    * @brief Filter the Dataset by the given coordinate.
