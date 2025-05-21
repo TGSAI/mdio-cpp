@@ -282,7 +282,8 @@ private:
       } else if (!is_match && isInRun) {
         // The end of a run
         isInRun = false;
-        for (auto i=run_idx; i<idx; ++i) {
+        // Use 1 less than the current index to ensure we get the correct end location.
+        for (auto i=run_idx; i<idx-1; ++i) {
           _current_position_increment<T>(current_pos, intervals);
         }
         // _current_position_stride<T>(current_pos, intervals, idx - run_idx);
@@ -291,6 +292,8 @@ private:
         for (auto i=0; i<current_pos.size(); ++i) {
           last_run[i].exclusive_max = current_pos[i].inclusive_min + 1;
         }
+        // We need to advance to the actual current position
+        _current_position_increment<T>(current_pos, intervals);
       } else if (!is_match && !isInRun) {
         // No run at all
         // do nothing TODO: Remove me
@@ -375,6 +378,7 @@ private:
           // do nothing TODO: Remove me
         } else if (!is_match && isInRun) {
           // The end of a run
+          // TODO(BrianMichell): Ensure we are using the correct index (see above)
           isInRun = false;
           for (auto i=run_idx; i<idx; ++i) {
             _current_position_increment<T>(current_pos, intervals);
