@@ -17,6 +17,7 @@
 
 #include <filesystem>
 #include <limits>
+#include <map>
 #include <memory>
 #include <queue>
 #include <set>
@@ -1497,7 +1498,8 @@ class Variable {
   const tensorstore::TensorStore<T, R, M>& get_store() const { return store; }
 
   tensorstore::TensorStore<T, R, M>& get_mutable_store() { return store; }
-  void set_store(tensorstore::TensorStore<T, R, M>& new_store) {
+  void set_store(
+      tensorstore::TensorStore<T, R, M>& new_store) {  // NOLINT (non-const)
     store = new_store;
   }
 

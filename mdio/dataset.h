@@ -16,6 +16,7 @@
 
 #define MDIO_API_VERSION "1.0.0"
 
+#include <algorithm>
 #include <cstddef>
 #include <fstream>
 #include <limits>

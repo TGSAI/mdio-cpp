@@ -1,5 +1,24 @@
-#ifndef MDIO_INTERSECTION_H
-#define MDIO_INTERSECTION_H
+// Copyright 2025 TGS
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+
+//    http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#ifndef MDIO_COORDINATE_SELECTOR_H_
+#define MDIO_COORDINATE_SELECTOR_H_
+
+#include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
 
 #include "mdio/dataset.h"
 #include "mdio/impl.h"
@@ -425,8 +444,8 @@ class CoordinateSelector {
     }
 
     kept_runs_ = _from_intervals<T>(
-        new_runs);  // TODO: We need to ensure we don't accidentally drop any
-                    // pre-sliced dimensions...
+        new_runs);  // TODO(BrianMichell): We need to ensure we don't
+                    // accidentally drop any pre-sliced dimensions...
     return absl::OkStatus();
   }
 
@@ -451,7 +470,8 @@ class CoordinateSelector {
   /// Advance a multidimensional odometer position by one step.
   template <typename T>
   void _current_position_increment(
-      std::vector<typename Variable<T>::Interval>& position,
+      std::vector<typename Variable<T>::Interval>&
+          position,  // NOLINT (non-const)
       const std::vector<typename Variable<T>::Interval>& interval) const {
     for (std::size_t d = position.size(); d-- > 0;) {
       if (position[d].inclusive_min + 1 < interval[d].exclusive_max) {
@@ -464,7 +484,8 @@ class CoordinateSelector {
 
   template <typename T>
   void _current_position_stride(
-      std::vector<typename Variable<T>::Interval>& position,
+      std::vector<typename Variable<T>::Interval>&
+          position,  // NOLINT (non-const)
       const std::vector<typename Variable<T>::Interval>& interval,
       const std::size_t num_elements) {
     auto dims = position.size();
@@ -481,7 +502,7 @@ class CoordinateSelector {
 
   template <typename T>
   Result<std::tuple<VariableData<T>, const T*, Index, Index>> _resolve_future(
-      Future<VariableData<T>>& fut) {
+      Future<VariableData<T>>& fut) {  // NOLINT (non-const)
     if (!fut.status().ok()) return fut.status();
     auto data = fut.value();
     const T* data_ptr = data.get_data_accessor().data();
@@ -493,4 +514,4 @@ class CoordinateSelector {
 
 }  // namespace mdio
 
-#endif  // MDIO_INTERSECTION_H
+#endif  // MDIO_COORDINATE_SELECTOR_H_
