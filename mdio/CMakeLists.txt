@@ -337,9 +337,9 @@ mdio_cc_test(
 
 mdio_cc_test(
   NAME
-    intersection_test
+    coordinate_selector_test
   SRCS
-    intersection_test.cc
+    coordinate_selector_test.cc
   COPTS
     ${mdio_DEFAULT_COPTS} 
   LINKOPTS
