@@ -15,6 +15,7 @@
 #ifndef MDIO_COORDINATE_SELECTOR_H_
 #define MDIO_COORDINATE_SELECTOR_H_
 
+#include <map>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -80,17 +81,15 @@ inline constexpr bool is_sort_key_v = is_sort_key<std::decay_t<D>>::value;
 class CoordinateSelector {
  public:
   /// Construct from an existing Dataset (captures its full domain).
-  explicit CoordinateSelector(Dataset& dataset)
+  explicit CoordinateSelector(Dataset& dataset)  // NOLINT (non-const)
       : dataset_(dataset), base_domain_(dataset.domain) {}
 
-   template<typename... OutTs, typename... Ops>
+  template <typename... OutTs, typename... Ops>
   Future<std::tuple<std::vector<OutTs>...>> ReadDataVariables(
-      std::vector<std::string> const& data_variables,
-      Ops const&...                   ops)
-  {
+      std::vector<std::string> const& data_variables, Ops const&... ops) {
     if (data_variables.size() != sizeof...(OutTs)) {
       return absl::InvalidArgumentError(
-        "ReadDataVariables: number of names must match number of OutTs");
+          "ReadDataVariables: number of names must match number of OutTs");
     }
     // 1) apply all filters & sorts in order
     absl::Status st = absl::OkStatus();
@@ -101,9 +100,7 @@ class CoordinateSelector {
     return _readMultiple<OutTs...>(data_variables);
   }
 
-  void reset() {
-    kept_runs_.clear();
-  }
+  void reset() { kept_runs_.clear(); }
 
   /**
    * @brief Filter the Dataset by the given coordinate.
@@ -261,40 +258,33 @@ class CoordinateSelector {
   }
 
   // helper: expands readSelection<OutTs>(vars[I])...
-  template<typename... OutTs, std::size_t... I>
+  template <typename... OutTs, std::size_t... I>
   Future<std::tuple<std::vector<OutTs>...>> _readMultipleImpl(
-      std::vector<std::string> const& vars,
-      std::index_sequence<I...>)
-  {
+      std::vector<std::string> const& vars, std::index_sequence<I...>) {
     // 1) start all reads
-    auto futs = std::make_tuple(
-      readSelection<OutTs>(vars[I])...
-    );
+    auto futs = std::make_tuple(readSelection<OutTs>(vars[I])...);
 
     // 2) wait on them in order
     absl::Status st = absl::OkStatus();
     std::tuple<std::vector<OutTs>...> results;
     // fold over I...
     (
-      [&](){
-        if (!st.ok()) return;
-        auto& f = std::get<I>(futs);
-        st = f.status();
-        if (st.ok()) std::get<I>(results) = std::move(f.value());
-      }(),
-      ...
-    );
+        [&]() {
+          if (!st.ok()) return;
+          auto& f = std::get<I>(futs);
+          st = f.status();
+          if (st.ok()) std::get<I>(results) = std::move(f.value());
+        }(),
+        ...);
     if (!st.ok()) return st;
     return results;
   }
 
-  template<typename... OutTs>
+  template <typename... OutTs>
   Future<std::tuple<std::vector<OutTs>...>> _readMultiple(
-      std::vector<std::string> const& vars)
-  {
-    return _readMultipleImpl<OutTs...>(
-      vars, std::index_sequence_for<OutTs...>{}
-    );
+      std::vector<std::string> const& vars) {
+    return _readMultipleImpl<OutTs...>(vars,
+                                       std::index_sequence_for<OutTs...>{});
   }
 
   /*
@@ -315,28 +305,31 @@ class CoordinateSelector {
 #ifdef MDIO_INTERNAL_PROFILING
     auto start = std::chrono::high_resolution_clock::now();
 #endif
-    MDIO_ASSIGN_OR_RETURN(auto var, dataset_.variables.at(
-                                        std::string(descriptor.label.label())));
+    MDIO_ASSIGN_OR_RETURN(
+        auto var, dataset_.variables.at(std::string(descriptor.label.label())));
 
     const T* data_ptr;
     Index offset;
     Index n_samples;
     MDIO_ASSIGN_OR_RETURN(auto intervals, var.get_intervals());
-    if (cached_variables_.find(descriptor.label.label()) == cached_variables_.end()) {
+    if (cached_variables_.find(descriptor.label.label()) ==
+        cached_variables_.end()) {
       // TODO(BrianMichell): Ensure that the domain has not changed.
       std::cout << "Reading VariableData" << std::endl;
       auto fut = var.Read();
       MDIO_ASSIGN_OR_RETURN(auto resolution, _resolve_future<void>(fut));
       auto dataToCache = std::get<0>(resolution);
-      cached_variables_.insert_or_assign(descriptor.label.label(), std::move(dataToCache));
+      cached_variables_.insert_or_assign(descriptor.label.label(),
+                                         std::move(dataToCache));
     }
     auto it = cached_variables_.find(descriptor.label.label());
     if (it == cached_variables_.end()) {
       std::stringstream ss;
-      ss << "Cached variable not found for coordinate '" << descriptor.label.label() << "'";
+      ss << "Cached variable not found for coordinate '"
+         << descriptor.label.label() << "'";
       return absl::NotFoundError(ss.str());
     }
-   auto& data = it->second;
+    auto& data = it->second;
     data_ptr = static_cast<const T*>(data.get_data_accessor().data());
     offset = data.get_flattened_offset();
     n_samples = data.num_samples();
@@ -426,7 +419,6 @@ class CoordinateSelector {
         stored_intervals;  // Use this to ensure everything remains in memory
                            // until the Intervals are no longer needed.
     stored_intervals.reserve(kept_runs_.size());
-
 
     bool is_first_run = true;
 
