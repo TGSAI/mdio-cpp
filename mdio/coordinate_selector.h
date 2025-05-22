@@ -83,16 +83,26 @@ class CoordinateSelector {
   explicit CoordinateSelector(Dataset& dataset)
       : dataset_(dataset), base_domain_(dataset.domain) {}
 
-  template <typename OutT, typename... Ops>
-  Future<std::vector<OutT>> ReadDataVariable(const std::string& data_variable,
-                                             Ops const&... ops) {
-    // 1) apply filters & sorts in the exact order given
+   template<typename... OutTs, typename... Ops>
+  Future<std::tuple<std::vector<OutTs>...>> ReadDataVariables(
+      std::vector<std::string> const& data_variables,
+      Ops const&...                   ops)
+  {
+    if (data_variables.size() != sizeof...(OutTs)) {
+      return absl::InvalidArgumentError(
+        "ReadDataVariables: number of names must match number of OutTs");
+    }
+    // 1) apply all filters & sorts in order
     absl::Status st = absl::OkStatus();
     ((st = st.ok() ? _applyOp(ops).status() : st), ...);
     if (!st.ok()) return st;
 
-    // 2) finally read out the requested variable
-    return readSelection<OutT>(data_variable);
+    // 2) kick off and await all reads
+    return _readMultiple<OutTs...>(data_variables);
+  }
+
+  void reset() {
+    kept_runs_.clear();
   }
 
   /**
@@ -247,6 +257,43 @@ class CoordinateSelector {
       return absl::UnimplementedError(
           "query(): RangeDescriptor and ListDescriptor not supported");
     }
+  }
+
+  // helper: expands readSelection<OutTs>(vars[I])...
+  template<typename... OutTs, std::size_t... I>
+  Future<std::tuple<std::vector<OutTs>...>> _readMultipleImpl(
+      std::vector<std::string> const& vars,
+      std::index_sequence<I...>)
+  {
+    // 1) start all reads
+    auto futs = std::make_tuple(
+      readSelection<OutTs>(vars[I])...
+    );
+
+    // 2) wait on them in order
+    absl::Status st = absl::OkStatus();
+    std::tuple<std::vector<OutTs>...> results;
+    // fold over I...
+    (
+      [&](){
+        if (!st.ok()) return;
+        auto& f = std::get<I>(futs);
+        st = f.status();
+        if (st.ok()) std::get<I>(results) = std::move(f.value());
+      }(),
+      ...
+    );
+    if (!st.ok()) return st;
+    return results;
+  }
+
+  template<typename... OutTs>
+  Future<std::tuple<std::vector<OutTs>...>> _readMultiple(
+      std::vector<std::string> const& vars)
+  {
+    return _readMultipleImpl<OutTs...>(
+      vars, std::index_sequence_for<OutTs...>{}
+    );
   }
 
   /*
