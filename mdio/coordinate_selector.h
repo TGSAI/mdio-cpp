@@ -130,11 +130,11 @@ class CoordinateSelector {
     const size_t n = kept_runs_.size();
 
     // 1) Fire off all reads in parallel and gather the key values
-    std::vector<Future<VariableData<T>>> reads;
+    std::vector<Future<VariableData<void>>> reads;
     reads.reserve(n);
     for (auto const& desc : kept_runs_) {
       MDIO_ASSIGN_OR_RETURN(auto ds, dataset_.isel(desc));
-      MDIO_ASSIGN_OR_RETURN(auto var, ds.variables.get<T>(sort_key));
+      MDIO_ASSIGN_OR_RETURN(auto var, ds.variables.at(sort_key));
       reads.push_back(var.Read());
     }
 
@@ -149,9 +149,9 @@ class CoordinateSelector {
       // if (!f.status().ok()) return f.status();
       // auto data = f.value();
       // keys.push_back(data.get_data_accessor().data()[data.get_flattened_offset()]);
-      MDIO_ASSIGN_OR_RETURN(auto resolution, _resolve_future<T>(f));
+      MDIO_ASSIGN_OR_RETURN(auto resolution, _resolve_future<void>(f));
       auto data = std::get<0>(resolution);
-      auto data_ptr = std::get<1>(resolution);
+      auto data_ptr = static_cast<const T*>(std::get<1>(resolution));
       auto offset = std::get<2>(resolution);
       // auto n = std::get<3>(resolution);  // Not required
       keys.push_back(data_ptr[offset]);
@@ -195,13 +195,13 @@ class CoordinateSelector {
 #ifdef MDIO_INTERNAL_PROFILING
     auto start = std::chrono::high_resolution_clock::now();
 #endif
-    std::vector<Future<VariableData<T>>> reads;
+    std::vector<Future<VariableData<void>>> reads;
     reads.reserve(kept_runs_.size());
     std::vector<T> ret;
 
     for (const auto& desc : kept_runs_) {
       MDIO_ASSIGN_OR_RETURN(auto ds, dataset_.isel(desc));
-      MDIO_ASSIGN_OR_RETURN(auto var, ds.variables.get<T>(output_variable));
+      MDIO_ASSIGN_OR_RETURN(auto var, ds.variables.at(output_variable));
       auto fut = var.Read();
       reads.push_back(fut);
       if (var.rank() == 1) {
@@ -216,9 +216,9 @@ class CoordinateSelector {
 #endif
 
     for (auto& f : reads) {
-      MDIO_ASSIGN_OR_RETURN(auto resolution, _resolve_future<T>(f));
+      MDIO_ASSIGN_OR_RETURN(auto resolution, _resolve_future<void>(f));
       auto data = std::get<0>(resolution);
-      auto data_ptr = std::get<1>(resolution);
+      auto data_ptr = static_cast<const T*>(std::get<1>(resolution));
       auto offset = std::get<2>(resolution);
       auto n = std::get<3>(resolution);
       std::vector<T> buffer(n);
@@ -237,6 +237,7 @@ class CoordinateSelector {
   Dataset& dataset_;
   tensorstore::IndexDomain<> base_domain_;
   std::vector<std::vector<mdio::RangeDescriptor<mdio::Index>>> kept_runs_;
+  std::map<std::string_view, VariableData<void>> cached_variables_;
 
   template <typename D>
   Future<void> _applyOp(D const& op) {
@@ -310,19 +311,35 @@ class CoordinateSelector {
 
   template <typename T>
   Future<void> _init_runs(const ValueDescriptor<T>& descriptor) {
-    using Interval = typename Variable<T>::Interval;
+    using Interval = typename Variable<void>::Interval;
 #ifdef MDIO_INTERNAL_PROFILING
     auto start = std::chrono::high_resolution_clock::now();
 #endif
-    MDIO_ASSIGN_OR_RETURN(auto var, dataset_.variables.get<T>(
+    MDIO_ASSIGN_OR_RETURN(auto var, dataset_.variables.at(
                                         std::string(descriptor.label.label())));
-    auto fut = var.Read();
+
+    const T* data_ptr;
+    Index offset;
+    Index n_samples;
     MDIO_ASSIGN_OR_RETURN(auto intervals, var.get_intervals());
-    MDIO_ASSIGN_OR_RETURN(auto resolution, _resolve_future<T>(fut));
-    auto data = std::get<0>(resolution);
-    auto data_ptr = std::get<1>(resolution);
-    auto offset = std::get<2>(resolution);
-    auto n_samples = std::get<3>(resolution);
+    if (cached_variables_.find(descriptor.label.label()) == cached_variables_.end()) {
+      // TODO(BrianMichell): Ensure that the domain has not changed.
+      std::cout << "Reading VariableData" << std::endl;
+      auto fut = var.Read();
+      MDIO_ASSIGN_OR_RETURN(auto resolution, _resolve_future<void>(fut));
+      auto dataToCache = std::get<0>(resolution);
+      cached_variables_.insert_or_assign(descriptor.label.label(), std::move(dataToCache));
+    }
+    auto it = cached_variables_.find(descriptor.label.label());
+    if (it == cached_variables_.end()) {
+      std::stringstream ss;
+      ss << "Cached variable not found for coordinate '" << descriptor.label.label() << "'";
+      return absl::NotFoundError(ss.str());
+    }
+   auto& data = it->second;
+    data_ptr = static_cast<const T*>(data.get_data_accessor().data());
+    offset = data.get_flattened_offset();
+    n_samples = data.num_samples();
 
     auto current_pos = intervals;
     bool isInRun = false;
@@ -343,7 +360,8 @@ class CoordinateSelector {
         // The start of a new run
         isInRun = true;
         for (auto i = run_idx; i < idx; ++i) {
-          _current_position_increment<T>(current_pos, intervals);
+          // _current_position_increment<T>(current_pos, intervals);
+          _current_position_increment<void>(current_pos, intervals);
         }
         // _current_position_stride<T>(current_pos, intervals, idx - run_idx);
         run_idx = idx;
@@ -358,16 +376,15 @@ class CoordinateSelector {
         // Use 1 less than the current index to ensure we get the correct end
         // location.
         for (auto i = run_idx; i < idx - 1; ++i) {
-          _current_position_increment<T>(current_pos, intervals);
+          _current_position_increment<void>(current_pos, intervals);
         }
-        // _current_position_stride<T>(current_pos, intervals, idx - run_idx);
         run_idx = idx;
         auto& last_run = local_runs.back();
         for (auto i = 0; i < current_pos.size(); ++i) {
           last_run[i].exclusive_max = current_pos[i].inclusive_min + 1;
         }
         // We need to advance to the actual current position
-        _current_position_increment<T>(current_pos, intervals);
+        _current_position_increment<void>(current_pos, intervals);
       } else if (!is_match && !isInRun) {
         // No run at all
         // do nothing TODO: Remove me
@@ -388,7 +405,7 @@ class CoordinateSelector {
       return absl::NotFoundError(ss.str());
     }
 
-    kept_runs_ = _from_intervals<T>(local_runs);
+    kept_runs_ = _from_intervals<void>(local_runs);
 #ifdef MDIO_INTERNAL_PROFILING
     std::cout << "Finalize time... ";
     timer(start);

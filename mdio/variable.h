@@ -576,6 +576,9 @@ Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
   }
   // the negative of this is valid for tensorstore ...
 
+  // TODO(BrianMichell): Look into making the recheck_cached_data an open option.
+  // store_spec["recheck_cached_data"] = false;  // This could become problematic if we are doing read/write operations.
+
   auto spec = tensorstore::MakeReadyFuture<::nlohmann::json>(store_spec);
 
   // open a store:
