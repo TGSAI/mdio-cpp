@@ -80,7 +80,7 @@ inline constexpr bool is_sort_key_v = is_sort_key<std::decay_t<D>>::value;
 class CoordinateSelector {
  public:
   /// Construct from an existing Dataset (captures its full domain).
-  explicit CoordinateSelector(const Dataset& dataset)
+  explicit CoordinateSelector(Dataset& dataset)
       : dataset_(dataset), base_domain_(dataset.domain) {}
 
   template <typename OutT, typename... Ops>
@@ -117,14 +117,13 @@ class CoordinateSelector {
 #ifdef MDIO_INTERNAL_PROFILING
     auto start = std::chrono::high_resolution_clock::now();
 #endif
-    auto non_const_ds = dataset_;
     const size_t n = kept_runs_.size();
 
     // 1) Fire off all reads in parallel and gather the key values
     std::vector<Future<VariableData<T>>> reads;
     reads.reserve(n);
     for (auto const& desc : kept_runs_) {
-      MDIO_ASSIGN_OR_RETURN(auto ds, non_const_ds.isel(desc));
+      MDIO_ASSIGN_OR_RETURN(auto ds, dataset_.isel(desc));
       MDIO_ASSIGN_OR_RETURN(auto var, ds.variables.get<T>(sort_key));
       reads.push_back(var.Read());
     }
@@ -186,13 +185,12 @@ class CoordinateSelector {
 #ifdef MDIO_INTERNAL_PROFILING
     auto start = std::chrono::high_resolution_clock::now();
 #endif
-    auto non_const_ds = dataset_;
     std::vector<Future<VariableData<T>>> reads;
     reads.reserve(kept_runs_.size());
     std::vector<T> ret;
 
     for (const auto& desc : kept_runs_) {
-      MDIO_ASSIGN_OR_RETURN(auto ds, non_const_ds.isel(desc));
+      MDIO_ASSIGN_OR_RETURN(auto ds, dataset_.isel(desc));
       MDIO_ASSIGN_OR_RETURN(auto var, ds.variables.get<T>(output_variable));
       auto fut = var.Read();
       reads.push_back(fut);
@@ -226,7 +224,7 @@ class CoordinateSelector {
   }
 
  private:
-  const Dataset& dataset_;
+  Dataset& dataset_;
   tensorstore::IndexDomain<> base_domain_;
   std::vector<std::vector<mdio::RangeDescriptor<mdio::Index>>> kept_runs_;
 
@@ -365,12 +363,11 @@ class CoordinateSelector {
                            // until the Intervals are no longer needed.
     stored_intervals.reserve(kept_runs_.size());
 
-    auto non_const_ds = dataset_;
 
     bool is_first_run = true;
 
     for (const auto& desc : kept_runs_) {
-      MDIO_ASSIGN_OR_RETURN(auto ds, non_const_ds.isel(desc));
+      MDIO_ASSIGN_OR_RETURN(auto ds, dataset_.isel(desc));
       MDIO_ASSIGN_OR_RETURN(
           auto var, ds.variables.get<T>(std::string(descriptor.label.label())));
       auto fut = var.Read();
