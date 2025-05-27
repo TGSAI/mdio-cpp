@@ -16,6 +16,7 @@
 
 #define MDIO_API_VERSION "1.0.0"
 
+#include <algorithm>
 #include <cstddef>
 #include <fstream>
 #include <limits>
@@ -623,24 +624,35 @@ class Dataset {
       return absl::InvalidArgumentError("No slices provided.");
     }
 
-    if (slices.size() > internal::kMaxNumSlices) {
-      return absl::InvalidArgumentError(
-          absl::StrCat("Too many slices provided or implicitly generated. "
-                       "Maximum number of slices is ",
-                       internal::kMaxNumSlices, " but ", slices.size(),
-                       " were provided.\n\tUse -DMAX_NUM_SLICES cmake flag to "
-                       "increase the maximum number of slices."));
+    // 1) Group descriptors by their dimension label
+    std::map<std::string_view, std::vector<RangeDescriptor<Index>>> groups;
+    for (auto& desc : slices) {
+      groups[desc.label.label()].push_back(desc);
     }
 
-    std::vector<RangeDescriptor<Index>> slicesCopy = slices;
-    for (int i = slices.size(); i <= internal::kMaxNumSlices; i++) {
-      slicesCopy.emplace_back(
-          RangeDescriptor<Index>({internal::kInertSliceKey, 0, 1, 1}));
+    // 2) Walk through each dimension-group and break it into kMax-sized windows
+    Dataset current = *this;
+    for (auto& [label, descs] : groups) {
+      for (size_t i = 0; i < descs.size(); i += internal::kMaxNumSlices) {
+        size_t end = std::min(i + internal::kMaxNumSlices, descs.size());
+        std::vector<RangeDescriptor<Index>> window(descs.begin() + i,
+                                                   descs.begin() + end);
+
+        // 3) Pad this window up to kMax (if your impl still needs padding)
+        window.reserve(internal::kMaxNumSlices);
+        for (size_t p = window.size(); p < internal::kMaxNumSlices; ++p) {
+          window.emplace_back(
+              RangeDescriptor<Index>{internal::kInertSliceKey, 0, 1, 1});
+        }
+
+        MDIO_ASSIGN_OR_RETURN(
+            current,
+            current.call_isel_with_vector_impl(
+                window, std::make_index_sequence<internal::kMaxNumSlices>{}));
+      }
     }
 
-    // Generate the index sequence and call the implementation
-    return call_isel_with_vector_impl(
-        slicesCopy, std::make_index_sequence<internal::kMaxNumSlices>{});
+    return current;
   }
 
   /**
@@ -849,7 +861,8 @@ class Dataset {
       // The map 'label_to_indices' is now populated with all the relevant
       // indices. You can now proceed with further processing based on this map.
 
-      return isel(slices);
+      return isel(
+          static_cast<const std::vector<RangeDescriptor<Index>>&>(slices));
     } else if constexpr ((std::is_same_v</*NOLINT: readability/braces*/
                                          Descriptors,
                                          ListDescriptor<
@@ -879,7 +892,8 @@ class Dataset {
       // The map 'label_to_indices' is now populated with all the relevant
       // indices. You can now proceed with further processing based on this map.
 
-      return isel(slices);
+      return isel(
+          static_cast<const std::vector<RangeDescriptor<Index>>&>(slices));
     } else {
       std::map<std::string_view, std::pair<Index, Index>>
           label_to_range;  // pair.first = start, pair.second = stop
@@ -976,7 +990,8 @@ class Dataset {
             "No slices could be made from the given descriptors.");
       }
 
-      return isel(slices);
+      return isel(
+          static_cast<const std::vector<RangeDescriptor<Index>>&>(slices));
     }
 
     return absl::OkStatus();
