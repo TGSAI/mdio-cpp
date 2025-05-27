@@ -1378,6 +1378,18 @@ class Variable {
     return (*attributes)->ToJson();
   }
 
+  Result<nlohmann::json> get_units() const {
+    auto attrs = GetAttributes();
+
+    // Return units if they exist and are non-null.
+    if (attrs.contains("unitsV1") && !attrs["unitsV1"].is_null()) {
+      return attrs["unitsV1"];
+    }
+
+    // Return an error if the units do not exist.
+    return absl::InvalidArgumentError("This Variable does not contain units");
+  }
+
   /**
    * @brief Gets the entire metadata of the Variable.
    * Returned object is expected to have a parent key of "metadata".
