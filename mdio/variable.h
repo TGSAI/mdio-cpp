@@ -17,6 +17,7 @@
 
 #include <filesystem>
 #include <limits>
+#include <map>
 #include <memory>
 #include <queue>
 #include <set>
@@ -575,6 +576,10 @@ Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
   }
   // the negative of this is valid for tensorstore ...
 
+  // TODO(BrianMichell): Look into making the recheck_cached_data an open
+  // option. store_spec["recheck_cached_data"] = false;  // This could become
+  // problematic if we are doing read/write operations.
+
   auto spec = tensorstore::MakeReadyFuture<::nlohmann::json>(store_spec);
 
   // open a store:
@@ -1002,6 +1007,9 @@ class Variable {
     }
 
     if (slices.size() > internal::kMaxNumSlices) {
+      // We are expecting the only entry point for this method to be fro mthe
+      // Dataset::isel method. That method should handle the partitioning of the
+      // slices.
       return absl::InvalidArgumentError(
           absl::StrCat("Too many slices provided or implicitly generated. "
                        "Maximum number of slices is ",
@@ -1041,137 +1049,101 @@ class Variable {
    */
   template <typename... Descriptors>
   Result<Variable> slice(const Descriptors&... descriptors) const {
-    constexpr size_t numDescriptors = sizeof...(descriptors);
+    // 1) Pack descriptors
+    constexpr size_t N = sizeof...(Descriptors);
+    std::array<RangeDescriptor<Index>, N> descs = {descriptors...};
 
-    auto tuple_descs = std::make_tuple(descriptors...);
-
+    // 2) Clamp + precondition check
     std::vector<DimensionIdentifier> labels;
-    labels.reserve(numDescriptors);
+    std::vector<Index> starts, stops, steps;
+    labels.reserve(N);
+    starts.reserve(N);
+    stops.reserve(N);
+    steps.reserve(N);
 
-    std::vector<Index> start, stop, step;
-    start.reserve(numDescriptors);
-    stop.reserve(numDescriptors);
-    step.reserve(numDescriptors);
-    // -1 Everything is ok
-    // >=0 Error: Start is greater than or equal to stop
-    int8_t preconditionStatus = -1;
-
-    std::apply(
-        [&](const auto&... desc) {
-          size_t idx = 0;
-          ((
-               [&] {
-                 auto clampedDesc = sliceInRange(desc);
-                 if (clampedDesc.start > clampedDesc.stop) {
-                   preconditionStatus = idx;
-                   return 1;
-                 }
-                 if (this->hasLabel(clampedDesc.label)) {
-                   labels.push_back(clampedDesc.label);
-                   start.push_back(clampedDesc.start);
-                   stop.push_back(clampedDesc.stop);
-                   step.push_back(clampedDesc.step);
-                 }
-                 return 0;  // Return a dummy value to satisfy the comma
-                            // operator
-               }(),
-               idx++),
-           ...);
-        },
-        tuple_descs);
-
-    if (preconditionStatus >= 0) {
-      mdio::RangeDescriptor<Index> err;
-      std::apply(
-          [&](const auto&... desc) {
-            size_t idx = 0;
-            (([&] {
-               if (idx == preconditionStatus) {
-                 err = desc;
-               }
-               idx++;
-             }()),
-             ...);
-          },
-          tuple_descs);
-      return absl::InvalidArgumentError(
+    int8_t bad_idx = -1;
+    for (size_t i = 0; i < N; ++i) {
+      auto d = sliceInRange(descs[i]);
+      if (d.start > d.stop) {
+        bad_idx = static_cast<int8_t>(i);
+        break;
+      }
+      if (this->hasLabel(d.label)) {
+        labels.push_back(d.label);
+        starts.push_back(d.start);
+        stops.push_back(d.stop);
+        steps.push_back(d.step);
+      }
+    }
+    if (bad_idx >= 0) {
+      auto& err = descs[bad_idx];
+      return Result<Variable>{absl::InvalidArgumentError(
           std::string("Slice descriptor for ") +
-          std::string(err.label.label()) +
-          " had an illegal configuration.\n\tStart '" +
-          std::to_string(err.start) + "' greater than or equal to stop '" +
-          std::to_string(err.stop) + "'.");
+          std::string(err.label.label()) + " is invalid: start=" +
+          std::to_string(err.start) + " > stop=" + std::to_string(err.stop))};
     }
 
-    auto labelSize = labels.size();
-    if (labelSize) {
+    // 3) Fast path: all labels (or axis indices) are unique
+    if (!labels.empty()) {
       std::set<std::string_view> labelSet;
       std::set<DimensionIndex> indexSet;
-      for (const auto& label : labels) {
-        labelSet.insert(label.label());
-        indexSet.insert(label.index());
+      for (auto& lab : labels) {
+        labelSet.insert(lab.label());
+        indexSet.insert(lab.index());
       }
-
-      if (labelSet.size() == labelSize || indexSet.size() == labelSize) {
+      if (labelSet.size() == labels.size() ||
+          indexSet.size() == labels.size()) {
         MDIO_ASSIGN_OR_RETURN(
             auto slice_store,
-            store |
-                tensorstore::Dims(labels).HalfOpenInterval(start, stop, step));
-        // return a new variable with the sliced store
-        return Variable{variableName, longName, metadata, slice_store,
-                        attributes};
-      } else if (labelSet.size() != labelSize) {
-        // Concat the sliced Variable together if there are duplicate
-        // labels(dimensions)
-        std::vector<Variable> fragments;
-        absl::Status trueStatus = absl::OkStatus();
-        auto fragmentStore = [&](auto& descriptor) -> absl::Status {
-          if (descriptor.label.label() == internal::kInertSliceKey) {
-            // pass on kInertSliceKey
-            return absl::OkStatus();
-          }
-          auto sliceRes = slice(descriptor);
-          if (!sliceRes.status().ok()) {
-            trueStatus = sliceRes.status();
-            return trueStatus;
-          }
-          fragments.push_back(sliceRes.value());
-          return absl::OkStatus();
-        };
-
-        auto status = (fragmentStore(descriptors).ok() && ...);
-        if (!status) {
-          return trueStatus;
-        }
-
-        if (!fragments.empty()) {
-          // Concat appears to only work with void types, so we'll strip the
-          // type away
-          tensorstore::TensorStore<void, R, M> catStore;
-          // Initialize catStore with the first fragment's store
-          catStore = fragments.front().get_store();
-
-          // Concatenate remaining fragments
-          for (size_t i = 1; i < fragments.size(); ++i) {
-            MDIO_ASSIGN_OR_RETURN(
-                catStore,
-                tensorstore::Concat({catStore, fragments[i].get_store()},
-                                    /*axis=*/0));
-          }
-          // Recast to the original type
-          tensorstore::TensorStore<T, R, M> typedCatStore =
-              tensorstore::TensorStore<T, R, M>(tensorstore::unchecked,
-                                                catStore);
-          // Return a new Variable with the concatenated store
-          return Variable{variableName, longName, metadata, typedCatStore,
-                          attributes};
-        }
-        return absl::InternalError("No fragments to concatenate.");
+            store | tensorstore::Dims(labels).HalfOpenInterval(starts, stops,
+                                                               steps));
+        return Variable{variableName, longName, metadata,
+                        std::move(slice_store), attributes};
       }
-
-      return absl::InvalidArgumentError(
-          "Unexpected error occured while trying to slice the Variable.");
     }
-    // the slice didn't change anything in the variables dimensions.
+
+    // 4) Group by label to find any duplicates
+    std::map<std::string_view, std::vector<RangeDescriptor<Index>>> by_label;
+    for (auto& d : descs) {
+      if (d.label.label() != internal::kInertSliceKey) {
+        by_label[d.label.label()].push_back(d);
+      }
+    }
+
+    // 5) Handle the first label that has >1 descriptor
+    for (auto& [label, vec] : by_label) {
+      if (vec.size() > 1) {
+        // 5a) Unwrap the Spec so we can ask for transform().input_labels()
+        MDIO_ASSIGN_OR_RETURN(auto spec, store.spec());
+        auto spec_labels = spec.transform().input_labels();
+
+        // find the numeric axis for this label
+        auto it = std::find(spec_labels.begin(), spec_labels.end(), label);
+        if (it == spec_labels.end()) {
+          // no-op if the label isn't in the spec; skip it
+          continue;
+        }
+        int axis = static_cast<int>(std::distance(spec_labels.begin(), it));
+
+        // 5b) Slice each sub‑range in isolation
+        std::vector<tensorstore::TensorStore<T, R, M>> pieces;
+        pieces.reserve(vec.size());
+        for (auto& r : vec) {
+          auto sub = slice(r);
+          if (!sub.status().ok()) return sub.status();
+          pieces.push_back(sub.value().get_store());
+        }
+
+        // 5c) Concatenate them along the correct axis
+        MDIO_ASSIGN_OR_RETURN(auto cat_store,
+                              tensorstore::Concat(pieces, axis));
+
+        return Variable{variableName, longName, metadata, std::move(cat_store),
+                        attributes};
+      }
+    }
+
+    // 6) No descriptors matched → no change
     return *this;
   }
 
@@ -1540,6 +1512,12 @@ class Variable {
    * @return The tensorstore of the variable.
    */
   const tensorstore::TensorStore<T, R, M>& get_store() const { return store; }
+
+  tensorstore::TensorStore<T, R, M>& get_mutable_store() { return store; }
+  void set_store(
+      tensorstore::TensorStore<T, R, M>& new_store) {  // NOLINT (non-const)
+    store = new_store;
+  }
 
   // The data that should remain static, but MAY need to be updated.
   std::shared_ptr<std::shared_ptr<UserAttributes>> attributes;
