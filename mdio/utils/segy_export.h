@@ -311,7 +311,7 @@ Result<void> MdioToSegy(
 
   // 1 GiB cache
   auto cacheJson = nlohmann::json::parse(
-      R"({"cache_pool": {"total_bytes_limit": 1073741824}})");
+      R"({"cache_pool": {"total_bytes_limit": 5000000000}})");
   auto ctxSpec = Context::Spec::FromJson(cacheJson);
   auto ctx     = Context(ctxSpec.value());
 
@@ -367,6 +367,20 @@ Result<void> MdioToSegy(
     num_traces *= shape[i];
   }
 
+  // Use the domain size of the second-fastest growing dimension for chunking
+  // This ensures we process complete "slices" along that dimension
+  Index output_chunk_size = 1;
+  if (rank >= 2) {
+    // Use the full domain size of the second-fastest growing spatial dimension
+    output_chunk_size = shape[rank - 2];
+  } else if (rank >= 1) {
+    // Fallback to first spatial dimension size
+    output_chunk_size = shape[0];
+  }
+  
+  std::cout << "Using output chunk size: " << output_chunk_size << " (full domain of dimension " 
+            << (rank >= 2 ? rank - 2 : 0) << ")" << std::endl;
+
   // Build Zarr spec for output SEG-Y
   nlohmann::json spec;
   spec["driver"] = "zarr";
@@ -399,7 +413,7 @@ Result<void> MdioToSegy(
   spec["metadata"] = {
       {"dtype", std::string("|V") + std::to_string(trace_bytes)},
       {"shape", {num_traces}},
-      {"chunks", {1}},
+      {"chunks", {output_chunk_size}},  // Use the computed chunk size instead of 1
       {"dimension_separator", "."},
       {"compressor", nullptr},
       {"fill_value", nullptr},
@@ -411,79 +425,148 @@ Result<void> MdioToSegy(
 
   MDIO_ASSIGN_OR_RETURN(
       auto out_var,
-      Variable<>::Open(spec, constants::kCreateClean).result());
+      Variable<>::Open(spec, constants::kCreateClean, ctx).result());
 
-  // prepare an (N-1)-length odometer for spatial dims
-  std::vector<Index> coords(rank - 1, 0);
-  std::vector<RangeDescriptor<Index>> descs;
-  descs.reserve(rank);
-
-  // flat loop over all traces
-  for (Index trace_idx = 0; trace_idx < num_traces; ++trace_idx) {
-    // Progress bar (tqdm style)
-    double progress = static_cast<double>(trace_idx) / static_cast<double>(num_traces);
-    int bar_width = 50;
-    int pos = static_cast<int>(bar_width * progress);
-    
-    std::cout << "\r[";
-    for (int i = 0; i < bar_width; ++i) {
-      if (i < pos) std::cout << "=";
-      else if (i == pos) std::cout << ">";
-      else std::cout << " ";
+  // Process traces by chunking along the second-fastest growing dimension
+  // This ensures we align with the underlying storage chunks
+  size_t chunk_dim = (rank >= 2) ? rank - 2 : 0;  // Index of second-fastest growing spatial dim
+  Index chunk_dim_size = shape[chunk_dim];
+  
+  // Calculate total number of "slices" in all other spatial dimensions
+  Index num_outer_slices = 1;
+  for (size_t d = 0; d < rank - 1; ++d) {
+    if (d != chunk_dim) {
+      num_outer_slices *= shape[d];
     }
-    std::cout << "] " << static_cast<int>(progress * 100.0) << "% "
-              << "(" << trace_idx << "/" << num_traces << " traces)";
-    std::cout.flush();
-    
-    // build slice for dims 0..N-2
-    descs.clear();
-    for (size_t d = 0; d < rank - 1; ++d) {
-      descs.push_back(RangeDescriptor<Index>{
-          labels[d],
-          coords[d],
-          coords[d] + 1,
-          1});
-    }
-    // full slice on final dimension
-    descs.push_back(RangeDescriptor<Index>{
-        labels[rank - 1],
-        0,
-        num_samples,
-        1});
-
-    // read the full trace (header + samples)
-    MDIO_ASSIGN_OR_RETURN(auto trace_var,  seismic_var.slice(descs));
-    MDIO_ASSIGN_OR_RETURN(auto trace_data, trace_var.Read().result());
-    
-    const char* in_ptr = reinterpret_cast<const char*>(
-        trace_data.get_data_accessor().data());
-    ptrdiff_t    in_off = trace_data.get_flattened_offset();
-
-    // slice+read one output slot
-    RangeDescriptor<Index> write_desc{"trace", trace_idx, trace_idx + 1, 1};
-    MDIO_ASSIGN_OR_RETURN(auto out_slice, out_var.slice(write_desc));
-    MDIO_ASSIGN_OR_RETURN(auto out_data,  out_slice.Read().result());
-    
-    char*  out_ptr = reinterpret_cast<char*>(
-        out_data.get_data_accessor().data());
-    ptrdiff_t out_off = out_data.get_flattened_offset();
-
-    // zero header+data, then copy samples after 240-byte header
-    std::memset(out_ptr + out_off, 0, trace_bytes);
-    std::memcpy(
-        out_ptr + out_off + 240,
-        in_ptr  + (in_off * sample_bytes),  // Convert element offset to byte offset
-        static_cast<size_t>(num_samples) * sample_bytes);
-    
-    // write it back
-    auto fut = out_slice.Write(out_data);
-    if (!fut.status().ok()) return fut.status();
-
-    // increment odometer
+  }
+  
+  Index traces_processed = 0;
+  
+  // Iterate through all combinations of the other spatial dimensions
+  std::vector<Index> outer_coords(rank - 1, 0);
+  
+  for (Index outer_slice = 0; outer_slice < num_outer_slices; ++outer_slice) {
+    // Convert outer_slice to coordinates for all dimensions except chunk_dim
+    Index temp_slice = outer_slice;
     for (int d = static_cast<int>(rank) - 2; d >= 0; --d) {
-      coords[d]++;
-      if (coords[d] < shape[d]) break;
-      coords[d] = 0;
+      if (static_cast<size_t>(d) != chunk_dim) {
+        outer_coords[d] = temp_slice % shape[d];
+        temp_slice /= shape[d];
+      }
+    }
+    
+    // Now chunk along the chunk_dim
+    for (Index chunk_start = 0; chunk_start < chunk_dim_size; chunk_start += output_chunk_size) {
+      Index chunk_end = std::min(chunk_start + output_chunk_size, chunk_dim_size);
+      Index chunk_size = chunk_end - chunk_start;
+      
+      // Progress bar (tqdm style)
+      double progress = static_cast<double>(traces_processed) / static_cast<double>(num_traces);
+      int bar_width = 50;
+      int pos = static_cast<int>(bar_width * progress);
+      
+    //   std::cout << "\r[";
+    //   for (int i = 0; i < bar_width; ++i) {
+    //     if (i < pos) std::cout << "=";
+    //     else if (i == pos) std::cout << ">";
+    //     else std::cout << " ";
+    //   }
+    //   std::cout << "] " << static_cast<int>(progress * 100.0) << "% "
+    //             << "(" << traces_processed << "/" << num_traces << " traces)";
+    //   std::cout.flush();
+
+      // Build slice descriptors for this specific chunk
+      std::vector<RangeDescriptor<Index>> chunk_descs;
+      chunk_descs.reserve(rank);
+      
+      // For each spatial dimension, either use the fixed coordinate or the chunk range
+      for (size_t d = 0; d < rank - 1; ++d) {
+        if (d == chunk_dim) {
+          // This is the dimension we're chunking along
+          chunk_descs.push_back(RangeDescriptor<Index>{
+              labels[d],
+              chunk_start,
+              chunk_end,
+              1});
+        } else {
+          // This is a fixed coordinate for this outer slice
+          chunk_descs.push_back(RangeDescriptor<Index>{
+              labels[d],
+              outer_coords[d],
+              outer_coords[d] + 1,
+              1});
+        }
+      }
+      
+      // Full slice on the last dimension (samples/time)
+      chunk_descs.push_back(RangeDescriptor<Index>{
+          labels[rank - 1],
+          0,
+          num_samples,
+          1});
+
+      // Read only the seismic data we need for this chunk
+      MDIO_ASSIGN_OR_RETURN(auto chunk_var, seismic_var.slice(chunk_descs));
+      std::cout << chunk_var << std::endl;
+      MDIO_ASSIGN_OR_RETURN(auto chunk_data, chunk_var.Read().result());
+      std::cout << "Finished reading chunk_var..." << std::endl;
+      
+      const char* chunk_ptr = reinterpret_cast<const char*>(
+          chunk_data.get_data_accessor().data());
+      ptrdiff_t chunk_off = chunk_data.get_flattened_offset();
+      
+      // Allocate buffer for the output chunk
+      std::vector<char> chunk_buffer(chunk_size * trace_bytes, 0);
+
+      // Process each trace in the chunk
+      for (Index i = 0; i < chunk_size; ++i) {
+        // Calculate the offset in the chunk data for this trace
+        Index trace_offset_in_chunk = i * num_samples;
+
+        // Copy trace data to chunk buffer (240 bytes header + samples)
+        char* trace_buffer = chunk_buffer.data() + (i * trace_bytes);
+        std::memset(trace_buffer, 0, 240);  // Zero the header
+        std::memcpy(
+            trace_buffer + 240,
+            chunk_ptr + (chunk_off + trace_offset_in_chunk) * sample_bytes,
+            static_cast<size_t>(num_samples) * sample_bytes);
+      }
+
+      // Calculate the output trace range for this chunk
+      // Convert coordinates back to linear trace indices
+      Index output_start = 0;
+      Index multiplier = 1;
+      
+      // Build the linear index from coordinates
+      std::vector<Index> trace_coords = outer_coords;
+      trace_coords[chunk_dim] = chunk_start;
+      
+      for (int d = static_cast<int>(rank) - 2; d >= 0; --d) {
+        output_start += trace_coords[d] * multiplier;
+        multiplier *= shape[d];
+      }
+      
+      Index output_end = output_start + chunk_size;
+
+      // Write the chunk to output
+      RangeDescriptor<Index> write_desc{"trace", output_start, output_end, 1};
+      MDIO_ASSIGN_OR_RETURN(auto out_slice, out_var.slice(write_desc));
+      std::cout << out_slice << std::endl;
+      MDIO_ASSIGN_OR_RETURN(auto out_data, out_slice.Read().result());
+      std::cout << "Finished reading out_data..." << std::endl;
+      char* out_ptr = reinterpret_cast<char*>(
+          out_data.get_data_accessor().data());
+      ptrdiff_t out_off = out_data.get_flattened_offset();
+      
+      // Copy the chunk buffer to output
+      std::memcpy(out_ptr + out_off, chunk_buffer.data(), chunk_size * trace_bytes);
+      
+      // Write it back
+      std::cout << "Writing back to out_slice..." << std::endl;
+      auto fut = out_slice.Write(out_data);
+      if (!fut.status().ok()) return fut.status();
+      std::cout << "Finished writing back to out_slice..." << std::endl;
+      traces_processed += chunk_size;
     }
   }
 
