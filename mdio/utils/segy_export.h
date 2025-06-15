@@ -22,6 +22,7 @@
 #include <iomanip>
 #include <chrono>
 #include <ctime>
+#include <fstream>
 
 #include <algorithm>     // for std::erase_if
 #include <thread>        // for sleep_for
@@ -578,6 +579,24 @@ Result<void> CreateSegyTextHeader(
     const std::vector<TraceHeaderField>& overrides,
     const Context& ctx);
 
+// Forward declaration for binary header
+Result<void> CreateSegyBinaryHeader(
+    const std::string& binary_header,
+    const Dataset& dataset,
+    const std::string& segy_path,
+    Index num_traces,
+    Index num_samples,
+    uint16_t sample_interval_us,
+    const Variable<>& seismic_var,
+    const Context& ctx);
+
+// Forward declaration for SEG-Y file finalization
+Result<void> FinalizeSegyFile(
+    const std::string& segy_path,
+    Index output_chunk_size,
+    Index num_traces,
+    const Context& ctx);
+
 /**
  * @brief Converts an MDIO dataset to a SEG-Y styled Variable.
  *
@@ -637,21 +656,6 @@ Result<void> MdioToSegy(
     } else {
       std::cout << "dimension variable '" << mapping.variable_name << "'" << std::endl;
     }
-  }
-
-  // Create and write SEG-Y text header
-  std::vector<TraceHeaderField> applied_overrides;
-  for (const auto& field : trace_headers.fields()) {
-    // Check if this field was overridden by comparing with default names
-    if (field.name == "inline" || field.name == "crossline" || 
-        field.name == "cdp-x" || field.name == "cdp-y") {
-      applied_overrides.push_back(field);
-    }
-  }
-  
-  auto text_header_result = CreateSegyTextHeader(text_header, ds, mdio_path, segy_path, applied_overrides, ctx);
-  if (!text_header_result.ok()) {
-    std::cerr << "Warning: Failed to create text header: " << text_header_result.status() << std::endl;
   }
 
   // Pick the highest-rank (float-prefer) seismic variable
@@ -735,8 +739,30 @@ Result<void> MdioToSegy(
       auto out_var,
       Variable<>::Open(spec, constants::kCreateClean, ctx).result());
 
+  // Early validation: test if we can write to the output location
+  std::cout << "Validating write access to output location..." << std::endl;
+  try {
+    // Try to write a small test chunk to validate permissions and connectivity
+    RangeDescriptor<Index> test_desc{"trace", 0, 1, 1};
+    MDIO_ASSIGN_OR_RETURN(auto test_slice, out_var.slice(test_desc));
+    MDIO_ASSIGN_OR_RETURN(auto test_data, from_variable(test_slice));
+    
+    // Write a small test pattern
+    char* test_ptr = reinterpret_cast<char*>(test_data.get_data_accessor().data());
+    std::memset(test_ptr, 0, trace_bytes);
+    
+    auto test_write = test_slice.Write(test_data);
+    auto test_result = test_write.commit_future.result();
+    if (!test_result.ok()) {
+      return absl::PermissionDeniedError("Cannot write to output location: " + test_result.status().ToString());
+    }
+    std::cout << "Write access validated successfully." << std::endl;
+  } catch (const std::exception& e) {
+    return absl::PermissionDeniedError("Cannot write to output location: " + std::string(e.what()));
+  }
+
   // === Throttle helper ===
-  constexpr size_t MAX_IN_FLIGHT = 5;
+  constexpr size_t MAX_IN_FLIGHT = 10;
   std::vector<tensorstore::WriteFutures> futures;
   auto enqueue_write = [&](tensorstore::WriteFutures wf) {
     while (futures.size() >= MAX_IN_FLIGHT) {
@@ -873,6 +899,59 @@ Result<void> MdioToSegy(
   for (int i = 0; i < 50; ++i) std::cout << "=";
   std::cout << "] 100% (" << num_traces << "/" << num_traces << ")\n"
             << "Conversion completed successfully!\n";
+
+  // Calculate sample interval in microseconds
+  uint16_t sample_interval_us = 1000; // Default 1ms if not found
+  try {
+    // Try to get sample interval from dataset metadata or dimensions
+    auto time_dim_labels = domain.labels();
+    if (!time_dim_labels.empty()) {
+      std::string time_dim = time_dim_labels.back(); // Last dimension is usually time
+      // Try to find time-related metadata
+      auto metadata = ds.getMetadata();
+      if (metadata.contains("attributes")) {
+        auto attrs = metadata["attributes"];
+        if (attrs.contains("sample_rate")) {
+          float sample_rate = attrs["sample_rate"].get<float>();
+          sample_interval_us = static_cast<uint16_t>(1000000.0f / sample_rate); // Convert Hz to microseconds
+        } else if (attrs.contains("sample_interval")) {
+          sample_interval_us = static_cast<uint16_t>(attrs["sample_interval"].get<float>() * 1000); // Convert ms to microseconds
+        }
+      }
+    }
+  } catch (const std::exception& e) {
+    std::cout << "Warning: Could not determine sample interval, using default 1ms: " << e.what() << std::endl;
+  }
+
+  // Create applied overrides for text header generation
+  std::vector<TraceHeaderField> applied_overrides;
+  for (const auto& field : trace_headers.fields()) {
+    // Check if this field was overridden by comparing with default names
+    if (field.name == "inline" || field.name == "crossline" || 
+        field.name == "cdp-x" || field.name == "cdp-y") {
+      applied_overrides.push_back(field);
+    }
+  }
+  
+  // Create and write SEG-Y text header (deferred until after trace processing)
+  auto text_header_result = CreateSegyTextHeader(text_header, ds, mdio_path, segy_path, applied_overrides, ctx);
+  if (!text_header_result.ok()) {
+    return text_header_result.status(); // Early failure - stop processing
+  }
+
+  // Create and write SEG-Y binary header (deferred until after trace processing)
+  auto binary_header_result = CreateSegyBinaryHeader(binary_header, ds, segy_path, 
+                                                    num_traces, num_samples, sample_interval_us, 
+                                                    seismic_var, ctx);
+  if (!binary_header_result.ok()) {
+    return binary_header_result.status(); // Early failure - stop processing
+  }
+
+  // Finalize SEG-Y file
+  auto finalize_result = FinalizeSegyFile(segy_path, output_chunk_size, num_traces, ctx);
+  if (!finalize_result.ok()) {
+    return finalize_result.status(); // Early failure - stop processing
+  }
 
   return absl::OkStatus();
 }
@@ -1105,61 +1184,508 @@ Result<void> CreateSegyTextHeader(
     }
   }
   
-  // Write text header to file using TensorStore
+  // Write text header to file
   std::string text_header_path = segy_path + "/text_header";
   
-  // Build TensorStore spec for text header
-  nlohmann::json spec;
-  spec["driver"] = "zarr";
+  // Determine storage backend for header writing
+  std::string header_driver = "file";
+  if (absl::StartsWith(text_header_path, "gs://")) header_driver = "gcs";
+  else if (absl::StartsWith(text_header_path, "s3://")) header_driver = "s3";
   
-  std::string driver = "file";
-  if (absl::StartsWith(text_header_path, "gs://")) driver = "gcs";
-  else if (absl::StartsWith(text_header_path, "s3://")) driver = "s3";
-  
-  spec["kvstore"] = {{"driver", driver}, {"path", text_header_path}};
-  
-  if (driver != "file") {
-    size_t pos = text_header_path.find("://");
-    std::string tail = text_header_path.substr(pos + 3);
-    std::vector<std::string> parts;
-    for (auto& p : absl::StrSplit(tail, '/')) parts.emplace_back(p);
-    spec["kvstore"]["bucket"] = parts[0];
-    spec["kvstore"]["path"] = absl::StrJoin(parts.begin()+1, parts.end(), "/");
-  }
-  
-  spec["metadata"] = {
-      {"dtype", "|S1"},  // Single byte string
-      {"shape", {3200}},
-      {"chunks", {3200}},
-      {"dimension_separator", "."},
-      {"compressor", nullptr},
-      {"fill_value", nullptr},
-      {"order", "C"},
-      {"zarr_format", 2}
-  };
-  
-  spec["attributes"] = {
-      {"dimension_names", {"byte"}},
-      {"long_name", "SEG-Y Text Header"}
-  };
-  
-  MDIO_ASSIGN_OR_RETURN(
-      auto text_header_var,
-      Variable<>::Open(spec, constants::kCreateClean, ctx).result());
-  
-  // Create array from text header string
-  MDIO_ASSIGN_OR_RETURN(auto text_data, from_variable(text_header_var));
-  char* text_ptr = reinterpret_cast<char*>(text_data.get_data_accessor().data());
-  std::memcpy(text_ptr, final_text_header.data(), 3200);
-  
-  // Write the text header
-  auto write_future = text_header_var.Write(text_data);
-  auto write_result = write_future.result();
-  if (!write_result.ok()) {
-    return write_result.status();
+  if (header_driver == "gcs" || header_driver == "s3") {
+    // For cloud storage, write to local temp file then upload
+    std::string temp_file = "/tmp/segy_text_header_" + std::to_string(std::time(nullptr));
+    
+    // Write to local temp file
+    std::ofstream temp_stream(temp_file, std::ios::binary);
+    if (!temp_stream.is_open()) {
+      return absl::InternalError("Failed to create temporary text header file");
+    }
+    temp_stream.write(final_text_header.data(), 3200);
+    temp_stream.close();
+    
+    // Upload to cloud storage
+    std::string upload_cmd;
+    if (header_driver == "gcs") {
+      // Use application default credentials by temporarily unsetting the service account
+      upload_cmd = "GOOGLE_APPLICATION_CREDENTIALS= gcloud storage cp " + temp_file + " " + text_header_path;
+    } else {
+      upload_cmd = "aws s3 cp " + temp_file + " " + text_header_path;
+    }
+    
+    std::cout << "Uploading text header: " << upload_cmd << std::endl;
+    int result = std::system(upload_cmd.c_str());
+    
+    // Clean up temp file
+    std::system(("rm -f " + temp_file).c_str());
+    
+    if (result != 0) {
+      return absl::InternalError("Failed to upload text header with exit code " + std::to_string(result));
+    }
+    
+  } else {
+    // For local files, write directly
+    std::ofstream file_stream(text_header_path, std::ios::binary);
+    if (!file_stream.is_open()) {
+      return absl::InternalError("Failed to create text header file: " + text_header_path);
+    }
+    file_stream.write(final_text_header.data(), 3200);
+    file_stream.close();
   }
   
   std::cout << "Text header written to: " << text_header_path << std::endl;
+  return absl::OkStatus();
+}
+
+/**
+ * @brief Creates and writes a SEG-Y binary header.
+ *
+ * The binary header is a 400-byte structure containing file metadata.
+ * This function creates a Rev 1 compliant binary header with the essential fields.
+ *
+ * @param binary_header Input binary header string (currently unused, generates default)
+ * @param dataset       MDIO dataset for metadata lookup
+ * @param segy_path     Path where SEG-Y output is being written
+ * @param num_traces    Total number of traces in the file
+ * @param num_samples   Number of samples per trace
+ * @param sample_interval_us Sample interval in microseconds
+ * @param seismic_var   The seismic variable for dtype information
+ * @param ctx           TensorStore context
+ * @return Status of the binary header creation
+ */
+Result<void> CreateSegyBinaryHeader(
+    const std::string& binary_header,
+    const Dataset& dataset,
+    const std::string& segy_path,
+    Index num_traces,
+    Index num_samples,
+    uint16_t sample_interval_us,
+    const Variable<>& seismic_var,
+    const Context& ctx) {
+  
+  (void)binary_header; // Currently unused, we generate a default header
+  
+  std::cout << "Creating SEG-Y binary header..." << std::endl;
+  
+  // Create 400-byte binary header buffer, initialized to zero
+  std::vector<char> header_buffer(400, 0);
+  
+  // Helper function to write little-endian values to buffer
+  auto write_int16 = [&](size_t offset, int16_t value) {
+    if (offset + 1 < header_buffer.size()) {
+      header_buffer[offset] = static_cast<char>(value & 0xFF);
+      header_buffer[offset + 1] = static_cast<char>((value >> 8) & 0xFF);
+    }
+  };
+  
+  auto write_int32 = [&](size_t offset, int32_t value) {
+    if (offset + 3 < header_buffer.size()) {
+      header_buffer[offset] = static_cast<char>(value & 0xFF);
+      header_buffer[offset + 1] = static_cast<char>((value >> 8) & 0xFF);
+      header_buffer[offset + 2] = static_cast<char>((value >> 16) & 0xFF);
+      header_buffer[offset + 3] = static_cast<char>((value >> 24) & 0xFF);
+    }
+  };
+  
+  // SEG-Y Binary Header Fields (1-based byte positions, converted to 0-based for array access)
+  
+  // Bytes 1-4: Job identification number
+  write_int32(0, 1);
+  
+  // Bytes 5-8: Line number
+  write_int32(4, 1);
+  
+  // Bytes 9-12: Reel number
+  write_int32(8, 1);
+  
+  // Bytes 13-14: Number of data traces per ensemble (set to 1 for post-stack)
+  write_int16(12, 1);
+  
+  // Bytes 15-16: Number of auxiliary traces per ensemble
+  write_int16(14, 0);
+  
+  // Bytes 17-18: Sample interval in microseconds
+  write_int16(16, static_cast<int16_t>(sample_interval_us));
+  
+  // Bytes 19-20: Sample interval of original field recording (same as above)
+  write_int16(18, static_cast<int16_t>(sample_interval_us));
+  
+  // Bytes 21-22: Number of samples per data trace
+  write_int16(20, static_cast<int16_t>(std::min(num_samples, static_cast<Index>(32767))));
+  
+  // Bytes 23-24: Number of samples per data trace for original field recording
+  write_int16(22, static_cast<int16_t>(std::min(num_samples, static_cast<Index>(32767))));
+  
+  // Bytes 25-26: Data sample format code
+  int16_t format_code = 1; // Default to 4-byte IBM floating point
+  if (seismic_var.dtype() == constants::kFloat32) {
+    format_code = 5; // 4-byte IEEE floating point
+  } else if (seismic_var.dtype() == constants::kInt32) {
+    format_code = 2; // 4-byte two's complement integer
+  } else if (seismic_var.dtype() == constants::kInt16) {
+    format_code = 3; // 2-byte two's complement integer
+  } else if (seismic_var.dtype() == constants::kInt8) {
+    format_code = 8; // 1-byte two's complement integer
+  }
+  write_int16(24, format_code);
+  
+  // Bytes 27-28: CDP fold (set to 1 for post-stack)
+  write_int16(26, 1);
+  
+  // Bytes 29-30: Trace sorting code (1 = as recorded, 2 = CDP ensemble, 4 = single fold continuous profile)
+  write_int16(28, 4); // Single fold continuous profile for post-stack
+  
+  // Bytes 31-32: Vertical sum code (1 = no sum, 2 = two sum, ..., N = N sum)
+  write_int16(30, 1);
+  
+  // Bytes 33-34: Sweep frequency at start (Hz)
+  write_int16(32, 0);
+  
+  // Bytes 35-36: Sweep frequency at end (Hz)
+  write_int16(34, 0);
+  
+  // Bytes 37-38: Sweep length (ms)
+  write_int16(36, 0);
+  
+  // Bytes 39-40: Sweep type code (1 = linear, 2 = parabolic, 3 = exponential, 4 = other)
+  write_int16(38, 1);
+  
+  // Bytes 41-42: Trace number of sweep channel
+  write_int16(40, 0);
+  
+  // Bytes 43-44: Sweep trace taper length at start (ms)
+  write_int16(42, 0);
+  
+  // Bytes 45-46: Sweep trace taper length at end (ms)
+  write_int16(44, 0);
+  
+  // Bytes 47-48: Taper type (1 = linear, 2 = cos^2, 3 = other)
+  write_int16(46, 1);
+  
+  // Bytes 49-50: Correlated data traces (1 = no, 2 = yes)
+  write_int16(48, 1);
+  
+  // Bytes 51-52: Binary gain recovered (1 = yes, 2 = no)
+  write_int16(50, 1);
+  
+  // Bytes 53-54: Amplitude recovery method (1 = none, 2 = spherical divergence, 3 = AGC, 4 = other)
+  write_int16(52, 1);
+  
+  // Bytes 55-56: Measurement system (1 = meters, 2 = feet)
+  write_int16(54, 1); // Meters
+  
+  // Bytes 57-58: Impulse signal polarity (1 = increase in pressure/upward geophone movement = negative, 2 = positive)
+  write_int16(56, 1);
+  
+  // Bytes 59-60: Vibratory polarity code
+  write_int16(58, 1);
+  
+  // SEG-Y Rev 1 specific fields
+  
+  // Bytes 301-302: SEG-Y format revision number (always 0x0100 for Rev 1)
+  write_int16(300, 0x0100);
+  
+  // Bytes 303-304: Fixed length trace flag (1 = all traces same length)
+  write_int16(302, 1);
+  
+  // Bytes 305-306: Number of 3200-byte Extended Textual File Header records
+  write_int16(304, 0);
+  
+  // Write binary header to file
+  std::string binary_header_path = segy_path + "/binary_header";
+  
+  // Determine storage backend for header writing
+  std::string header_driver = "file";
+  if (absl::StartsWith(binary_header_path, "gs://")) header_driver = "gcs";
+  else if (absl::StartsWith(binary_header_path, "s3://")) header_driver = "s3";
+  
+  if (header_driver == "gcs" || header_driver == "s3") {
+    // For cloud storage, write to local temp file then upload
+    std::string temp_file = "/tmp/segy_binary_header_" + std::to_string(std::time(nullptr));
+    
+    // Write to local temp file
+    std::ofstream temp_stream(temp_file, std::ios::binary);
+    if (!temp_stream.is_open()) {
+      return absl::InternalError("Failed to create temporary binary header file");
+    }
+    temp_stream.write(header_buffer.data(), 400);
+    temp_stream.close();
+    
+    // Upload to cloud storage
+    std::string upload_cmd;
+    if (header_driver == "gcs") {
+      // Use application default credentials by temporarily unsetting the service account
+      upload_cmd = "GOOGLE_APPLICATION_CREDENTIALS= gcloud storage cp " + temp_file + " " + binary_header_path;
+    } else {
+      upload_cmd = "aws s3 cp " + temp_file + " " + binary_header_path;
+    }
+    
+    std::cout << "Uploading binary header: " << upload_cmd << std::endl;
+    int result = std::system(upload_cmd.c_str());
+    
+    // Clean up temp file
+    std::system(("rm -f " + temp_file).c_str());
+    
+    if (result != 0) {
+      return absl::InternalError("Failed to upload binary header with exit code " + std::to_string(result));
+    }
+    
+  } else {
+    // For local files, write directly
+    std::ofstream file_stream(binary_header_path, std::ios::binary);
+    if (!file_stream.is_open()) {
+      return absl::InternalError("Failed to create binary header file: " + binary_header_path);
+    }
+    file_stream.write(header_buffer.data(), 400);
+    file_stream.close();
+  }
+  
+  std::cout << "Binary header written to: " << binary_header_path << std::endl;
+  std::cout << "Binary header info:" << std::endl;
+  std::cout << "  - Number of traces: " << num_traces << std::endl;
+  std::cout << "  - Samples per trace: " << num_samples << std::endl;
+  std::cout << "  - Sample interval: " << sample_interval_us << " microseconds" << std::endl;
+  std::cout << "  - Data format code: " << format_code << " (";
+  switch (format_code) {
+    case 1: std::cout << "4-byte IBM floating point"; break;
+    case 2: std::cout << "4-byte two's complement integer"; break;
+    case 3: std::cout << "2-byte two's complement integer"; break;
+    case 5: std::cout << "4-byte IEEE floating point"; break;
+    case 8: std::cout << "1-byte two's complement integer"; break;
+    default: std::cout << "unknown"; break;
+  }
+  std::cout << ")" << std::endl;
+  std::cout << "  - SEG-Y Revision: 1" << std::endl;
+  
+  return absl::OkStatus();
+}
+
+/**
+ * @brief Finalizes SEG-Y file by concatenating headers and trace data chunks.
+ *
+ * This function concatenates the text header, binary header, and all trace data chunks
+ * into a single SEG-Y file. The approach varies by storage backend:
+ * - GCS: Uses hierarchical log2 compose for Google Cloud Storage to handle 32-object limit
+ * - Local Unix/Linux: Uses cat command
+ * - S3/Windows: Returns error with manual instructions
+ *
+ * @param segy_path         Path where SEG-Y output was written
+ * @param output_chunk_size Chunk size used for trace data
+ * @param num_traces        Total number of traces
+ * @param ctx               TensorStore context
+ * @return Status of the finalization
+ */
+Result<void> FinalizeSegyFile(
+    const std::string& segy_path,
+    Index output_chunk_size,
+    Index num_traces,
+    const Context& ctx) {
+  
+  (void)ctx; // Currently unused
+  
+  std::cout << "Finalizing SEG-Y file..." << std::endl;
+  
+  // Determine storage backend
+  std::string driver = "file";
+  if (absl::StartsWith(segy_path, "gs://")) {
+    driver = "gcs";
+  } else if (absl::StartsWith(segy_path, "s3://")) {
+    driver = "s3";
+  }
+  
+  // Calculate number of chunks
+  Index num_chunks = (num_traces + output_chunk_size - 1) / output_chunk_size;
+  
+  if (driver == "gcs") {
+    // Use hierarchical log2 compose for Google Cloud Storage to handle 32-object limit
+    std::cout << "Using hierarchical compose for GCS (log2 approach)..." << std::endl;
+    
+    // Create list of all files to compose (text_header, binary_header, chunks 0..n-1)
+    std::vector<std::string> files_to_compose;
+    files_to_compose.push_back(segy_path + "/text_header");
+    files_to_compose.push_back(segy_path + "/binary_header");
+    for (Index chunk = 0; chunk < num_chunks; ++chunk) {
+      files_to_compose.push_back(segy_path + "/" + std::to_string(chunk));
+    }
+    
+    std::cout << "Total files to compose: " << files_to_compose.size() << std::endl;
+    
+    // If we have 32 or fewer files, use direct compose
+    if (files_to_compose.size() <= 32) {
+      std::cout << "Using direct compose (≤32 files)..." << std::endl;
+      
+      std::ostringstream cmd;
+      cmd << "GOOGLE_APPLICATION_CREDENTIALS= gcloud storage objects compose";
+      for (const auto& file : files_to_compose) {
+        cmd << " " << file;
+      }
+      cmd << " " << segy_path << ".sgy";
+      
+      std::cout << "Executing: " << cmd.str() << std::endl;
+      int result = std::system(cmd.str().c_str());
+      if (result != 0) {
+        return absl::InternalError("gcloud storage objects compose command failed with exit code " + std::to_string(result));
+      }
+      
+    } else {
+      // Use hierarchical log2 compose approach
+      std::cout << "Using hierarchical compose (>32 files)..." << std::endl;
+      
+      std::vector<std::string> current_level = files_to_compose;
+      int level = 0;
+      
+      while (current_level.size() > 1) {
+        std::vector<std::string> next_level;
+        std::cout << "Level " << level << ": composing " << current_level.size() << " files..." << std::endl;
+        
+        // Process files in groups of up to 32
+        for (size_t i = 0; i < current_level.size(); i += 32) {
+          size_t end = std::min(i + 32, current_level.size());
+          size_t group_size = end - i;
+          
+          // Create intermediate file name
+          std::string intermediate_file = segy_path + "/intermediate_L" + std::to_string(level) + "_G" + std::to_string(i/32);
+          
+          // Build compose command for this group
+          std::ostringstream cmd;
+          cmd << "GOOGLE_APPLICATION_CREDENTIALS= gcloud storage objects compose";
+          for (size_t j = i; j < end; ++j) {
+            cmd << " " << current_level[j];
+          }
+          cmd << " " << intermediate_file;
+          
+          std::cout << "  Group " << (i/32) << ": composing " << group_size << " files -> " << intermediate_file << std::endl;
+          
+          int result = std::system(cmd.str().c_str());
+          if (result != 0) {
+            return absl::InternalError("gcloud storage objects compose command failed at level " + std::to_string(level) + 
+                                     " group " + std::to_string(i/32) + " with exit code " + std::to_string(result));
+          }
+          
+          next_level.push_back(intermediate_file);
+          
+          // Immediately clean up the source files for this group (except on first level where we keep originals until the end)
+          if (level > 0) {
+            std::ostringstream cleanup_cmd;
+            cleanup_cmd << "GOOGLE_APPLICATION_CREDENTIALS= gcloud storage rm";
+            for (size_t j = i; j < end; ++j) {
+              cleanup_cmd << " " << current_level[j];
+            }
+            
+            std::cout << "  Cleaning up level " << level << " group " << (i/32) << " source files..." << std::endl;
+            int cleanup_result = std::system(cleanup_cmd.str().c_str());
+            if (cleanup_result != 0) {
+              std::cout << "  Warning: Cleanup failed for level " << level << " group " << (i/32) << std::endl;
+            }
+          }
+        }
+        
+        current_level = next_level;
+        level++;
+      }
+      
+      // Final step: rename the last intermediate file to the final output
+      if (!current_level.empty()) {
+        std::string final_intermediate = current_level[0];
+        std::ostringstream rename_cmd;
+        rename_cmd << "GOOGLE_APPLICATION_CREDENTIALS= gcloud storage mv " << final_intermediate << " " << segy_path << ".sgy";
+        
+        std::cout << "Renaming final intermediate to output file..." << std::endl;
+        int result = std::system(rename_cmd.str().c_str());
+        if (result != 0) {
+          return absl::InternalError("Failed to rename final intermediate file with exit code " + std::to_string(result));
+        }
+      }
+    }
+    
+    std::cout << "SEG-Y file created: " << segy_path << ".sgy" << std::endl;
+    
+    // Clean up original files (text_header, binary_header, and all chunks)
+    std::cout << "Cleaning up original files..." << std::endl;
+    std::ostringstream cleanup_cmd;
+    cleanup_cmd << "GOOGLE_APPLICATION_CREDENTIALS= gcloud storage rm " << segy_path << "/text_header " << segy_path << "/binary_header";
+    for (Index chunk = 0; chunk < num_chunks; ++chunk) {
+      cleanup_cmd << " " << segy_path << "/" << chunk;
+    }
+    
+    std::cout << "Executing cleanup: " << cleanup_cmd.str() << std::endl;
+    int cleanup_result = std::system(cleanup_cmd.str().c_str());
+    if (cleanup_result != 0) {
+      std::cout << "Warning: Cleanup of original files failed, some intermediate files may remain" << std::endl;
+    }
+    
+  } else if (driver == "file") {
+    // Check if we're on Windows
+#ifdef _WIN32
+    return absl::UnimplementedError(
+        "SEG-Y finalization not implemented for Windows. "
+        "Please manually concatenate the following files in order:\n"
+        "1. " + segy_path + "/text_header\n"
+        "2. " + segy_path + "/binary_header\n"
+        "3. " + segy_path + "/0, " + segy_path + "/1, ... " + segy_path + "/" + std::to_string(num_chunks - 1) + "\n"
+        "Use: copy /b text_header+binary_header+0+1+...+" + std::to_string(num_chunks - 1) + " output.sgy");
+#else
+    // Use cat command for Unix/Linux
+    std::cout << "Using cat command for local file concatenation..." << std::endl;
+    
+    // Build cat command
+    std::ostringstream cmd;
+    cmd << "cat ";
+    
+    // Add text header
+    cmd << "\"" << segy_path << "/text_header\" ";
+    
+    // Add binary header
+    cmd << "\"" << segy_path << "/binary_header\" ";
+    
+    // Add all trace data chunks in order
+    for (Index chunk = 0; chunk < num_chunks; ++chunk) {
+      cmd << "\"" << segy_path << "/" << chunk << "\" ";
+    }
+    
+    // Output file
+    cmd << "> \"" << segy_path << ".sgy\"";
+    
+    std::cout << "Executing: " << cmd.str() << std::endl;
+    
+    int result = std::system(cmd.str().c_str());
+    if (result != 0) {
+      return absl::InternalError("cat command failed with exit code " + std::to_string(result));
+    }
+    
+    std::cout << "SEG-Y file created: " << segy_path << ".sgy" << std::endl;
+    
+    // Optionally clean up intermediate files
+    std::cout << "Cleaning up intermediate files..." << std::endl;
+    std::ostringstream cleanup_cmd;
+    cleanup_cmd << "rm ";
+    cleanup_cmd << "\"" << segy_path << "/text_header\" ";
+    cleanup_cmd << "\"" << segy_path << "/binary_header\" ";
+    for (Index chunk = 0; chunk < num_chunks; ++chunk) {
+      cleanup_cmd << "\"" << segy_path << "/" << chunk << "\" ";
+    }
+    
+    std::cout << "Executing cleanup: " << cleanup_cmd.str() << std::endl;
+    int cleanup_result = std::system(cleanup_cmd.str().c_str());
+    if (cleanup_result != 0) {
+      std::cout << "Warning: Cleanup command failed, intermediate files may remain" << std::endl;
+    }
+#endif
+    
+  } else if (driver == "s3") {
+    // S3 doesn't have a simple compose operation like GCS
+    return absl::UnimplementedError(
+        "SEG-Y finalization not implemented for S3. "
+        "Please use AWS CLI to manually concatenate the following files in order:\n"
+        "1. Download all files: aws s3 cp " + segy_path + "/ . --recursive\n"
+        "2. Concatenate locally: cat text_header binary_header 0 1 ... " + std::to_string(num_chunks - 1) + " > output.sgy\n"
+        "3. Upload result: aws s3 cp output.sgy " + segy_path + ".sgy\n"
+        "4. Clean up: aws s3 rm " + segy_path + "/ --recursive");
+        
+  } else {
+    return absl::UnimplementedError("Unknown storage driver: " + driver);
+  }
+  
   return absl::OkStatus();
 }
 
