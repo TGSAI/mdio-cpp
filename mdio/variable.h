@@ -557,11 +557,15 @@ template <typename T = void, DimensionIndex R = dynamic_rank,
 Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
                                        Option&&... options) {
   // Infer the name from the path
+
+
   std::string variable_name = json_store["kvstore"]["path"].get<std::string>();
   std::vector<std::string> pathComponents = absl::StrSplit(variable_name, "/");
   variable_name = pathComponents.back();
 
   auto store_spec = json_store;
+  store_spec["recheck_cached_data"] = "open";
+  store_spec["recheck_cached_metadata"] = "open";
   // retain attributes if we want to check values ...
   ::nlohmann::json suppliedAttributes;
   if (store_spec.contains("attributes")) {

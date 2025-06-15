@@ -19,6 +19,10 @@
 #include <string>
 #include <vector>
 
+#include <algorithm>     // for std::erase_if
+#include <thread>        // for sleep_for
+#include <chrono>        // for milliseconds
+
 #include "mdio/mdio.h"
 #include "tensorstore/util/result.h"
 
@@ -310,8 +314,12 @@ Result<void> MdioToSegy(
   (void)trace_headers;
 
   // 1 GiB cache
-  auto cacheJson = nlohmann::json::parse(
-      R"({"cache_pool": {"total_bytes_limit": 5000000000}})");
+  auto cacheJson = nlohmann::json::parse(R"({
+    "cache_pool":           { "total_bytes_limit": 5000000000 },
+    "data_copy_concurrency": {"limit": 16},
+    "gcs_request_concurrency": {"limit": 16},
+    "s3_request_concurrency": {"limit": 16}
+  })");
   auto ctxSpec = Context::Spec::FromJson(cacheJson);
   auto ctx     = Context(ctxSpec.value());
 
@@ -319,8 +327,6 @@ Result<void> MdioToSegy(
   MDIO_ASSIGN_OR_RETURN(
       auto ds,
       Dataset::Open(mdio_path, constants::kOpen, ctx).result());
-
-  std::cout << ds << std::endl;
 
   // Pick the highest-rank (float-prefer) seismic variable
   bool    found      = false;
@@ -348,10 +354,7 @@ Result<void> MdioToSegy(
   // Get dims & shape from the seismic variable's ordered domain
   auto domain = seismic_var.dimensions();
   auto labels = domain.labels();  // e.g. {"inline","crossline","time"}
-  for (const auto& l : labels) {
-    std::cout << l << std::endl;
-  }
-  auto shape  = domain.shape();   // e.g. { ni,       nc,         nt }
+  auto shape  = domain.shape();   // e.g. { ni, nc, nt }
   size_t rank = shape.size();
   if (rank < 2) {
     return absl::InvalidArgumentError(
@@ -367,216 +370,161 @@ Result<void> MdioToSegy(
     num_traces *= shape[i];
   }
 
-  // Use the domain size of the second-fastest growing dimension for chunking
-  // This ensures we process complete "slices" along that dimension
-  Index output_chunk_size = 1;
-  if (rank >= 2) {
-    // Use the full domain size of the second-fastest growing spatial dimension
-    output_chunk_size = shape[rank - 2];
-  } else if (rank >= 1) {
-    // Fallback to first spatial dimension size
-    output_chunk_size = shape[0];
-  }
-  
-  std::cout << "Using output chunk size: " << output_chunk_size << " (full domain of dimension " 
-            << (rank >= 2 ? rank - 2 : 0) << ")" << std::endl;
+  // Determine chunk size along second-fastest spatial dim
+  Index output_chunk_size = (rank >= 2)
+      ? shape[rank - 2]
+      : shape[0];
 
   // Build Zarr spec for output SEG-Y
   nlohmann::json spec;
   spec["driver"] = "zarr";
-
-  // infer driver from URI
   std::string driver = "file";
   if (absl::StartsWith(segy_path, "gs://")) driver = "gcs";
   else if (absl::StartsWith(segy_path, "s3://")) driver = "s3";
   spec["kvstore"] = {{"driver", driver}, {"path", segy_path}};
-
   if (driver != "file") {
-    // strip "gs://" or "s3://"
     size_t pos = segy_path.find("://");
     std::string tail = segy_path.substr(pos + 3);
-    // build a real vector<string>
-    std::vector<std::string> file_parts;
-    for (auto piece : absl::StrSplit(tail, '/')) {
-      file_parts.emplace_back(piece);
-    }
-    if (file_parts.size() < 2) {
-      return absl::InvalidArgumentError(
-          "Cloud path requires [gs/s3]://bucket/path format");
-    }
-    spec["kvstore"]["bucket"] = file_parts[0];
-    // rejoin remainder as object path
-    spec["kvstore"]["path"] =
-        absl::StrJoin(file_parts.begin() + 1, file_parts.end(), "/");
+    std::vector<std::string> parts;
+    for (auto& p : absl::StrSplit(tail, '/')) parts.emplace_back(p);
+    spec["kvstore"]["bucket"] = parts[0];
+    spec["kvstore"]["path"] = absl::StrJoin(parts.begin()+1, parts.end(), "/");
   }
-
   spec["metadata"] = {
       {"dtype", std::string("|V") + std::to_string(trace_bytes)},
       {"shape", {num_traces}},
-      {"chunks", {output_chunk_size}},  // Use the computed chunk size instead of 1
+      {"chunks", {output_chunk_size}},
       {"dimension_separator", "."},
       {"compressor", nullptr},
       {"fill_value", nullptr},
       {"order", "C"},
-      {"zarr_format", 2}};
+      {"zarr_format", 2}
+  };
   spec["attributes"] = {
       {"dimension_names", {"trace"}},
-      {"long_name", ""}};
+      {"long_name", ""}
+  };
 
   MDIO_ASSIGN_OR_RETURN(
       auto out_var,
       Variable<>::Open(spec, constants::kCreateClean, ctx).result());
 
-  // Process traces by chunking along the second-fastest growing dimension
-  // This ensures we align with the underlying storage chunks
-  size_t chunk_dim = (rank >= 2) ? rank - 2 : 0;  // Index of second-fastest growing spatial dim
-  Index chunk_dim_size = shape[chunk_dim];
-  
-  // Calculate total number of "slices" in all other spatial dimensions
-  Index num_outer_slices = 1;
-  for (size_t d = 0; d < rank - 1; ++d) {
-    if (d != chunk_dim) {
-      num_outer_slices *= shape[d];
-    }
-  }
-  
-  Index traces_processed = 0;
-  
-  // Iterate through all combinations of the other spatial dimensions
-  std::vector<Index> outer_coords(rank - 1, 0);
-  
-  for (Index outer_slice = 0; outer_slice < num_outer_slices; ++outer_slice) {
-    // Convert outer_slice to coordinates for all dimensions except chunk_dim
-    Index temp_slice = outer_slice;
-    for (int d = static_cast<int>(rank) - 2; d >= 0; --d) {
-      if (static_cast<size_t>(d) != chunk_dim) {
-        outer_coords[d] = temp_slice % shape[d];
-        temp_slice /= shape[d];
+  // === Throttle helper ===
+  constexpr size_t MAX_IN_FLIGHT = 10;
+  std::vector<tensorstore::WriteFutures> futures;
+  auto enqueue_write = [&](tensorstore::WriteFutures wf) {
+    while (futures.size() >= MAX_IN_FLIGHT) {
+      // Remove completed writes using remove-erase
+      futures.erase(
+        std::remove_if(
+          futures.begin(), futures.end(),
+          [](auto& wf){ return wf.commit_future.ready(); }),
+        futures.end());
+      if (futures.size() >= MAX_IN_FLIGHT) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
       }
     }
-    
-    // Now chunk along the chunk_dim
-    for (Index chunk_start = 0; chunk_start < chunk_dim_size; chunk_start += output_chunk_size) {
-      Index chunk_end = std::min(chunk_start + output_chunk_size, chunk_dim_size);
-      Index chunk_size = chunk_end - chunk_start;
-      
+    futures.emplace_back(std::move(wf));
+  };
+
+  // Iterate over chunks and submit writes
+  size_t chunk_dim = (rank >= 2) ? rank - 2 : 0;
+  Index chunk_dim_size = shape[chunk_dim];
+  Index num_outer_slices = 1;
+  for (size_t d = 0; d < rank - 1; ++d) if (d != chunk_dim) num_outer_slices *= shape[d];
+  std::vector<Index> outer_coords(rank - 1, 0);
+
+  Index traces_processed = 0;
+  for (Index outer = 0; outer < num_outer_slices; ++outer) {
+    // compute outer_coords
+    Index tmp = outer;
+    for (int d = rank - 2; d >= 0; --d) {
+      if ((size_t)d != chunk_dim) {
+        outer_coords[d] = tmp % shape[d];
+        tmp /= shape[d];
+      }
+    }
+
+    for (Index start = 0; start < chunk_dim_size; start += output_chunk_size) {
+      Index end   = std::min(start + output_chunk_size, chunk_dim_size);
+      Index size  = end - start;
+
       // Progress bar (tqdm style)
       double progress = static_cast<double>(traces_processed) / static_cast<double>(num_traces);
       int bar_width = 50;
       int pos = static_cast<int>(bar_width * progress);
-      
-    //   std::cout << "\r[";
-    //   for (int i = 0; i < bar_width; ++i) {
-    //     if (i < pos) std::cout << "=";
-    //     else if (i == pos) std::cout << ">";
-    //     else std::cout << " ";
-    //   }
-    //   std::cout << "] " << static_cast<int>(progress * 100.0) << "% "
-    //             << "(" << traces_processed << "/" << num_traces << " traces)";
-    //   std::cout.flush();
+      std::cout << "\r[";
+      for (int i = 0; i < bar_width; ++i) {
+        if (i < pos) std::cout << "=";
+        else if (i == pos) std::cout << ">";
+        else std::cout << " ";
+      }
+      std::cout << "] " << static_cast<int>(progress * 100.0) << "% "
+                << "(" << traces_processed << "/" << num_traces << " traces)";
+      std::cout.flush();
 
-      // Build slice descriptors for this specific chunk
-      std::vector<RangeDescriptor<Index>> chunk_descs;
-      chunk_descs.reserve(rank);
-      
-      // For each spatial dimension, either use the fixed coordinate or the chunk range
+      // Build slice descriptors
+      std::vector<RangeDescriptor<Index>> descs;
+      descs.reserve(rank);
       for (size_t d = 0; d < rank - 1; ++d) {
         if (d == chunk_dim) {
-          // This is the dimension we're chunking along
-          chunk_descs.push_back(RangeDescriptor<Index>{
-              labels[d],
-              chunk_start,
-              chunk_end,
-              1});
+          descs.push_back({labels[d], start, end, 1});
         } else {
-          // This is a fixed coordinate for this outer slice
-          chunk_descs.push_back(RangeDescriptor<Index>{
-              labels[d],
-              outer_coords[d],
-              outer_coords[d] + 1,
-              1});
+          descs.push_back({labels[d], outer_coords[d], outer_coords[d]+1, 1});
         }
       }
-      
-      // Full slice on the last dimension (samples/time)
-      chunk_descs.push_back(RangeDescriptor<Index>{
-          labels[rank - 1],
-          0,
-          num_samples,
-          1});
+      descs.push_back({labels[rank-1], 0, num_samples, 1});
 
-      // Read only the seismic data we need for this chunk
-      MDIO_ASSIGN_OR_RETURN(auto chunk_var, seismic_var.slice(chunk_descs));
-      std::cout << chunk_var << std::endl;
-      MDIO_ASSIGN_OR_RETURN(auto chunk_data, chunk_var.Read().result());
-      std::cout << "Finished reading chunk_var..." << std::endl;
-      
-      const char* chunk_ptr = reinterpret_cast<const char*>(
-          chunk_data.get_data_accessor().data());
-      ptrdiff_t chunk_off = chunk_data.get_flattened_offset();
-      
-      // Allocate buffer for the output chunk
-      std::vector<char> chunk_buffer(chunk_size * trace_bytes, 0);
+      MDIO_ASSIGN_OR_RETURN(auto var_slice, seismic_var.slice(descs));
+      MDIO_ASSIGN_OR_RETURN(auto data,      var_slice.Read().result());
 
-      // Process each trace in the chunk
-      for (Index i = 0; i < chunk_size; ++i) {
-        // Calculate the offset in the chunk data for this trace
-        Index trace_offset_in_chunk = i * num_samples;
-
-        // Copy trace data to chunk buffer (240 bytes header + samples)
-        char* trace_buffer = chunk_buffer.data() + (i * trace_bytes);
-        std::memset(trace_buffer, 0, 240);  // Zero the header
-        std::memcpy(
-            trace_buffer + 240,
-            chunk_ptr + (chunk_off + trace_offset_in_chunk) * sample_bytes,
-            static_cast<size_t>(num_samples) * sample_bytes);
+      const char* ptr = reinterpret_cast<const char*>(data.get_data_accessor().data());
+      ptrdiff_t off  = data.get_flattened_offset();
+      std::vector<char> buffer(size * trace_bytes, 0);
+      for (Index i = 0; i < size; ++i) {
+        char* tb = buffer.data() + i * trace_bytes;
+        std::memset(tb, 0, 240);
+        std::memcpy(tb + 240, ptr + (off + i*num_samples)*sample_bytes,
+                    size_t(num_samples)*sample_bytes);
       }
 
-      // Calculate the output trace range for this chunk
-      // Convert coordinates back to linear trace indices
-      Index output_start = 0;
-      Index multiplier = 1;
-      
-      // Build the linear index from coordinates
-      std::vector<Index> trace_coords = outer_coords;
-      trace_coords[chunk_dim] = chunk_start;
-      
-      for (int d = static_cast<int>(rank) - 2; d >= 0; --d) {
-        output_start += trace_coords[d] * multiplier;
-        multiplier *= shape[d];
+      // Compute write range
+      Index out_start = 0, mul = 1;
+      std::vector<Index> coords = outer_coords;
+      coords[chunk_dim] = start;
+      for (int d = rank-2; d >= 0; --d) {
+        out_start += coords[d] * mul;
+        mul *= shape[d];
       }
-      
-      Index output_end = output_start + chunk_size;
+      RangeDescriptor<Index> write_desc{"trace", out_start, out_start+size, 1};
 
-      // Write the chunk to output
-      RangeDescriptor<Index> write_desc{"trace", output_start, output_end, 1};
       MDIO_ASSIGN_OR_RETURN(auto out_slice, out_var.slice(write_desc));
-      std::cout << out_slice << std::endl;
-      MDIO_ASSIGN_OR_RETURN(auto out_data, out_slice.Read().result());
-      std::cout << "Finished reading out_data..." << std::endl;
-      char* out_ptr = reinterpret_cast<char*>(
-          out_data.get_data_accessor().data());
+    //   MDIO_ASSIGN_OR_RETURN(auto out_data,  out_slice.Read().result());
+    MDIO_ASSIGN_OR_RETURN(auto out_data, from_variable(out_slice));
+
+      char* out_ptr = reinterpret_cast<char*>(out_data.get_data_accessor().data());
       ptrdiff_t out_off = out_data.get_flattened_offset();
-      
-      // Copy the chunk buffer to output
-      std::memcpy(out_ptr + out_off, chunk_buffer.data(), chunk_size * trace_bytes);
-      
-      // Write it back
-      std::cout << "Writing back to out_slice..." << std::endl;
-      auto fut = out_slice.Write(out_data);
-      if (!fut.status().ok()) return fut.status();
-      std::cout << "Finished writing back to out_slice..." << std::endl;
-      traces_processed += chunk_size;
+      std::memcpy(out_ptr + out_off, buffer.data(), size * trace_bytes);
+
+      // Submit write with throttle
+      auto wf = out_slice.Write(out_data);
+      enqueue_write(std::move(wf));
+
+      traces_processed += size;
     }
   }
 
-  // Final progress bar showing 100% completion
-  std::cout << "\r[";
-  for (int i = 0; i < 50; ++i) {
-    std::cout << "=";
+  // Drain remaining writes and check errors
+  for (auto& wf : futures) {
+    if (!wf.commit_future.result().ok()) {
+      return wf.commit_future.status();
+    }
   }
-  std::cout << "] 100% (" << num_traces << "/" << num_traces << " traces)" << std::endl;
-  std::cout << "Conversion completed successfully!" << std::endl;
+
+  std::cout << "\r[";
+  for (int i = 0; i < 50; ++i) std::cout << "=";
+  std::cout << "] 100% (" << num_traces << "/" << num_traces << ")\n"
+            << "Conversion completed successfully!\n";
 
   return absl::OkStatus();
 }
