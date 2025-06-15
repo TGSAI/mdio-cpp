@@ -18,6 +18,10 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <sstream>
+#include <iomanip>
+#include <chrono>
+#include <ctime>
 
 #include <algorithm>     // for std::erase_if
 #include <thread>        // for sleep_for
@@ -208,8 +212,8 @@ inline TraceHeaderComposer::TraceHeaderComposer() {
     {"impulse_signal_polarity", 149, "<i2"},
     {"vibratory_polarity_code", 151, "<i2"},
 
-    // # **SEG‑Y Rev 1 additions (bytes 153–160ish)**
-    {"segy_format_revision", 153, "<i2"},            // # Format revision (always 1 for Rev 1)
+    // # **SEG‑Y Rev 1 additions (bytes 153–160ish)**
+    {"segy_format_revision", 153, "<i2"},            // # Format revision (always 1 for Rev 1)
     {"fixed_length_trace_flag", 155, "<i2"},         // # 1 = fixed-length traces present :contentReference[oaicite:1]{index=1}
     {"num_textual_hdr_ext", 157, "<i2"},             // # Number of 3200‑byte Extended Textual File Header records :contentReference[oaicite:2]{index=2}
 
@@ -565,6 +569,15 @@ inline Result<void> TraceHeaderMapper::PopulateTraceHeader(
   return absl::OkStatus();
 }
 
+// Forward declaration
+Result<void> CreateSegyTextHeader(
+    const std::string& text_header,
+    const Dataset& dataset,
+    const std::string& mdio_path,
+    const std::string& segy_path,
+    const std::vector<TraceHeaderField>& overrides,
+    const Context& ctx);
+
 /**
  * @brief Converts an MDIO dataset to a SEG-Y styled Variable.
  *
@@ -624,6 +637,21 @@ Result<void> MdioToSegy(
     } else {
       std::cout << "dimension variable '" << mapping.variable_name << "'" << std::endl;
     }
+  }
+
+  // Create and write SEG-Y text header
+  std::vector<TraceHeaderField> applied_overrides;
+  for (const auto& field : trace_headers.fields()) {
+    // Check if this field was overridden by comparing with default names
+    if (field.name == "inline" || field.name == "crossline" || 
+        field.name == "cdp-x" || field.name == "cdp-y") {
+      applied_overrides.push_back(field);
+    }
+  }
+  
+  auto text_header_result = CreateSegyTextHeader(text_header, ds, mdio_path, segy_path, applied_overrides, ctx);
+  if (!text_header_result.ok()) {
+    std::cerr << "Warning: Failed to create text header: " << text_header_result.status() << std::endl;
   }
 
   // Pick the highest-rank (float-prefer) seismic variable
@@ -846,6 +874,292 @@ Result<void> MdioToSegy(
   std::cout << "] 100% (" << num_traces << "/" << num_traces << ")\n"
             << "Conversion completed successfully!\n";
 
+  return absl::OkStatus();
+}
+
+/**
+ * @brief Creates and writes a SEG-Y text header.
+ *
+ * This function handles the creation of a SEG-Y text header with fallback logic:
+ * 1. Use provided text_header if it's valid (3200 bytes)
+ * 2. Check dataset metadata for "text_header" field
+ * 3. Generate default header with MDIO path, date, and override info
+ *
+ * @param text_header   Input text header string
+ * @param dataset       MDIO dataset for metadata lookup
+ * @param mdio_path     Path to input MDIO dataset
+ * @param segy_path     Path where SEG-Y output is being written
+ * @param overrides     Applied trace header overrides
+ * @param ctx           TensorStore context
+ * @return Status of the text header creation
+ */
+Result<void> CreateSegyTextHeader(
+    const std::string& text_header,
+    const Dataset& dataset,
+    const std::string& mdio_path,
+    const std::string& segy_path,
+    const std::vector<TraceHeaderField>& overrides,
+    const Context& ctx) {
+  
+  std::string final_text_header;
+  
+  // Helper function to validate and fix SEG-Y text header format
+  auto validate_and_fix_header = [](const std::string& header) -> std::pair<bool, std::string> {
+    if (header.size() != 3200) {
+      return {false, ""};
+    }
+    
+    // Check if it's properly formatted as 40 lines of 80 characters
+    std::string fixed_header;
+    for (int line = 0; line < 40; ++line) {
+      size_t start = line * 80;
+      if (start >= header.size()) break;
+      
+      std::string line_content = header.substr(start, 80);
+      
+      // Ensure line is exactly 80 characters
+      if (line_content.size() < 80) {
+        line_content.resize(80, ' ');
+      } else if (line_content.size() > 80) {
+        line_content = line_content.substr(0, 80);
+      }
+      
+      fixed_header += line_content;
+    }
+    
+    // Ensure exactly 3200 bytes
+    if (fixed_header.size() < 3200) {
+      fixed_header.resize(3200, ' ');
+    } else if (fixed_header.size() > 3200) {
+      fixed_header = fixed_header.substr(0, 3200);
+    }
+    
+    return {true, fixed_header};
+  };
+  
+  // Check if provided text header is valid (3200 bytes)
+  if (text_header.size() == 3200) {
+    auto [is_valid, fixed_header] = validate_and_fix_header(text_header);
+    if (is_valid) {
+      std::cout << "Using provided text header (3200 bytes, validated format)" << std::endl;
+      final_text_header = fixed_header;
+    } else {
+      std::cout << "Provided text header has invalid format, checking dataset metadata..." << std::endl;
+    }
+  } else if (!text_header.empty()) {
+    std::cout << "Provided text header invalid size (" << text_header.size() 
+              << " bytes), checking dataset metadata..." << std::endl;
+  } else {
+    std::cout << "No text header provided, checking dataset metadata..." << std::endl;
+  }
+  
+  // Try to get text header from dataset metadata if not already set
+  if (final_text_header.empty()) {
+    bool found_in_metadata = false;
+    try {
+      auto metadata = dataset.getMetadata();
+      if (metadata.contains("attributes") && 
+          metadata["attributes"].contains("text_header")) {
+        std::string metadata_header = metadata["attributes"]["text_header"].get<std::string>();
+        if (metadata_header.size() == 3200) {
+          auto [is_valid, fixed_header] = validate_and_fix_header(metadata_header);
+          if (is_valid) {
+            std::cout << "Using text header from dataset metadata (validated format)" << std::endl;
+            final_text_header = fixed_header;
+            found_in_metadata = true;
+          } else {
+            std::cout << "Text header in metadata has invalid format" << std::endl;
+          }
+        } else {
+          std::cout << "Text header in metadata has invalid size (" 
+                    << metadata_header.size() << " bytes)" << std::endl;
+        }
+      }
+    } catch (const std::exception& e) {
+      std::cout << "Could not read text header from metadata: " << e.what() << std::endl;
+    }
+    
+    // Generate default text header if not found
+    if (!found_in_metadata) {
+      std::cout << "Generating default text header..." << std::endl;
+      
+      // Get current date
+      auto now = std::chrono::system_clock::now();
+      auto time_t = std::chrono::system_clock::to_time_t(now);
+      auto tm = *std::localtime(&time_t);
+      char date_str[32];
+      std::strftime(date_str, sizeof(date_str), "%Y-%m-%d %H:%M:%S", &tm);
+      
+      // Helper function to format a line to exactly 80 characters
+      auto format_line = [](int line_num, const std::string& content) -> std::string {
+        std::string line = "C" + std::to_string(line_num);
+        if (line_num < 10) line = "C " + std::to_string(line_num);  // Add space for single digits
+        line += " " + content;
+        
+        // Pad or truncate to exactly 80 characters
+        if (line.length() < 80) {
+          line.resize(80, ' ');
+        } else if (line.length() > 80) {
+          line = line.substr(0, 80);
+        }
+        return line;
+      };
+      
+      // Create header lines
+      std::vector<std::string> lines;
+      lines.push_back(format_line(1, "SEG-Y file created from MDIO dataset"));
+      lines.push_back(format_line(2, ""));
+      
+      // Handle potentially long MDIO path - split if necessary
+      std::string path_prefix = "Source MDIO path: ";
+      std::string full_path_line = path_prefix + mdio_path;
+      if (full_path_line.length() <= 76) { // 80 - "C# " = 76 chars max
+        lines.push_back(format_line(3, full_path_line));
+        lines.push_back(format_line(4, "Created: " + std::string(date_str)));
+        lines.push_back(format_line(5, ""));
+      } else {
+        // Split long path across multiple lines
+        lines.push_back(format_line(3, path_prefix));
+        
+        // Find a good break point in the path
+        std::string remaining_path = mdio_path;
+        int current_line = 4;
+        while (!remaining_path.empty() && current_line <= 39) {
+          int max_path_chars = 74; // 76 - 2 for indentation
+          if (remaining_path.length() <= max_path_chars) {
+            lines.push_back(format_line(current_line++, "  " + remaining_path));
+            break;
+          } else {
+            // Find break point (prefer slash or dash)
+            int break_point = max_path_chars;
+            for (int i = max_path_chars - 1; i >= max_path_chars - 20 && i >= 0; --i) {
+              if (remaining_path[i] == '/' || remaining_path[i] == '-') {
+                break_point = i + 1; // Include the separator
+                break;
+              }
+            }
+            
+            std::string path_part = remaining_path.substr(0, break_point);
+            lines.push_back(format_line(current_line++, "  " + path_part));
+            remaining_path = remaining_path.substr(break_point);
+          }
+        }
+        
+        lines.push_back(format_line(current_line++, "Created: " + std::string(date_str)));
+        lines.push_back(format_line(current_line++, ""));
+      }
+      
+      int line_num = lines.size() + 1;
+      if (!overrides.empty()) {
+        lines.push_back(format_line(line_num++, "Applied trace header overrides:"));
+        
+        // Calculate how many overrides we can fit in remaining lines
+        int available_lines = 40 - line_num;
+        int overrides_to_show = std::min(static_cast<int>(overrides.size()), available_lines - 1); // -1 for potential "..." line
+        
+        for (int i = 0; i < overrides_to_show && line_num <= 39; ++i) {
+          const auto& override = overrides[i];
+          std::string override_info = "- " + override.name + " at byte " + std::to_string(override.offset);
+          
+          // Check if this override description fits in one line (76 chars max)
+          if (override_info.length() <= 76) {
+            lines.push_back(format_line(line_num++, override_info));
+          } else {
+            // Truncate long override descriptions
+            std::string truncated = override_info.substr(0, 73) + "..."; // 76 - 3 for "..."
+            lines.push_back(format_line(line_num++, truncated));
+          }
+        }
+        
+        // Add indication if there are more overrides
+        if (overrides.size() > overrides_to_show && line_num <= 40) {
+          int remaining_overrides = overrides.size() - overrides_to_show;
+          std::string more_info = "... and " + std::to_string(remaining_overrides) + " more override(s)";
+          lines.push_back(format_line(line_num++, more_info));
+        }
+      }
+      
+      // Fill remaining lines up to 40
+      for (int i = line_num; i <= 40; ++i) {
+        lines.push_back(format_line(i, ""));
+      }
+      
+      // Combine all lines into final header
+      std::string header_content;
+      for (const auto& line : lines) {
+        header_content += line;
+      }
+      
+      // Verify we have exactly 3200 bytes (40 lines * 80 chars)
+      if (header_content.size() != 3200) {
+        std::cerr << "Warning: Generated text header size is " << header_content.size() 
+                  << " bytes, expected 3200. Adjusting..." << std::endl;
+        if (header_content.size() < 3200) {
+          header_content.resize(3200, ' ');
+        } else {
+          header_content = header_content.substr(0, 3200);
+        }
+      }
+      
+      final_text_header = header_content;
+    }
+  }
+  
+  // Write text header to file using TensorStore
+  std::string text_header_path = segy_path + "/text_header";
+  
+  // Build TensorStore spec for text header
+  nlohmann::json spec;
+  spec["driver"] = "zarr";
+  
+  std::string driver = "file";
+  if (absl::StartsWith(text_header_path, "gs://")) driver = "gcs";
+  else if (absl::StartsWith(text_header_path, "s3://")) driver = "s3";
+  
+  spec["kvstore"] = {{"driver", driver}, {"path", text_header_path}};
+  
+  if (driver != "file") {
+    size_t pos = text_header_path.find("://");
+    std::string tail = text_header_path.substr(pos + 3);
+    std::vector<std::string> parts;
+    for (auto& p : absl::StrSplit(tail, '/')) parts.emplace_back(p);
+    spec["kvstore"]["bucket"] = parts[0];
+    spec["kvstore"]["path"] = absl::StrJoin(parts.begin()+1, parts.end(), "/");
+  }
+  
+  spec["metadata"] = {
+      {"dtype", "|S1"},  // Single byte string
+      {"shape", {3200}},
+      {"chunks", {3200}},
+      {"dimension_separator", "."},
+      {"compressor", nullptr},
+      {"fill_value", nullptr},
+      {"order", "C"},
+      {"zarr_format", 2}
+  };
+  
+  spec["attributes"] = {
+      {"dimension_names", {"byte"}},
+      {"long_name", "SEG-Y Text Header"}
+  };
+  
+  MDIO_ASSIGN_OR_RETURN(
+      auto text_header_var,
+      Variable<>::Open(spec, constants::kCreateClean, ctx).result());
+  
+  // Create array from text header string
+  MDIO_ASSIGN_OR_RETURN(auto text_data, from_variable(text_header_var));
+  char* text_ptr = reinterpret_cast<char*>(text_data.get_data_accessor().data());
+  std::memcpy(text_ptr, final_text_header.data(), 3200);
+  
+  // Write the text header
+  auto write_future = text_header_var.Write(text_data);
+  auto write_result = write_future.result();
+  if (!write_result.ok()) {
+    return write_result.status();
+  }
+  
+  std::cout << "Text header written to: " << text_header_path << std::endl;
   return absl::OkStatus();
 }
 
