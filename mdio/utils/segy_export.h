@@ -22,6 +22,8 @@
 #include <algorithm>     // for std::erase_if
 #include <thread>        // for sleep_for
 #include <chrono>        // for milliseconds
+#include <set>           // for std::set
+#include <iostream>      // for std::cerr
 
 #include "mdio/mdio.h"
 #include "tensorstore/util/result.h"
@@ -48,6 +50,24 @@ struct TraceHeaderField {
   std::string dtype;
 };
 
+// Structure to hold information about how to populate a trace header field
+struct TraceHeaderMapping {
+  std::string field_name;
+  uint8_t offset;
+  std::string dtype;
+  size_t size;
+  
+  // Source information
+  enum class SourceType { STRUCTURED_VARIABLE, DIMENSION_VARIABLE } source_type;
+  std::string variable_name;  // For structured vars, this is the main variable name
+  std::string field_name_in_var;  // For structured vars, this is the field name
+  
+  TraceHeaderMapping(const std::string& fn, uint8_t off, const std::string& dt, size_t sz,
+                     SourceType st, const std::string& vn, const std::string& fin = "")
+    : field_name(fn), offset(off), dtype(dt), size(sz),
+      source_type(st), variable_name(vn), field_name_in_var(fin) {}
+};
+
 class TraceHeaderComposer {
  public:
   TraceHeaderComposer();
@@ -59,12 +79,43 @@ class TraceHeaderComposer {
 
   const std::vector<TraceHeaderField>& fields() const { return fields_; }
 
+  // Make DTypeSize public so TraceHeaderMapper can access it
+  static std::size_t DTypeSize(const std::string& dtype);
+
  private:
   std::vector<TraceHeaderField> fields_;
   Result<void> Validate() const;
   static tensorstore::Result<tensorstore::internal_zarr::ZarrDType> ParseDType(
       const std::string& dtype);
-  static std::size_t DTypeSize(const std::string& dtype);
+};
+
+class TraceHeaderMapper {
+ public:
+  TraceHeaderMapper(const Dataset& dataset, const TraceHeaderComposer& composer);
+  
+  // Analyze dataset and create mappings for available header fields
+  Result<void> CreateMappings();
+  
+  // Get all the mappings
+  const std::vector<TraceHeaderMapping>& GetMappings() const { return mappings_; }
+  
+  // Populate trace header buffer for a specific trace location
+  Result<void> PopulateTraceHeader(char* header_buffer, 
+                                   const std::vector<Index>& trace_coords) const;
+  
+ private:
+  const Dataset& dataset_;
+  const TraceHeaderComposer& composer_;
+  std::vector<TraceHeaderMapping> mappings_;
+  
+  Result<void> AnalyzeStructuredVariables();
+  Result<void> AnalyzeDimensionVariables();
+  
+  // Check if a dtype string matches between trace header and variable
+  bool DTypesMatch(const std::string& header_dtype, const std::string& var_dtype) const;
+  
+  // Convert MDIO dtype to SEG-Y trace header dtype
+  std::string ConvertToTraceHeaderDType(const std::string& mdio_dtype) const;
 };
 
 inline tensorstore::Result<tensorstore::internal_zarr::ZarrDType>
@@ -196,60 +247,86 @@ inline Result<void> TraceHeaderComposer::Validate() const {
   std::array<bool, 240> used{};
   for (const auto& f : fields_) {
     auto size = DTypeSize(f.dtype);
+    
     if (size == 0) {
       return absl::InvalidArgumentError("Invalid dtype");
     }
-    if (static_cast<std::size_t>(f.offset) + size > 240) {
+    
+    // SEG-Y uses 1-based indexing, so valid byte positions are 1-240
+    // Convert to 0-based for array indexing
+    if (f.offset < 1 || static_cast<std::size_t>(f.offset - 1) + size > 240) {
       return absl::InvalidArgumentError("Field exceeds 240 bytes");
     }
+    
     for (std::size_t i = 0; i < size; ++i) {
-      if (used[f.offset + i]) {
+      size_t array_index = f.offset - 1 + i;  // Convert 1-based to 0-based
+      if (used[array_index]) {
         return absl::InvalidArgumentError("Overlapping header bytes");
       }
-      used[f.offset + i] = true;
+      used[array_index] = true;
     }
   }
-  for (bool b : used) {
-    if (!b) return absl::InvalidArgumentError("Header does not cover 240 bytes");
+  
+  // Check for gaps
+  for (size_t i = 0; i < 240; ++i) {
+    if (!used[i]) {
+      return absl::InvalidArgumentError("Header does not cover 240 bytes");
+    }
   }
+  
   return absl::OkStatus();
 }
 
 inline Result<void> TraceHeaderComposer::ApplyOverrides(
     const std::vector<TraceHeaderField>& overrides) {
+  
   // Check overlaps within overrides
   std::array<bool, 240> coverage{};
   for (const auto& o : overrides) {
     auto size = DTypeSize(o.dtype);
-    if (size == 0 || static_cast<std::size_t>(o.offset) + size > 240) {
+    
+    if (size == 0) {
       return absl::InvalidArgumentError("Invalid override specification");
     }
+    
+    // SEG-Y uses 1-based indexing, so valid byte positions are 1-240
+    if (o.offset < 1 || static_cast<std::size_t>(o.offset - 1) + size > 240) {
+      return absl::InvalidArgumentError("Invalid override specification");
+    }
+    
     for (std::size_t i = 0; i < size; ++i) {
-      if (coverage[o.offset + i]) {
+      size_t array_index = o.offset - 1 + i;  // Convert 1-based to 0-based
+      if (coverage[array_index]) {
         return absl::InvalidArgumentError("Override fields overlap");
       }
-      coverage[o.offset + i] = true;
+      coverage[array_index] = true;
     }
   }
 
   // Apply overrides
   std::vector<TraceHeaderField> new_fields;
+  
   for (const auto& base : fields_) {
     auto base_size = DTypeSize(base.dtype);
     bool replaced = false;
+    
     for (const auto& o : overrides) {
       auto o_size = DTypeSize(o.dtype);
       auto start = o.offset;
       auto end = static_cast<uint8_t>(o.offset + o_size);
       auto bstart = base.offset;
       auto bend = static_cast<uint8_t>(base.offset + base_size);
+      
       if (start >= bend || end <= bstart) {
         continue;
       }
-      // overlapping
       replaced = true;
+      break;
     }
-    if (!replaced) new_fields.push_back(base);
+    
+    if (!replaced) {
+      new_fields.push_back(base);
+    }
   }
 
   // Remove any base fields overlapped by overrides
@@ -265,7 +342,7 @@ inline Result<void> TraceHeaderComposer::ApplyOverrides(
 
   // Fill gaps with unassigned
   std::vector<TraceHeaderField> final_fields;
-  uint8_t pos = 0;
+  uint8_t pos = 1;  // Start at 1 for SEG-Y 1-based indexing
   for (const auto& f : new_fields) {
     auto size = DTypeSize(f.dtype);
     if (f.offset > pos) {
@@ -275,14 +352,217 @@ inline Result<void> TraceHeaderComposer::ApplyOverrides(
     final_fields.push_back(f);
     pos = f.offset + size;
   }
-  if (pos < 240) {
+  
+  if (pos < 241) {  // SEG-Y goes from 1-240, so next position after 240 is 241
     final_fields.push_back({"unassigned", pos,
-                           "|V" + std::to_string(240 - pos)});
-    pos = 240;
+                           "|V" + std::to_string(241 - pos)});
+    pos = 241;
   }
 
   fields_ = std::move(final_fields);
   return Validate();
+}
+
+inline TraceHeaderMapper::TraceHeaderMapper(const Dataset& dataset, 
+                                           const TraceHeaderComposer& composer)
+  : dataset_(dataset), composer_(composer) {}
+
+inline Result<void> TraceHeaderMapper::CreateMappings() {
+  // First analyze structured variables (they take precedence)
+  auto status1 = AnalyzeStructuredVariables();
+  if (!status1.ok()) return status1;
+  
+  // Then analyze dimension variables for fields not yet mapped
+  auto status2 = AnalyzeDimensionVariables();
+  if (!status2.ok()) return status2;
+  
+  return absl::OkStatus();
+}
+
+inline Result<void> TraceHeaderMapper::AnalyzeStructuredVariables() {
+  // Get all variable names from the dataset
+  auto variable_keys = dataset_.variables.get_iterable_accessor();
+  
+  for (const auto& var_name : variable_keys) {
+    MDIO_ASSIGN_OR_RETURN(auto var, dataset_.variables.at(var_name));
+    
+    // Check if this variable has a structured dtype
+    auto spec_result = var.spec();
+    if (!spec_result.ok()) {
+      continue;
+    }
+    
+    auto spec_json_result = spec_result.value().ToJson(IncludeDefaults{});
+    if (!spec_json_result.ok()) {
+      continue;
+    }
+    
+    auto spec_json = spec_json_result.value();
+    if (!spec_json["metadata"]["dtype"].is_array()) {
+      continue;
+    }
+    
+    // This is a structured variable - check each field
+    for (const auto& field : spec_json["metadata"]["dtype"]) {
+      if (!field.is_array() || field.size() < 2) continue;
+      
+      std::string field_name = field[0].get<std::string>();
+      std::string field_dtype = field[1].get<std::string>();
+      
+      // Look for matching trace header field
+      for (const auto& header_field : composer_.fields()) {
+        if (header_field.name == field_name && 
+            DTypesMatch(header_field.dtype, field_dtype)) {
+          
+          // Create mapping for this field
+          size_t field_size = TraceHeaderComposer::DTypeSize(header_field.dtype);
+          mappings_.emplace_back(
+            field_name, header_field.offset, header_field.dtype, field_size,
+            TraceHeaderMapping::SourceType::STRUCTURED_VARIABLE, 
+            var_name, field_name
+          );
+          break;
+        }
+      }
+    }
+  }
+  
+  return absl::OkStatus();
+}
+
+inline Result<void> TraceHeaderMapper::AnalyzeDimensionVariables() {
+  // Get all variable names from the dataset
+  auto variable_keys = dataset_.variables.get_iterable_accessor();
+  
+  // Create a set of already mapped field names to avoid duplicates
+  std::set<std::string> mapped_fields;
+  for (const auto& mapping : mappings_) {
+    mapped_fields.insert(mapping.field_name);
+  }
+  
+  for (const auto& var_name : variable_keys) {
+    MDIO_ASSIGN_OR_RETURN(auto var, dataset_.variables.at(var_name));
+    
+    // Skip if this variable name is already mapped by a structured variable
+    if (mapped_fields.count(var_name) > 0) {
+      continue;
+    }
+    
+    // Get variable dtype
+    auto dtype = var.dtype();
+    std::string dtype_str;
+    
+    // Convert tensorstore dtype to string representation
+    if (dtype == constants::kInt8) dtype_str = "<i1";
+    else if (dtype == constants::kInt16) dtype_str = "<i2";
+    else if (dtype == constants::kInt32) dtype_str = "<i4";
+    else if (dtype == constants::kInt64) dtype_str = "<i8";
+    else if (dtype == constants::kUint8) dtype_str = "<u1";
+    else if (dtype == constants::kUint16) dtype_str = "<u2";
+    else if (dtype == constants::kUint32) dtype_str = "<u4";
+    else if (dtype == constants::kUint64) dtype_str = "<u8";
+    else if (dtype == constants::kFloat16) dtype_str = "<f2";
+    else if (dtype == constants::kFloat32) dtype_str = "<f4";
+    else if (dtype == constants::kFloat64) dtype_str = "<f8";
+    else {
+      continue; // Unsupported dtype
+    }
+    
+    // Look for matching trace header field by name and dtype
+    for (const auto& header_field : composer_.fields()) {
+      if (header_field.name == var_name && 
+          DTypesMatch(header_field.dtype, dtype_str)) {
+        
+        // Create mapping for this field
+        size_t field_size = TraceHeaderComposer::DTypeSize(header_field.dtype);
+        mappings_.emplace_back(
+          var_name, header_field.offset, header_field.dtype, field_size,
+          TraceHeaderMapping::SourceType::DIMENSION_VARIABLE, 
+          var_name, ""
+        );
+        mapped_fields.insert(var_name);
+        break;
+      }
+    }
+  }
+  
+  return absl::OkStatus();
+}
+
+inline bool TraceHeaderMapper::DTypesMatch(const std::string& header_dtype, 
+                                          const std::string& var_dtype) const {
+  // Direct match
+  if (header_dtype == var_dtype) return true;
+  
+  // Convert and compare
+  std::string converted = ConvertToTraceHeaderDType(var_dtype);
+  return header_dtype == converted;
+}
+
+inline std::string TraceHeaderMapper::ConvertToTraceHeaderDType(const std::string& mdio_dtype) const {
+  // MDIO dtype strings should already be in the correct format for most cases
+  return mdio_dtype;
+}
+
+inline Result<void> TraceHeaderMapper::PopulateTraceHeader(
+    char* header_buffer, const std::vector<Index>& trace_coords) const {
+  for (const auto& mapping : mappings_) {
+    try {
+      if (mapping.source_type == TraceHeaderMapping::SourceType::DIMENSION_VARIABLE) {
+        // Read from dimension variable - this is the simpler case
+        MDIO_ASSIGN_OR_RETURN(auto var, dataset_.variables.at(mapping.variable_name));
+        
+        // For dimension variables, we need to find the coordinate index that matches this variable
+        auto domain = var.dimensions();
+        auto labels = domain.labels();
+        
+        // Find the dimension index that corresponds to this variable
+        for (size_t dim_idx = 0; dim_idx < labels.size() && dim_idx < trace_coords.size(); ++dim_idx) {
+          if (labels[dim_idx] == mapping.variable_name) {
+            // Create a slice descriptor to get the specific coordinate value
+            std::vector<RangeDescriptor<Index>> descs;
+            descs.push_back({labels[dim_idx], trace_coords[dim_idx], trace_coords[dim_idx] + 1, 1});
+            
+            MDIO_ASSIGN_OR_RETURN(auto var_slice, var.slice(descs));
+            MDIO_ASSIGN_OR_RETURN(auto data, var_slice.Read().result());
+            
+            // Debug: Print the actual value being copied
+            const char* src_ptr = reinterpret_cast<const char*>(data.get_data_accessor().data());
+            ptrdiff_t src_offset = data.get_flattened_offset();
+            
+            if (mapping.dtype == "<i4") {
+              int32_t value;
+              std::memcpy(&value, src_ptr + src_offset, sizeof(value));
+            } else if (mapping.dtype == "<i2") {
+              int16_t value;
+              std::memcpy(&value, src_ptr + src_offset, sizeof(value));
+            } else if (mapping.dtype == "<u2") {
+              uint16_t value;
+              std::memcpy(&value, src_ptr + src_offset, sizeof(value));
+            } else if (mapping.dtype == "<u4") {
+              uint32_t value;
+              std::memcpy(&value, src_ptr + src_offset, sizeof(value));
+            } else if (mapping.dtype == "<f4") {
+              float value;
+              std::memcpy(&value, src_ptr + src_offset, sizeof(value));
+            }
+            
+            // Copy the data to trace header buffer
+            std::memcpy(header_buffer + mapping.offset - 1, src_ptr + src_offset, mapping.size);
+            
+            break;
+          }
+        }
+      }
+      
+    } catch (const std::exception& e) {
+      // Log error but continue with other fields
+      std::cerr << "Warning: Failed to populate trace header field '" 
+                << mapping.field_name << "': " << e.what() << std::endl;
+    }
+  }
+  
+  return absl::OkStatus();
 }
 
 /**
@@ -311,7 +591,6 @@ Result<void> MdioToSegy(
     const std::string& segy_path) {
   (void)text_header;
   (void)binary_header;
-  (void)trace_headers;
 
   // 1 GiB cache
   auto cacheJson = nlohmann::json::parse(R"({
@@ -327,6 +606,25 @@ Result<void> MdioToSegy(
   MDIO_ASSIGN_OR_RETURN(
       auto ds,
       Dataset::Open(mdio_path, constants::kOpen, ctx).result());
+
+  // Create and initialize trace header mapper
+  TraceHeaderMapper header_mapper(ds, trace_headers);
+  auto mapper_status = header_mapper.CreateMappings();
+  if (!mapper_status.ok()) return mapper_status;
+  
+  // Print mapping information
+  const auto& mappings = header_mapper.GetMappings();
+  std::cout << "Found " << mappings.size() << " trace header field mappings:" << std::endl;
+  for (const auto& mapping : mappings) {
+    std::cout << "  - " << mapping.field_name << " (offset " << static_cast<int>(mapping.offset) 
+              << ") -> ";
+    if (mapping.source_type == TraceHeaderMapping::SourceType::STRUCTURED_VARIABLE) {
+      std::cout << "structured variable '" << mapping.variable_name 
+                << "' field '" << mapping.field_name_in_var << "'" << std::endl;
+    } else {
+      std::cout << "dimension variable '" << mapping.variable_name << "'" << std::endl;
+    }
+  }
 
   // Pick the highest-rank (float-prefer) seismic variable
   bool    found      = false;
@@ -410,7 +708,7 @@ Result<void> MdioToSegy(
       Variable<>::Open(spec, constants::kCreateClean, ctx).result());
 
   // === Throttle helper ===
-  constexpr size_t MAX_IN_FLIGHT = 10;
+  constexpr size_t MAX_IN_FLIGHT = 5;
   std::vector<tensorstore::WriteFutures> futures;
   auto enqueue_write = [&](tensorstore::WriteFutures wf) {
     while (futures.size() >= MAX_IN_FLIGHT) {
@@ -481,9 +779,32 @@ Result<void> MdioToSegy(
       const char* ptr = reinterpret_cast<const char*>(data.get_data_accessor().data());
       ptrdiff_t off  = data.get_flattened_offset();
       std::vector<char> buffer(size * trace_bytes, 0);
+      
       for (Index i = 0; i < size; ++i) {
         char* tb = buffer.data() + i * trace_bytes;
+        
+        // Initialize trace header to zeros
         std::memset(tb, 0, 240);
+        
+        // Populate trace header fields from mapped data
+        if (!mappings.empty()) {
+          // Calculate the coordinate for this trace
+          std::vector<Index> trace_coords = outer_coords;
+          trace_coords[chunk_dim] = start + i;
+          
+          // Use the header mapper to populate the trace header
+          auto populate_result = header_mapper.PopulateTraceHeader(tb, trace_coords);
+          if (!populate_result.ok()) {
+            std::cerr << "Warning: Failed to populate trace header for trace at coordinates [";
+            for (size_t c = 0; c < trace_coords.size(); ++c) {
+              std::cerr << trace_coords[c];
+              if (c < trace_coords.size() - 1) std::cerr << ", ";
+            }
+            std::cerr << "]: " << populate_result.status() << std::endl;
+          }
+        }
+        
+        // Copy seismic data
         std::memcpy(tb + 240, ptr + (off + i*num_samples)*sample_bytes,
                     size_t(num_samples)*sample_bytes);
       }
@@ -499,8 +820,7 @@ Result<void> MdioToSegy(
       RangeDescriptor<Index> write_desc{"trace", out_start, out_start+size, 1};
 
       MDIO_ASSIGN_OR_RETURN(auto out_slice, out_var.slice(write_desc));
-    //   MDIO_ASSIGN_OR_RETURN(auto out_data,  out_slice.Read().result());
-    MDIO_ASSIGN_OR_RETURN(auto out_data, from_variable(out_slice));
+      MDIO_ASSIGN_OR_RETURN(auto out_data, from_variable(out_slice));
 
       char* out_ptr = reinterpret_cast<char*>(out_data.get_data_accessor().data());
       ptrdiff_t out_off = out_data.get_flattened_offset();
