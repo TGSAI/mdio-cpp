@@ -73,6 +73,15 @@ struct TraceHeaderMapping {
       source_type(st), variable_name(vn), field_name_in_var(fin) {}
 };
 
+// Structure to hold pre-sliced trace header variable data
+struct TraceHeaderVariableData {
+  std::string variable_name;
+  TraceHeaderMapping::SourceType source_type;
+  std::string field_name_in_var;  // For structured variables
+  std::optional<VariableData<>> data;  // Pre-sliced data (optional to avoid default constructor issues)
+  nlohmann::json dtype_spec;  // For structured variables, holds the dtype specification
+};
+
 class TraceHeaderComposer {
  public:
   TraceHeaderComposer();
@@ -104,9 +113,11 @@ class TraceHeaderMapper {
   // Get all the mappings
   const std::vector<TraceHeaderMapping>& GetMappings() const { return mappings_; }
   
-  // Populate trace header buffer for a specific trace location
+  // Populate trace header buffer using pre-sliced variable data
   Result<void> PopulateTraceHeader(char* header_buffer, 
-                                   const std::vector<Index>& trace_coords) const;
+                                   const std::vector<Index>& trace_coords,
+                                   Index trace_index_in_chunk,
+                                   std::vector<TraceHeaderVariableData>& variable_data) const;
   
  private:
   const Dataset& dataset_;
@@ -510,53 +521,117 @@ inline std::string TraceHeaderMapper::ConvertToTraceHeaderDType(const std::strin
 }
 
 inline Result<void> TraceHeaderMapper::PopulateTraceHeader(
-    char* header_buffer, const std::vector<Index>& trace_coords) const {
+    char* header_buffer, const std::vector<Index>& trace_coords,
+    Index trace_index_in_chunk,
+    std::vector<TraceHeaderVariableData>& variable_data) const {
+  
+  std::cout << "Debug: PopulateTraceHeader called with " << variable_data.size() << " variable data entries" << std::endl;
+  for (const auto& vd : variable_data) {
+    std::cout << "  - Variable: '" << vd.variable_name << "', field: '" << vd.field_name_in_var << "'" << std::endl;
+  }
+  
   for (const auto& mapping : mappings_) {
+    std::cout << "Debug: Looking for mapping - field: '" << mapping.field_name 
+              << "', variable: '" << mapping.variable_name 
+              << "', field_in_var: '" << mapping.field_name_in_var << "'" << std::endl;
+    
     try {
+      // Find the corresponding variable data for this mapping
+      TraceHeaderVariableData* var_data = nullptr;
+      for (auto& vd : variable_data) {
+        if (vd.variable_name == mapping.variable_name && 
+            vd.source_type == mapping.source_type &&
+            (mapping.source_type == TraceHeaderMapping::SourceType::DIMENSION_VARIABLE ||
+             vd.field_name_in_var == mapping.field_name_in_var)) {
+          var_data = &vd;
+          std::cout << "  -> Found matching variable data!" << std::endl;
+          break;
+        }
+      }
+      
+      if (!var_data) {
+        std::cerr << "Warning: No pre-sliced data found for mapping '" 
+                  << mapping.field_name << "'" << std::endl;
+        continue;
+      }
+      
+      if (!var_data->data.has_value()) {
+        std::cerr << "Warning: No data available for mapping '" 
+                  << mapping.field_name << "'" << std::endl;
+        continue;
+      }
+      
       if (mapping.source_type == TraceHeaderMapping::SourceType::DIMENSION_VARIABLE) {
-        // Read from dimension variable - this is the simpler case
-        MDIO_ASSIGN_OR_RETURN(auto var, dataset_.variables.at(mapping.variable_name));
+        // For dimension variables, we need to calculate the index within the sliced data
+        const char* src_ptr = reinterpret_cast<const char*>(var_data->data->get_data_accessor().data());
         
-        // For dimension variables, we need to find the coordinate index that matches this variable
-        auto domain = var.dimensions();
-        auto labels = domain.labels();
+        // The data is sliced to match the current chunk
+        // Use the trace index within the chunk to access the correct data element
+        auto data_shape = var_data->data->dimensions().shape();
+        Index data_index = trace_index_in_chunk;
         
-        // Find the dimension index that corresponds to this variable
-        for (size_t dim_idx = 0; dim_idx < labels.size() && dim_idx < trace_coords.size(); ++dim_idx) {
-          if (labels[dim_idx] == mapping.variable_name) {
-            // Create a slice descriptor to get the specific coordinate value
-            std::vector<RangeDescriptor<Index>> descs;
-            descs.push_back({labels[dim_idx], trace_coords[dim_idx], trace_coords[dim_idx] + 1, 1});
-            
-            MDIO_ASSIGN_OR_RETURN(auto var_slice, var.slice(descs));
-            MDIO_ASSIGN_OR_RETURN(auto data, var_slice.Read().result());
-            
-            // Debug: Print the actual value being copied
-            const char* src_ptr = reinterpret_cast<const char*>(data.get_data_accessor().data());
-            ptrdiff_t src_offset = data.get_flattened_offset();
-            
-            if (mapping.dtype == "<i4") {
-              int32_t value;
-              std::memcpy(&value, src_ptr + src_offset, sizeof(value));
-            } else if (mapping.dtype == "<i2") {
-              int16_t value;
-              std::memcpy(&value, src_ptr + src_offset, sizeof(value));
-            } else if (mapping.dtype == "<u2") {
-              uint16_t value;
-              std::memcpy(&value, src_ptr + src_offset, sizeof(value));
-            } else if (mapping.dtype == "<u4") {
-              uint32_t value;
-              std::memcpy(&value, src_ptr + src_offset, sizeof(value));
-            } else if (mapping.dtype == "<f4") {
-              float value;
-              std::memcpy(&value, src_ptr + src_offset, sizeof(value));
-            }
-            
-            // Copy the data to trace header buffer
-            std::memcpy(header_buffer + mapping.offset - 1, src_ptr + src_offset, mapping.size);
-            
+        // Ensure we don't go out of bounds
+        if (data_shape.size() > 0 && data_index >= data_shape[0]) {
+          std::cerr << "Warning: Trace index " << data_index 
+                    << " out of bounds for variable data shape " << data_shape[0] << std::endl;
+          continue;
+        }
+        
+        // Get the data type size and calculate offset
+        size_t element_size = mapping.size;
+        ptrdiff_t base_offset = var_data->data->get_flattened_offset();
+        ptrdiff_t src_offset = base_offset + data_index * element_size;
+        
+        // Copy the data to trace header buffer
+        std::memcpy(header_buffer + mapping.offset - 1, src_ptr + src_offset, mapping.size);
+        
+      } else if (mapping.source_type == TraceHeaderMapping::SourceType::STRUCTURED_VARIABLE) {
+        // For structured variables, extract the specific field from the binary pack
+        const char* struct_ptr = reinterpret_cast<const char*>(var_data->data->get_data_accessor().data());
+        
+        // Use the trace index within the chunk to access the correct structured element
+        auto data_shape = var_data->data->dimensions().shape();
+        Index data_index = trace_index_in_chunk;
+        
+        // Ensure we don't go out of bounds
+        if (data_shape.size() > 0 && data_index >= data_shape[0]) {
+          std::cerr << "Warning: Trace index " << data_index 
+                    << " out of bounds for structured variable data shape " << data_shape[0] << std::endl;
+          continue;
+        }
+        
+        // Get the size of one structured element
+        size_t struct_element_size = var_data->data->dtype().size();
+        ptrdiff_t base_offset = var_data->data->get_flattened_offset();
+        ptrdiff_t struct_offset = base_offset + data_index * struct_element_size;
+        
+        // Find the field offset within the structured dtype using pre-loaded spec
+        if (!var_data->dtype_spec["metadata"]["dtype"].is_array()) {
+          continue;
+        }
+        
+        size_t field_offset = 0;
+        bool field_found = false;
+        
+        for (const auto& field : var_data->dtype_spec["metadata"]["dtype"]) {
+          if (!field.is_array() || field.size() < 2) continue;
+          
+          std::string field_name = field[0].get<std::string>();
+          std::string field_dtype = field[1].get<std::string>();
+          
+          if (field_name == mapping.field_name_in_var) {
+            field_found = true;
             break;
           }
+          
+          // Add this field's size to the offset for the next field
+          field_offset += TraceHeaderComposer::DTypeSize(field_dtype);
+        }
+        
+        if (field_found) {
+          // Copy the specific field data from the structured variable to trace header
+          const char* field_ptr = struct_ptr + struct_offset + field_offset;
+          std::memcpy(header_buffer + mapping.offset - 1, field_ptr, mapping.size);
         }
       }
       
@@ -830,6 +905,104 @@ Result<void> MdioToSegy(
       MDIO_ASSIGN_OR_RETURN(auto var_slice, seismic_var.slice(descs));
       MDIO_ASSIGN_OR_RETURN(auto data,      var_slice.Read().result());
 
+      // Read and slice trace header variables for this chunk
+      std::vector<TraceHeaderVariableData> header_variable_data;
+      if (!mappings.empty()) {
+        // Create a set of unique variables to avoid duplicate reads
+        std::set<std::pair<std::string, TraceHeaderMapping::SourceType>> unique_vars;
+        for (const auto& mapping : mappings) {
+          unique_vars.insert({mapping.variable_name, mapping.source_type});
+        }
+        
+        // Read each unique variable
+        for (const auto& [var_name, source_type] : unique_vars) {
+          try {
+            MDIO_ASSIGN_OR_RETURN(auto var, ds.variables.at(var_name));
+            
+            // Create slice descriptors for this variable (same spatial dims as seismic, no time dim)
+            auto var_domain = var.dimensions();
+            auto var_labels = var_domain.labels();
+            std::vector<RangeDescriptor<Index>> var_descs;
+            
+            // Map the spatial dimensions from seismic to this variable
+            for (size_t d = 0; d < rank - 1; ++d) {  // Skip time dimension
+              std::string seismic_dim = labels[d];
+              
+              // Find matching dimension in the variable
+              bool found_dim = false;
+              for (size_t vd = 0; vd < var_labels.size(); ++vd) {
+                if (var_labels[vd] == seismic_dim) {
+                  if (d == chunk_dim) {
+                    var_descs.push_back({var_labels[vd], start, end, 1});
+                  } else {
+                    var_descs.push_back({var_labels[vd], outer_coords[d], outer_coords[d]+1, 1});
+                  }
+                  found_dim = true;
+                  break;
+                }
+              }
+              
+              if (!found_dim) {
+                // If dimension not found, this variable might not have this spatial dimension
+                // Skip this variable for now
+                break;
+              }
+            }
+            
+            // Only proceed if we found all necessary dimensions
+            if (var_descs.size() == var_labels.size()) {
+              MDIO_ASSIGN_OR_RETURN(auto var_slice, var.slice(var_descs));
+              MDIO_ASSIGN_OR_RETURN(auto var_data, var_slice.Read().result());
+              
+              // Store the variable data
+              TraceHeaderVariableData vd;
+              vd.variable_name = var_name;
+              vd.source_type = source_type;
+              vd.data = var_data;  // var_data is already a VariableData object
+              
+              // For structured variables, also store the dtype specification
+              if (source_type == TraceHeaderMapping::SourceType::STRUCTURED_VARIABLE) {
+                auto spec_result = var.spec();
+                if (spec_result.ok()) {
+                  auto spec_json_result = spec_result.value().ToJson(IncludeDefaults{});
+                  if (spec_json_result.ok()) {
+                    vd.dtype_spec = spec_json_result.value();
+                  }
+                }
+                
+                // For structured variables, we need separate entries for each field
+                if (vd.dtype_spec.contains("metadata") && 
+                    vd.dtype_spec["metadata"].contains("dtype") &&
+                    vd.dtype_spec["metadata"]["dtype"].is_array()) {
+                  
+                  std::cout << "Debug: Creating field entries for structured variable '" << var_name << "':" << std::endl;
+                  for (const auto& field : vd.dtype_spec["metadata"]["dtype"]) {
+                    if (field.is_array() && field.size() >= 2) {
+                      std::string field_name = field[0].get<std::string>();
+                      
+                      // Create a separate entry for each field
+                      TraceHeaderVariableData field_vd = vd;
+                      field_vd.field_name_in_var = field_name;
+                      header_variable_data.push_back(field_vd);
+                      
+                      std::cout << "  - Field: '" << field_name << "'" << std::endl;
+                    }
+                  }
+                } else {
+                  header_variable_data.push_back(vd);
+                }
+              } else {
+                header_variable_data.push_back(vd);
+              }
+            }
+            
+          } catch (const std::exception& e) {
+            std::cerr << "Warning: Failed to read trace header variable '" 
+                      << var_name << "': " << e.what() << std::endl;
+          }
+        }
+      }
+
       const char* ptr = reinterpret_cast<const char*>(data.get_data_accessor().data());
       ptrdiff_t off  = data.get_flattened_offset();
       std::vector<char> buffer(size * trace_bytes, 0);
@@ -840,14 +1013,14 @@ Result<void> MdioToSegy(
         // Initialize trace header to zeros
         std::memset(tb, 0, 240);
         
-        // Populate trace header fields from mapped data
+        // Populate trace header fields from pre-sliced data
         if (!mappings.empty()) {
           // Calculate the coordinate for this trace
           std::vector<Index> trace_coords = outer_coords;
           trace_coords[chunk_dim] = start + i;
           
-          // Use the header mapper to populate the trace header
-          auto populate_result = header_mapper.PopulateTraceHeader(tb, trace_coords);
+          // Use the header mapper to populate the trace header with pre-sliced data
+          auto populate_result = header_mapper.PopulateTraceHeader(tb, trace_coords, i, header_variable_data);
           if (!populate_result.ok()) {
             std::cerr << "Warning: Failed to populate trace header for trace at coordinates [";
             for (size_t c = 0; c < trace_coords.size(); ++c) {
