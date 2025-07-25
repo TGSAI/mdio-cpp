@@ -34,7 +34,7 @@ namespace utils {
  * @return OK result if the dataset was valid and deleted successfully,
  * otherwise an error result
  */
-Result<void> DeleteDataset(const std::string dataset_path) {
+inline Result<void> DeleteDataset(const std::string dataset_path) {
   // Open the dataset
   // This is to ensure that what is getting deleted by MDIO is a valid MDIO
   // dataset itself.

@@ -30,7 +30,7 @@
  * @brief Checks if a key exists in a map
  * Specific for our case of {coordinate: index} mapping
  */
-bool contains(const std::unordered_set<std::string>& set,
+inline bool contains(const std::unordered_set<std::string>& set,
               const std::string key) {
   return set.count(key);
 }
@@ -42,7 +42,7 @@ bool contains(const std::unordered_set<std::string>& set,
  * @return OkStatus if valid, NotFoundError if schema file load fails,
  * InvalidArgumentError if validation fails for any reason
  */
-absl::Status validate_schema(nlohmann::json& spec /*NOLINT*/) {
+inline absl::Status validate_schema(nlohmann::json& spec /*NOLINT*/) {
   nlohmann::json targetSchema =
       nlohmann::json::parse(kDatasetSchema, nullptr, false);
   if (targetSchema.is_discarded()) {
@@ -72,7 +72,7 @@ absl::Status validate_schema(nlohmann::json& spec /*NOLINT*/) {
  * @return OkStatus if valid, InvalidArgumentError if a coordinate does not have
  * a matching Variable.
  */
-absl::Status validate_coordinates_present(const nlohmann::json& spec) {
+inline absl::Status validate_coordinates_present(const nlohmann::json& spec) {
   // Build a mapping of all the dimension coordinates
   std::unordered_set<std::string>
       dimension;  //  name of all 1-d Variables who's name matches the dimension
@@ -145,7 +145,7 @@ absl::Status validate_coordinates_present(const nlohmann::json& spec) {
  * reason
 
 */
-absl::Status validate_dataset(nlohmann::json& spec /*NOLINT*/) {
+inline absl::Status validate_dataset(nlohmann::json& spec /*NOLINT*/) {
   absl::Status schemaStatus = validate_schema(spec);
   if (!schemaStatus.ok()) {
     return schemaStatus;
