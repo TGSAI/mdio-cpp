@@ -36,7 +36,7 @@
  * @param raw A string to be encoded
  * @return A string encoded in base64
  */
-std::string encode_base64(const std::string raw) {
+inline std::string encode_base64(const std::string raw) {
   std::string encoded = absl::Base64Escape(raw);
   return encoded;
 }
@@ -50,7 +50,7 @@ std::string encode_base64(const std::string raw) {
  * @return A string representing the dtype in numpy format limited to the dtypes
  * supported by MDIO Dataset
  */
-tensorstore::Result<std::string> to_zarr_dtype(const std::string dtype) {
+inline tensorstore::Result<std::string> to_zarr_dtype(const std::string dtype) {
   // Convert the input dtype to Zarr dtype
   if (dtype == "int8") {
     return "<i1";
@@ -93,8 +93,8 @@ tensorstore::Result<std::string> to_zarr_dtype(const std::string dtype) {
  * @return OkStatus if successful, InvalidArgumentError if dtype is not
  * supported
  */
-absl::Status transform_dtype(nlohmann::json& input /*NOLINT*/,
-                             nlohmann::json& variable /*NOLINT*/) {
+inline absl::Status transform_dtype(nlohmann::json& input /*NOLINT*/,
+                                    nlohmann::json& variable /*NOLINT*/) {
   if (input["dataType"].contains("fields")) {
     nlohmann::json dtypeFields = nlohmann::json::array();
     for (const auto& field : input["dataType"]["fields"]) {
@@ -124,8 +124,8 @@ absl::Status transform_dtype(nlohmann::json& input /*NOLINT*/,
  * @return OkStatus if successful, InvalidArgumentError if compressor is invalid
  * for MDIO
  */
-absl::Status transform_compressor(nlohmann::json& input /*NOLINT*/,
-                                  nlohmann::json& variable /*NOLINT*/) {
+inline absl::Status transform_compressor(nlohmann::json& input /*NOLINT*/,
+                                         nlohmann::json& variable /*NOLINT*/) {
   if (input.contains("compressor")) {
     if (input["compressor"].contains("name")) {
       if (input["compressor"]["name"] != "blosc") {
@@ -182,7 +182,7 @@ absl::Status transform_compressor(nlohmann::json& input /*NOLINT*/,
  * before this step This presumes that the user does not attempt to use these
  * functions directly
  */
-void transform_shape(
+inline void transform_shape(
     nlohmann::json& input /*NOLINT*/, nlohmann::json& variable /*NOLINT*/,
     std::unordered_map<std::string, uint64_t>& dimensionMap /*NOLINT*/) {
   if (input["dimensions"][0].is_object()) {
@@ -208,8 +208,8 @@ void transform_shape(
  * @param variable A Variable stub (Will be modified)
  * @return OkStatus if successful, InvalidArgumentError if the path is invalid
  */
-absl::Status transform_metadata(const std::string& path,
-                                nlohmann::json& variable /*NOLINT*/) {
+inline absl::Status transform_metadata(const std::string& path,
+                                       nlohmann::json& variable /*NOLINT*/) {
   std::string bucket =
       "NULL";  // Default value, if is NULL don't add a bucket field
   std::string driver = "file";
@@ -261,7 +261,7 @@ absl::Status transform_metadata(const std::string& path,
  * @param dimensionMap A map of dimension names to sizes
  * @return A Variable spec or an error if the Variable spec is invalid
  */
-tensorstore::Result<nlohmann::json> from_json_to_spec(
+inline tensorstore::Result<nlohmann::json> from_json_to_spec(
     nlohmann::json& json /*NOLINT*/,
     std::unordered_map<std::string, uint64_t>& dimensionMap /*NOLINT*/,
     const std::string& path) {
@@ -404,8 +404,8 @@ tensorstore::Result<nlohmann::json> from_json_to_spec(
  * @return A map of dimension names to sizes or error if the dimensions are not
  * consistently sized
  */
-tensorstore::Result<std::unordered_map<std::string, uint64_t>> get_dimensions(
-    nlohmann::json& spec /*NOLINT*/) {
+inline tensorstore::Result<std::unordered_map<std::string, uint64_t>>
+get_dimensions(nlohmann::json& spec /*NOLINT*/) {
   std::unordered_map<std::string, uint64_t> dimensions;
   for (auto& variable : spec["variables"]) {
     if (variable["dimensions"][0].is_object()) {
@@ -438,7 +438,8 @@ tensorstore::Result<std::unordered_map<std::string, uint64_t>> get_dimensions(
  * @param spec A Dataset spec
  * @return A vector of Variable specs or an error if the Dataset spec is invalid
  */
-tensorstore::Result<std::tuple<nlohmann::json, std::vector<nlohmann::json>>>
+inline tensorstore::Result<
+    std::tuple<nlohmann::json, std::vector<nlohmann::json>>>
 Construct(nlohmann::json& spec /*NOLINT*/, const std::string& path) {
   // Validation should only return status codes. If it returns data then it
   // should be a "constructor"
