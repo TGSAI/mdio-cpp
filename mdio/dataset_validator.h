@@ -31,7 +31,7 @@
  * Specific for our case of {coordinate: index} mapping
  */
 inline bool contains(const std::unordered_set<std::string>& set,
-              const std::string key) {
+                     const std::string key) {
   return set.count(key);
 }
 
