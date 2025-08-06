@@ -1837,10 +1837,12 @@ Result<VariableData<T, R, OriginKind>> from_variable(
     size_t element_size = variable.dtype().size();
 
     if (variable.dtype() == constants::kFloat32) {
-      auto* data = reinterpret_cast<float*>(_array.byte_strided_origin_pointer().get());
+      auto* data =
+          reinterpret_cast<float*>(_array.byte_strided_origin_pointer().get());
       std::fill_n(data, num_elements, std::numeric_limits<float>::quiet_NaN());
     } else {  // double
-      auto* data = reinterpret_cast<double*>(_array.byte_strided_origin_pointer().get());
+      auto* data =
+          reinterpret_cast<double*>(_array.byte_strided_origin_pointer().get());
       std::fill_n(data, num_elements, std::numeric_limits<double>::quiet_NaN());
     }
   }
