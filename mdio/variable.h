@@ -965,13 +965,15 @@ class Variable {
 
     for (size_t idx = 0; idx < labels.size(); ++idx) {
       if (labels[idx] == desc.label) {
-        // Clamp the descriptor to the domain.
-        return {desc.label,  // label
-                desc.start < domain.origin()[idx] ? domain.origin()[idx]
-                                                  : desc.start,  // start
-                desc.stop > domain.shape()[idx] ? domain.shape()[idx]
-                                                : desc.stop,  // stop
-                desc.step};                                   // step
+        // Clamp the descriptor to the domain using absolute coordinates.
+        // NOTE: domain.shape()[idx] is a size, not an absolute upper bound when
+        // the origin is non-zero. The correct exclusive upper bound is
+        // origin + shape.
+        Index dim_origin = domain.origin()[idx];
+        Index dim_upper = dim_origin + domain.shape()[idx];  // exclusive
+        Index clamped_start = desc.start < dim_origin ? dim_origin : desc.start;
+        Index clamped_stop = desc.stop > dim_upper ? dim_upper : desc.stop;
+        return {desc.label, clamped_start, clamped_stop, desc.step};
       }
     }
     // We don't slice along a dimension that doesn't exist, so the descriptor is
