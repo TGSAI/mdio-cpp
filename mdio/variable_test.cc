@@ -269,11 +269,17 @@ TEST(Variable, context) {
 }
 
 TEST(Variable, structArray) {
+  // GTEST_SKIP() << "Struct arrays will need more work";
   // tests the struct array on creation
   auto json_spec = GetJsonSpecStruct();
 
-  auto variable =
-      mdio::Variable<>::Open(json_spec, mdio::constants::kCreateClean).result();
+  // auto variable =
+  //     mdio::Variable<>::Open(json_spec, mdio::constants::kCreateClean).result();
+  auto varRes = mdio::Variable<>::Open(json_spec, mdio::constants::kCreateClean);
+  if (!varRes.status().ok()) {
+      std::cout << varRes.status() << std::endl;
+  }
+  auto variable = varRes.result();
 
   ASSERT_TRUE(variable.ok());
 
@@ -291,6 +297,7 @@ TEST(Variable, structArray) {
 }
 
 TEST(Variable, structArrayField) {
+  // GTEST_SKIP() << "Struct arrays will need more work";
   auto json_spec = GetJsonSpecStruct();
   json_spec["field"] = "a";
 
@@ -310,6 +317,7 @@ TEST(Variable, structArrayField) {
 }
 
 TEST(Variable, structArrayOpen) {
+  // GTEST_SKIP() << "Struct arrays will need more work";
   // tests the struct array on open
   auto json_spec = GetJsonSpecStruct();
 
@@ -324,7 +332,12 @@ TEST(Variable, structArrayOpen) {
   open_json_spec.erase("attributes");
 
   // opens the file ...
-  variable = mdio::Variable<>::Open(open_json_spec).result();
+  // variable = mdio::Variable<>::Open(open_json_spec).result();
+  auto varRes = mdio::Variable<>::Open(open_json_spec);
+  if (!varRes.status().ok()) {
+      std::cout << varRes.status() << std::endl;
+  }
+  variable = varRes.result();
 
   ASSERT_TRUE(variable.ok());
 

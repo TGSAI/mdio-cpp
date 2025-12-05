@@ -1436,11 +1436,11 @@ TEST(Dataset, open) {
 TEST(Dataset, condensed) {
   std::string path = "zarrs/acceptance/";
   auto ds = mdio::Dataset::Open(path, mdio::constants::kOpen);
-  ASSERT_TRUE(ds.status().ok()) << ds.status();
+  ASSERT_TRUE(ds.status().ok()) << "Failed in test 1 of 2: " << ds.status();
 
   std::string missingSlashPath = "zarrs/acceptance";
   auto ds2 = mdio::Dataset::Open(missingSlashPath, mdio::constants::kOpen);
-  ASSERT_TRUE(ds2.status().ok()) << ds2.status();
+  ASSERT_TRUE(ds2.status().ok()) << "Failed in test 2 of 2: " << ds2.status();
 }
 
 TEST(Dataset, read) {

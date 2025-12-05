@@ -374,7 +374,8 @@ from_zmetadata(const std::string& dataset_path) {
       nlohmann::json new_dict = {
           {"driver", "zarr"},
           {"kvstore",
-           {{"driver", driver}, {"path", dataset_path + "/" + variable_name}}}};
+           // {{"driver", driver}, {"path", dataset_path + "/" + variable_name}}}};
+    {{"driver", driver}, {"path", dataset_path + variable_name}}}};
       if (driver != "file") {
         new_dict["kvstore"]["bucket"] = bucket;
         new_dict["kvstore"]["path"] = cloudPath + variable_name;
@@ -1298,8 +1299,8 @@ class Dataset {
     if (specJson["kvstore"].contains("bucket")) {
       base["kvstore"]["bucket"] = specJson["kvstore"]["bucket"];
       std::string cloudPath = base["kvstore"]["path"].get<std::string>();
-      cloudPath
-          .pop_back();  // We need to remove the trailing / from a cloud path
+      // cloudPath
+      //     .pop_back();  // We need to remove the trailing / from a cloud path
       base["kvstore"]["path"] = cloudPath;
     }
 

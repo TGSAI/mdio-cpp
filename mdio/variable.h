@@ -424,13 +424,13 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
   // void.
   auto do_handle_structarray =
       zarr_dtype.has_fields && !json_spec.contains("field");
-  auto json_spec_with_field = json_spec;
+  auto json_spec_with_open_flag = json_spec;
   if (do_handle_structarray) {
     // pick the first name, it won't effect the .zarray json:
-    json_spec_with_field["field"] = zarr_dtype.fields[0].name;
+    json_spec_with_open_flag["field"] = zarr_dtype.fields[0].name;
   }
 
-  auto json_spec_without_metadata = json_spec;
+  auto json_spec_without_metadata = json_spec_with_open_flag;
   json_spec_without_metadata.erase("metadata");
   auto future_json_store = tensorstore::MakeReadyFuture<::nlohmann::json>(
       json_spec_without_metadata);
@@ -462,7 +462,8 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
         output_json.erase("coordinates");
       }
     }
-    std::string outpath = "/.zattrs";
+    // std::string outpath = "/.zattrs";
+    std::string outpath = ".zattrs";
     if (isCloudStore) {
       outpath = ".zattrs";
     }
@@ -478,7 +479,12 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
   auto apply_reopen = [](const tensorstore::TensorStore<T, R, M>& store,
                          const ::nlohmann::json& attributes,
                          const ::nlohmann::json& json_spec) {
-    return tensorstore::Open<T, R, M>(json_spec);
+    // try {
+    auto json_spec_cpy = json_spec;
+        json_spec_cpy.erase("field");
+        json_spec_cpy["open_as_void"] = true;
+    // } catch (ex)
+    return tensorstore::Open<T, R, M>(json_spec_cpy);
   };
 
   auto build = [](const ::nlohmann::json& metadata,
@@ -500,7 +506,7 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
 
   // Start by creating a future for the store ...
   auto future_store = tensorstore::Open<T, R, M>(
-      json_spec_with_field, std::forward<Option>(options)...);
+      json_spec_with_open_flag, std::forward<Option>(options)...);
 
   auto handled_store = future_store;
   if (do_handle_structarray) {
@@ -595,6 +601,7 @@ Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
   auto read = [](const tensorstore::KvStore& kvstore)
       -> Future<tensorstore::kvstore::ReadResult> {
     return tensorstore::kvstore::Read(kvstore, "/.zattrs");
+    // return tensorstore::kvstore::Read(kvstore, ".zattrs");
   };
 
   // go read the attributes return json ...
@@ -708,6 +715,17 @@ Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
 
   auto metadata = tensorstore::MapFutureValue(tensorstore::InlineExecutor{},
                                               parse, kvs_read_future, spec);
+
+  if (!future_store.status().ok()) {
+      std::string status_message = future_store.status().ToString();
+      if (status_message.find("Must specify a \"field\"") != std::string::npos && !store_spec.contains("open_as_void")) {
+          std::cout << "Detected a structured Variable without a field or void flag. Retrying with void flag..." << std::endl;
+          // store_spec["open_as_void"] = true;
+          auto cpy = json_store;
+          cpy["open_as_void"] = true;
+          return OpenVariable<T, R, M>(cpy, std::forward<Option>(options)...);
+      }
+  }
 
   return tensorstore::MapFutureValue(
       tensorstore::InlineExecutor{}, make_variable, metadata, future_store,
@@ -1254,7 +1272,8 @@ class Variable {
         output_json["attributes"]["coordinates"] = output_json["coordinates"];
         output_json.erase("coordinates");
       }
-      std::string outpath = "/.zattrs";
+      // std::string outpath = "/.zattrs";
+      std::string outpath = ".zattrs";
       if (isCloudStore) {
         outpath = ".zattrs";
       }
