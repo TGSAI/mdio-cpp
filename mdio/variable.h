@@ -41,6 +41,8 @@
 #include "tensorstore/stack.h"
 #include "tensorstore/tensorstore.h"
 #include "tensorstore/util/future.h"
+#include "tensorstore/util/option.h"
+#include "tensorstore/util/status.h"
 
 // clang-format off
 #include <nlohmann/json.hpp>  // NOLINT
@@ -809,8 +811,9 @@ class Variable {
                               TransactionalOpenOptions, Option...>),
                           Future<Variable<T, R, M>>>
   Open(const nlohmann::json& json_spec, Option&&... option) {
-    TENSORSTORE_INTERNAL_ASSIGN_OPTIONS_OR_RETURN(TransactionalOpenOptions,
-                                                  options, option)
+    TransactionalOpenOptions options;
+    TENSORSTORE_RETURN_IF_ERROR(tensorstore::internal::SetAll(
+        options, std::forward<Option>(option)...));
     return mdio::internal::Open<T, R, M>(json_spec, std::move(options));
   }
 

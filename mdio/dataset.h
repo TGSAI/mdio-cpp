@@ -36,6 +36,8 @@
 #include "mdio/variable_collection.h"
 #include "tensorstore/driver/zarr/metadata.h"
 #include "tensorstore/util/future.h"
+#include "tensorstore/util/option.h"
+#include "tensorstore/util/status.h"
 
 // clang-format off
 #include <nlohmann/json-schema.hpp>  // NOLINT
@@ -1051,8 +1053,9 @@ class Dataset {
   template <typename S = std::string, typename... Option>
   static std::enable_if_t<(std::is_same_v<S, std::string>), Future<Dataset>>
   Open(const S& dataset_path, Option&&... options) {
-    TENSORSTORE_INTERNAL_ASSIGN_OPTIONS_OR_RETURN(TransactionalOpenOptions,
-                                                  transact_options, options)
+    TransactionalOpenOptions transact_options;
+    TENSORSTORE_RETURN_IF_ERROR(
+        tensorstore::internal::SetAll(transact_options, options...));
 
     if (transact_options.open_mode != constants::kOpen) {
       return absl::Status(absl::StatusCode::kInvalidArgument,
@@ -1060,7 +1063,7 @@ class Dataset {
     }
 
     MDIO_ASSIGN_OR_RETURN(auto params_from_zmetadata,
-                          mdio::internal::from_zmetadata(dataset_path).result())
+                          mdio::internal::from_zmetadata(dataset_path).result());
     auto [dataset_metadata, json_vars] = params_from_zmetadata;
 
     return mdio::Dataset::Open(dataset_metadata, json_vars,
@@ -1083,8 +1086,9 @@ class Dataset {
       const std::vector<::nlohmann::json>& json_variables,
       Option&&... options) {
     // I need to know if we are intending to create a dataset from scratch?
-    TENSORSTORE_INTERNAL_ASSIGN_OPTIONS_OR_RETURN(TransactionalOpenOptions,
-                                                  transact_options, options)
+    TransactionalOpenOptions transact_options;
+    TENSORSTORE_RETURN_IF_ERROR(
+        tensorstore::internal::SetAll(transact_options, options...));
     bool do_create = transact_options.open_mode == constants::kCreateClean ||
                      transact_options.open_mode == constants::kCreate;
 
