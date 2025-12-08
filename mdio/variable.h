@@ -29,6 +29,7 @@
 #include "absl/strings/str_split.h"
 #include "mdio/impl.h"
 #include "mdio/stats.h"
+#include "mdio/zarr/zarr.h"
 #include "tensorstore/array.h"
 #include "tensorstore/driver/driver.h"
 #include "tensorstore/driver/registry.h"
@@ -247,10 +248,10 @@ inline absl::Status CheckMissingDriverStatus(const absl::Status& status) {
  * @brief Validates and processes a JSON specification for a tensorstore
  * variable.
  *
- * This function validates and processes the JSON specification for a zarr V2
- * tensorstore variable. It expects the JSON specification will have a field
- * called attributes that contains a field called dimension_names. This is a
- * specification of MDIO and is not specifically required by zarr V2
+ * This function validates and processes the JSON specification for a zarr
+ * tensorstore variable (V2 or V3). It expects the JSON specification will have
+ * a field called attributes that contains a field called dimension_names. This
+ * is a specification of MDIO and is not specifically required by zarr.
  *
  * @tparam Mode The read-write mode to use.
  * @param json_spec The JSON specification to validate and process.
@@ -276,7 +277,7 @@ Result<std::tuple<nlohmann::json, nlohmann::json>> ValidateAndProcessJson(
 
   nlohmann::json json_for_store = json_spec;
 
-  // remove attributes, the v2 store won't parse it.
+  // remove attributes, the store won't parse it.
   json_for_store.erase("attributes");
 
   // Create a new JSON and add the kvstore
@@ -286,6 +287,17 @@ Result<std::tuple<nlohmann::json, nlohmann::json>> ValidateAndProcessJson(
       std::filesystem::path(json_spec["kvstore"]["path"]).stem().string();
 
   return std::make_tuple(json_for_store, new_json);
+}
+
+/**
+ * @brief Gets the Zarr version from a JSON specification.
+ *
+ * @param json_spec The JSON specification.
+ * @return zarr::ZarrVersion The detected version.
+ */
+inline zarr::ZarrVersion GetZarrVersionFromSpec(
+    const nlohmann::json& json_spec) {
+  return zarr::GetVersionFromSpec(json_spec);
 }
 
 /**
@@ -412,18 +424,32 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
                         "Variable spec requires metadata");
   }
 
-  if (!json_spec["metadata"].contains("dtype")) {
+  // Detect Zarr version early to handle dtype field differences
+  zarr::ZarrVersion zarr_version = zarr::GetVersionFromSpec(json_spec);
+
+  // Check for dtype (V2) or data_type (V3)
+  bool has_dtype = json_spec["metadata"].contains("dtype");
+  bool has_data_type = json_spec["metadata"].contains("data_type");
+
+  if (!has_dtype && !has_data_type) {
     return absl::Status(absl::StatusCode::kInvalidArgument,
-                        "Variable metadata requires dtype");
+                        "Variable metadata requires dtype (V2) or data_type (V3)");
   }
 
-  MDIO_ASSIGN_OR_RETURN(auto zarr_dtype, tensorstore::internal_zarr::ParseDType(
-                                             json_spec["metadata"]["dtype"]))
+  // For V3, we don't use ParseDType (which is V2-specific)
+  // Instead, we handle structured arrays differently
+  bool do_handle_structarray = false;
+  tensorstore::internal_zarr::ZarrDType zarr_dtype;
 
-  // Handles the use case of creating a struct array, but intending to open as
-  // void.
-  auto do_handle_structarray =
-      zarr_dtype.has_fields && !json_spec.contains("field");
+  if (zarr_version == zarr::ZarrVersion::kV2 && has_dtype) {
+    MDIO_ASSIGN_OR_RETURN(zarr_dtype, tensorstore::internal_zarr::ParseDType(
+                                               json_spec["metadata"]["dtype"]))
+    // Handles the use case of creating a struct array, but intending to open as
+    // void.
+    do_handle_structarray =
+        zarr_dtype.has_fields && !json_spec.contains("field");
+  }
+
   auto json_spec_with_open_flag = json_spec;
   if (do_handle_structarray) {
     // pick the first name, it won't effect the .zarray json:
@@ -435,42 +461,16 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
   auto future_json_store = tensorstore::MakeReadyFuture<::nlohmann::json>(
       json_spec_without_metadata);
 
-  auto publish = [](const ::nlohmann::json& json_var, bool isCloudStore,
-                    const tensorstore::TensorStore<T, R, M>& store)
+  auto publish = [zarr_version](const ::nlohmann::json& json_var,
+                                bool isCloudStore,
+                                const tensorstore::TensorStore<T, R, M>& store)
       -> Future<tensorstore::TimestampedStorageGeneration> {
-    auto output_json = json_var;
-    output_json["_ARRAY_DIMENSIONS"] = output_json["dimension_names"];
-    output_json.erase("dimension_names");
-    output_json.erase("variable_name");
-    if (output_json.contains("metadata")) {
-      output_json["metadata"].erase("chunkGrid");
-      for (auto& item : output_json["metadata"].items()) {
-        output_json[item.key()] = std::move(item.value());
-      }
-      output_json.erase("metadata");
+    // Use version-specific attribute writing
+    if (zarr_version == zarr::ZarrVersion::kV3) {
+      return zarr::v3::WriteVariableAttributes(store, json_var, isCloudStore);
+    } else {
+      return zarr::v2::WriteVariableAttributes(store, json_var, isCloudStore);
     }
-    if (output_json.contains("long_name")) {
-      if (output_json["long_name"] == "") {
-        output_json.erase("long_name");
-      }
-    }
-    // Case where empty array of coordinates is provided
-    if (output_json.contains("coordinates")) {
-      auto coords = output_json["coordinates"];
-      if (coords.empty() ||
-          (coords.is_string() && coords.get<std::string>() == "")) {
-        output_json.erase("coordinates");
-      }
-    }
-    // std::string outpath = "/.zattrs";
-    std::string outpath = ".zattrs";
-    if (isCloudStore) {
-      outpath = ".zattrs";
-    }
-    // It's important to use the store's kvstore or else we get a race condition
-    // on "mkdir".
-    return tensorstore::kvstore::Write(store.kvstore(), outpath,
-                                       absl::Cord(output_json.dump(4)));
   };
 
   // this is intended to handle the struct array where we "reopen" the store
@@ -597,19 +597,35 @@ Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
   // start by creating a kvstore future ...
   auto kvs_future = tensorstore::kvstore::Open(store_spec["kvstore"]);
 
+  // Detect Zarr version from the store spec
+  zarr::ZarrVersion zarr_version = zarr::GetVersionFromSpec(store_spec);
+
   // go read the metadata return json ...
-  auto read = [](const tensorstore::KvStore& kvstore)
+  auto read = [zarr_version](const tensorstore::KvStore& kvstore)
       -> Future<tensorstore::kvstore::ReadResult> {
-    return tensorstore::kvstore::Read(kvstore, "/.zattrs");
-    // return tensorstore::kvstore::Read(kvstore, ".zattrs");
+    if (zarr_version == zarr::ZarrVersion::kV3) {
+      // For V3, attributes are in zarr.json
+      return tensorstore::kvstore::Read(kvstore, "/zarr.json");
+    } else {
+      // For V2, attributes are in .zattrs
+      return tensorstore::kvstore::Read(kvstore, "/.zattrs");
+    }
   };
 
   // go read the attributes return json ...
-  auto parse = [](const tensorstore::kvstore::ReadResult& kvs_read,
-                  const ::nlohmann::json& spec) {
-    auto attributes =
+  auto parse = [zarr_version](const tensorstore::kvstore::ReadResult& kvs_read,
+                              const ::nlohmann::json& spec) {
+    auto parsed =
         nlohmann::json::parse(std::string(kvs_read.value), nullptr, false);
-    return attributes;
+    if (zarr_version == zarr::ZarrVersion::kV3) {
+      // For V3, extract attributes from zarr.json
+      if (parsed.contains("attributes")) {
+        return parsed["attributes"];
+      }
+      return nlohmann::json::object();
+    }
+    // For V2, the entire file is attributes
+    return parsed;
   };
 
   auto make_variable = [variable_name](
@@ -1211,15 +1227,44 @@ class Variable {
     if (!json.contains("metadata")) {
       return absl::NotFoundError("Metadata did not contain key 'metadata'.");
     }
-    if (!json["metadata"].contains("chunks")) {
-      return absl::NotFoundError(
-          "Metadata['attributes'] did not contain key 'chunks'.");
+    const auto& metadata = json["metadata"];
+
+    auto parse_chunk_array =
+        [](const nlohmann::json& chunk_json) -> Result<std::vector<long int>> {
+      if (!chunk_json.is_array()) {
+        return absl::InvalidArgumentError("Chunk shape must be an array.");
+      }
+      return chunk_json.get<std::vector<long int>>();  // NOLINT
+    };
+
+    if (metadata.contains("chunks")) {
+      return parse_chunk_array(metadata["chunks"]);
     }
-    if (!json["metadata"]["chunks"].is_array()) {
-      return absl::InvalidArgumentError("Metadata['chunks'] is not an array.");
+
+    // Zarr v3 chunk grid configuration uses chunk_shape (or chunkShape).
+    if (metadata.contains("chunk_grid") &&
+        metadata["chunk_grid"].contains("configuration")) {
+      const auto& config = metadata["chunk_grid"]["configuration"];
+      if (config.contains("chunk_shape")) {
+        return parse_chunk_array(config["chunk_shape"]);
+      }
+      if (config.contains("chunkShape")) {
+        return parse_chunk_array(config["chunkShape"]);
+      }
     }
-    return json["metadata"]["chunks"]
-        .get<std::vector<long int>>();  // NOLINT: Tensorstore convention
+
+    if (metadata.contains("chunkGrid") &&
+        metadata["chunkGrid"].contains("configuration")) {
+      const auto& config = metadata["chunkGrid"]["configuration"];
+      if (config.contains("chunk_shape")) {
+        return parse_chunk_array(config["chunk_shape"]);
+      }
+      if (config.contains("chunkShape")) {
+        return parse_chunk_array(config["chunkShape"]);
+      }
+    }
+
+    return absl::NotFoundError("Metadata did not contain chunk shape.");
   }
 
   /**

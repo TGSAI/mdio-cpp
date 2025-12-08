@@ -15,6 +15,7 @@
 #ifndef MDIO_DATASET_FACTORY_H_
 #define MDIO_DATASET_FACTORY_H_
 
+#include <optional>
 #include <set>
 #include <string>
 #include <tuple>
@@ -23,7 +24,7 @@
 
 #include "mdio/dataset_validator.h"
 #include "mdio/impl.h"
-// #include "tensorstore/tensorstore.h"
+#include "mdio/zarr/zarr.h"
 
 #include "absl/strings/escaping.h"
 #include "absl/strings/str_format.h"
@@ -42,46 +43,28 @@ inline std::string encode_base64(const std::string raw) {
 }
 
 /**
- * @brief Converts a Dataset spec dtype to a numpy style dtype
+ * @brief Converts a Dataset spec dtype to a numpy style dtype (Zarr V2)
  * This function is intended to be an internal helper function for formatting
  * Variable specs It presupposes that all dtypes are little endian or endianless
  * if bool.
  * @param dtype A string representing the dtype of a Variable
  * @return A string representing the dtype in numpy format limited to the dtypes
  * supported by MDIO Dataset
+ * @deprecated Use mdio::zarr::v2::ToZarrDtype for explicit V2 conversions.
  */
 inline tensorstore::Result<std::string> to_zarr_dtype(const std::string dtype) {
-  // Convert the input dtype to Zarr dtype
-  if (dtype == "int8") {
-    return "<i1";
-  } else if (dtype == "int16") {
-    return "<i2";
-  } else if (dtype == "int32") {
-    return "<i4";
-  } else if (dtype == "int64") {
-    return "<i8";
-  } else if (dtype == "uint8") {
-    return "<u1";
-  } else if (dtype == "uint16") {
-    return "<u2";
-  } else if (dtype == "uint32") {
-    return "<u4";
-  } else if (dtype == "uint64") {
-    return "<u8";
-  } else if (dtype == "float16") {
-    return "<f2";
-  } else if (dtype == "float32") {
-    return "<f4";
-  } else if (dtype == "float64") {
-    return "<f8";
-  } else if (dtype == "bool") {
-    return "|b1";
-  } else if (dtype == "complex64") {
-    return "<c8";
-  } else if (dtype == "complex128") {
-    return "<c16";
-  }
-  return absl::InvalidArgumentError("Unknown dtype: " + dtype);
+  return mdio::zarr::v2::ToZarrDtype(dtype);
+}
+
+/**
+ * @brief Converts a Dataset spec dtype to the appropriate Zarr format
+ * @param dtype A string representing the dtype of a Variable
+ * @param version The Zarr version to target
+ * @return The dtype in the appropriate format for the version
+ */
+inline tensorstore::Result<nlohmann::json> to_zarr_dtype(
+    const std::string dtype, mdio::zarr::ZarrVersion version) {
+  return mdio::zarr::ConvertDtype(version, dtype);
 }
 
 /**
@@ -90,12 +73,22 @@ inline tensorstore::Result<std::string> to_zarr_dtype(const std::string dtype) {
  * Variable specs It will modify with side-effect on "input"
  * @param input A MDIO Variable spec
  * @param variable A Variable stub (Will be modified)
+ * @param version The Zarr version to target (defaults to V2)
  * @return OkStatus if successful, InvalidArgumentError if dtype is not
  * supported
  */
-inline absl::Status transform_dtype(nlohmann::json& input /*NOLINT*/,
-                                    nlohmann::json& variable /*NOLINT*/) {
+inline absl::Status transform_dtype(
+    nlohmann::json& input /*NOLINT*/, nlohmann::json& variable /*NOLINT*/,
+    mdio::zarr::ZarrVersion version = mdio::zarr::ZarrVersion::kV2) {
+  std::string dtype_key =
+      (version == mdio::zarr::ZarrVersion::kV3) ? "data_type" : "dtype";
+
   if (input["dataType"].contains("fields")) {
+    if (version == mdio::zarr::ZarrVersion::kV3) {
+      // V3 doesn't support structured dtypes in the same way
+      return absl::InvalidArgumentError(
+          "Structured dtypes are not yet supported in Zarr V3");
+    }
     nlohmann::json dtypeFields = nlohmann::json::array();
     for (const auto& field : input["dataType"]["fields"]) {
       auto dtype = to_zarr_dtype(field["format"]);
@@ -104,13 +97,13 @@ inline absl::Status transform_dtype(nlohmann::json& input /*NOLINT*/,
       }
       dtypeFields.emplace_back(nlohmann::json{field["name"], dtype.value()});
     }
-    variable["metadata"]["dtype"] = dtypeFields;
+    variable["metadata"][dtype_key] = dtypeFields;
   } else {
-    auto dtype = to_zarr_dtype(input["dataType"]);
+    auto dtype = to_zarr_dtype(input["dataType"], version);
     if (!dtype.status().ok()) {
       return dtype.status();
     }
-    variable["metadata"]["dtype"] = dtype.value();
+    variable["metadata"][dtype_key] = dtype.value();
   }
   return absl::OkStatus();
 }
@@ -121,52 +114,106 @@ inline absl::Status transform_dtype(nlohmann::json& input /*NOLINT*/,
  * Variable specs It will modify with side-effect on "input"
  * @param input A MDIO Variable spec
  * @param variable A Variable stub (Will be modified)
+ * @param version The Zarr version to target (defaults to V2)
  * @return OkStatus if successful, InvalidArgumentError if compressor is invalid
  * for MDIO
  */
-inline absl::Status transform_compressor(nlohmann::json& input /*NOLINT*/,
-                                         nlohmann::json& variable /*NOLINT*/) {
-  if (input.contains("compressor")) {
-    if (input["compressor"].contains("name")) {
-      if (input["compressor"]["name"] != "blosc") {
+inline absl::Status transform_compressor(
+    nlohmann::json& input /*NOLINT*/, nlohmann::json& variable /*NOLINT*/,
+    mdio::zarr::ZarrVersion version = mdio::zarr::ZarrVersion::kV2) {
+  if (version == mdio::zarr::ZarrVersion::kV3) {
+    // V3 uses codec pipeline
+    if (input.contains("compressor")) {
+      if (!input["compressor"].contains("name") ||
+          input["compressor"]["name"] != "blosc") {
         return absl::InvalidArgumentError("Only blosc compressor is supported");
       }
-      variable["metadata"]["compressor"]["id"] = input["compressor"]["name"];
-    } else {
-      return absl::InvalidArgumentError("Compressor name must be specified");
-    }
 
-    if (input["compressor"].contains("algorithm")) {
-      variable["metadata"]["compressor"]["cname"] =
-          input["compressor"]["algorithm"];
-    } else {  // DEFAULT
-      variable["metadata"]["compressor"]["cname"] = "lz4";
-    }
-    if (input["compressor"].contains("level")) {
-      if (input["compressor"]["level"] > 9 ||
-          input["compressor"]["level"] < 0) {
-        return absl::InvalidArgumentError(
-            "Compressor level must be between 0 and 9");
+      nlohmann::json blosc_codec = {{"name", "blosc"}};
+      blosc_codec["configuration"] = nlohmann::json::object();
+
+      if (input["compressor"].contains("algorithm")) {
+        blosc_codec["configuration"]["cname"] =
+            input["compressor"]["algorithm"];
+      } else {
+        blosc_codec["configuration"]["cname"] = "lz4";
       }
-      variable["metadata"]["compressor"]["clevel"] =
-          input["compressor"]["level"];
-    } else {  // DEFAULT
-      variable["metadata"]["compressor"]["clevel"] = 5;
+
+      if (input["compressor"].contains("level")) {
+        if (input["compressor"]["level"] > 9 ||
+            input["compressor"]["level"] < 0) {
+          return absl::InvalidArgumentError(
+              "Compressor level must be between 0 and 9");
+        }
+        blosc_codec["configuration"]["clevel"] = input["compressor"]["level"];
+      } else {
+        blosc_codec["configuration"]["clevel"] = 5;
+      }
+
+      if (input["compressor"].contains("shuffle")) {
+        blosc_codec["configuration"]["shuffle"] =
+            input["compressor"]["shuffle"];
+      } else {
+        blosc_codec["configuration"]["shuffle"] = "shuffle";
+      }
+
+      if (input["compressor"].contains("blocksize")) {
+        blosc_codec["configuration"]["blocksize"] =
+            input["compressor"]["blocksize"];
+      } else {
+        blosc_codec["configuration"]["blocksize"] = 0;
+      }
+
+      // V3 uses a codec array: bytes first, then compression
+      variable["metadata"]["codecs"] =
+          nlohmann::json::array({{{"name", "bytes"}}, blosc_codec});
     }
-    if (input["compressor"].contains("shuffle")) {
-      variable["metadata"]["compressor"]["shuffle"] =
-          input["compressor"]["shuffle"];
-    } else {  // DEFAULT
-      variable["metadata"]["compressor"]["shuffle"] = 1;
-    }
-    if (input["compressor"].contains("blocksize")) {
-      variable["metadata"]["compressor"]["blocksize"] =
-          input["compressor"]["blocksize"];
-    } else {  // DEFAULT
-      variable["metadata"]["compressor"]["blocksize"] = 0;
-    }
+    // If no compressor, use default bytes codec (already in stub)
   } else {
-    variable["metadata"]["compressor"] = nullptr;
+    // V2 uses compressor object
+    if (input.contains("compressor")) {
+      if (input["compressor"].contains("name")) {
+        if (input["compressor"]["name"] != "blosc") {
+          return absl::InvalidArgumentError(
+              "Only blosc compressor is supported");
+        }
+        variable["metadata"]["compressor"]["id"] = input["compressor"]["name"];
+      } else {
+        return absl::InvalidArgumentError("Compressor name must be specified");
+      }
+
+      if (input["compressor"].contains("algorithm")) {
+        variable["metadata"]["compressor"]["cname"] =
+            input["compressor"]["algorithm"];
+      } else {
+        variable["metadata"]["compressor"]["cname"] = "lz4";
+      }
+      if (input["compressor"].contains("level")) {
+        if (input["compressor"]["level"] > 9 ||
+            input["compressor"]["level"] < 0) {
+          return absl::InvalidArgumentError(
+              "Compressor level must be between 0 and 9");
+        }
+        variable["metadata"]["compressor"]["clevel"] =
+            input["compressor"]["level"];
+      } else {
+        variable["metadata"]["compressor"]["clevel"] = 5;
+      }
+      if (input["compressor"].contains("shuffle")) {
+        variable["metadata"]["compressor"]["shuffle"] =
+            input["compressor"]["shuffle"];
+      } else {
+        variable["metadata"]["compressor"]["shuffle"] = 1;
+      }
+      if (input["compressor"].contains("blocksize")) {
+        variable["metadata"]["compressor"]["blocksize"] =
+            input["compressor"]["blocksize"];
+      } else {
+        variable["metadata"]["compressor"]["blocksize"] = 0;
+      }
+    } else {
+      variable["metadata"]["compressor"] = nullptr;
+    }
   }
   return absl::OkStatus();
 }
@@ -178,26 +225,26 @@ inline absl::Status transform_compressor(nlohmann::json& input /*NOLINT*/,
  * @param input A MDIO Variable spec
  * @param variable A Variable stub (Will be modified)
  * @param dimensionMap A map of dimension names to sizes
+ * @param version The Zarr version to target (defaults to V2)
  * @return void -- Can only be successful because validation must always pass
  * before this step This presumes that the user does not attempt to use these
  * functions directly
  */
 inline void transform_shape(
     nlohmann::json& input /*NOLINT*/, nlohmann::json& variable /*NOLINT*/,
-    std::unordered_map<std::string, uint64_t>& dimensionMap /*NOLINT*/) {
+    std::unordered_map<std::string, uint64_t>& dimensionMap /*NOLINT*/,
+    mdio::zarr::ZarrVersion version = mdio::zarr::ZarrVersion::kV2) {
+  nlohmann::json shape = nlohmann::json::array();
   if (input["dimensions"][0].is_object()) {
-    nlohmann::json shape = nlohmann::json::array();
     for (auto& dimension : input["dimensions"]) {
       shape.emplace_back(dimensionMap[dimension["name"]]);
     }
-    variable["metadata"]["shape"] = shape;
   } else {
-    nlohmann::json shape = nlohmann::json::array();
     for (auto& dimension : input["dimensions"]) {
       shape.emplace_back(dimensionMap[dimension]);
     }
-    variable["metadata"]["shape"] = shape;
   }
+  variable["metadata"]["shape"] = shape;
 }
 
 /**
@@ -259,13 +306,49 @@ inline absl::Status transform_metadata(const std::string& path,
  * formatting Variable specs
  * @param json A MDIO Dataset Variable list element
  * @param dimensionMap A map of dimension names to sizes
+ * @param path The path for the variable
+ * @param version The Zarr version to use (defaults to V2)
  * @return A Variable spec or an error if the Variable spec is invalid
  */
 inline tensorstore::Result<nlohmann::json> from_json_to_spec(
     nlohmann::json& json /*NOLINT*/,
     std::unordered_map<std::string, uint64_t>& dimensionMap /*NOLINT*/,
-    const std::string& path) {
-  nlohmann::json variableStub = R"(
+    const std::string& path,
+    mdio::zarr::ZarrVersion version = mdio::zarr::ZarrVersion::kV2) {
+  nlohmann::json variableStub;
+
+  if (version == mdio::zarr::ZarrVersion::kV3) {
+    // Zarr V3 spec structure
+    variableStub = R"(
+        {
+            "driver": "zarr3",
+            "kvstore": {
+                "driver": "file",
+                "path": "VARIABLE_NAME"
+            },
+            "metadata": {
+                "data_type": "DATA_TYPE",
+                "shape": [],
+                "chunk_grid": {
+                    "name": "regular",
+                    "configuration": {
+                        "chunk_shape": []
+                    }
+                },
+                "chunk_key_encoding": {
+                    "name": "default",
+                    "configuration": {
+                        "separator": "/"
+                    }
+                },
+                "codecs": [{"name": "bytes"}]
+            },
+            "attributes": {}
+        }
+    )"_json;
+  } else {
+    // Zarr V2 spec structure
+    variableStub = R"(
         {
             "driver": "zarr",
             "kvstore": {
@@ -281,50 +364,70 @@ inline tensorstore::Result<nlohmann::json> from_json_to_spec(
             "attributes": {}
         }
     )"_json;
+  }
   variableStub["kvstore"]["path"] = json["name"];
 
-  auto transformStatus = transform_dtype(json, variableStub);
+  auto transformStatus = transform_dtype(json, variableStub, version);
   if (!transformStatus.ok()) {
     return transformStatus;
   }
 
-  auto compressorStatus = transform_compressor(json, variableStub);
+  auto compressorStatus = transform_compressor(json, variableStub, version);
   if (!compressorStatus.ok()) {
     return compressorStatus;
   }
 
-  transform_shape(json, variableStub, dimensionMap);
+  transform_shape(json, variableStub, dimensionMap, version);
 
   if (json.contains("metadata")) {
+    nlohmann::json chunkShape;
     if (json["metadata"].contains("chunkGrid")) {
-      variableStub["metadata"]["chunks"] =
-          json["metadata"]["chunkGrid"]["configuration"]["chunkShape"];
-    } else {  // No chunking specified
-      variableStub["metadata"]["chunks"] = variableStub["metadata"]["shape"];
+      chunkShape = json["metadata"]["chunkGrid"]["configuration"]["chunkShape"];
+    } else {
+      chunkShape = variableStub["metadata"]["shape"];
+    }
+
+    if (version == mdio::zarr::ZarrVersion::kV3) {
+      // V3 uses chunk_grid
+      variableStub["metadata"]["chunk_grid"]["configuration"]["chunk_shape"] =
+          chunkShape;
+    } else {
+      // V2 uses chunks
+      variableStub["metadata"]["chunks"] = chunkShape;
     }
 
     if (!json["dataType"].contains("fields")) {
+      std::string dtype_str = json["dataType"].get<std::string>();
       variableStub["metadata"]["fill_value"] = nlohmann::json::value_t::null;
-      if (json["dataType"] == "complex64") {
+      if (dtype_str == "complex64") {
         std::string raw(8, '\0');
-        variableStub["metadata"]["fill_value"] = encode_base64(raw);
-      } else if (json["dataType"] == "complex128") {
+        if (version == mdio::zarr::ZarrVersion::kV2) {
+          variableStub["metadata"]["fill_value"] = encode_base64(raw);
+        }
+        // V3 handles complex fill values differently
+      } else if (dtype_str == "complex128") {
         std::string raw(16, '\0');
-        variableStub["metadata"]["fill_value"] = encode_base64(raw);
-      } else if (json["dataType"].get<std::string>()[0] == 'f') {
+        if (version == mdio::zarr::ZarrVersion::kV2) {
+          variableStub["metadata"]["fill_value"] = encode_base64(raw);
+        }
+      } else if (!dtype_str.empty() && dtype_str[0] == 'f') {
         variableStub["metadata"]["fill_value"] = std::nan("");
+      } else {
+        // Provide an explicit default for integral/boolean types to satisfy the
+        // TensorStore Zarr3 parser, which rejects null fill values for numeric
+        // dtypes.
+        variableStub["metadata"]["fill_value"] = 0;
       }
-    } else {
+    } else if (version == mdio::zarr::ZarrVersion::kV2) {
+      // Structured dtypes only for V2
       // Accumulate the total number of bytes (N)
       uint16_t num_bytes = 0;
-      // We're going to use the variable dtype because it's already in byte
-      // format
       std::string dtype;
       for (auto field : variableStub["metadata"]["dtype"]) {
         dtype = field[1].get<std::string>();
         if (dtype.at(1) != 'c') {
           num_bytes += std::stoi(dtype.substr(2));
-        } else {  // Complex
+        } else {
           if (dtype.at(2) == '8') {
             num_bytes += 8;
           } else {
@@ -337,8 +440,14 @@ inline tensorstore::Result<nlohmann::json> from_json_to_spec(
     }
 
     variableStub["attributes"]["metadata"] = json["metadata"];
-  } else {  // No metadata supplied means no chunkGrid
-    variableStub["metadata"]["chunks"] = variableStub["metadata"]["shape"];
+  } else {
+    // No metadata supplied means no chunkGrid
+    if (version == mdio::zarr::ZarrVersion::kV3) {
+      variableStub["metadata"]["chunk_grid"]["configuration"]["chunk_shape"] =
+          variableStub["metadata"]["shape"];
+    } else {
+      variableStub["metadata"]["chunks"] = variableStub["metadata"]["shape"];
+    }
   }
 
   auto transform_result = transform_metadata(path, variableStub);
@@ -436,11 +545,26 @@ get_dimensions(nlohmann::json& spec /*NOLINT*/) {
  * This should be the only function called by the user to construct a Dataset
  * from a spec
  * @param spec A Dataset spec
+ * @param path The path for the dataset
+ * @param version Optional Zarr version to use. If not specified, auto-detects
+ *                from spec's "zarr_version" field, defaulting to V2.
  * @return A vector of Variable specs or an error if the Dataset spec is invalid
  */
 inline tensorstore::Result<
     std::tuple<nlohmann::json, std::vector<nlohmann::json>>>
-Construct(nlohmann::json& spec /*NOLINT*/, const std::string& path) {
+Construct(nlohmann::json& spec /*NOLINT*/, const std::string& path,
+          std::optional<mdio::zarr::ZarrVersion> version = std::nullopt) {
+  // Determine the version to use
+  mdio::zarr::ZarrVersion zarr_version = mdio::zarr::ZarrVersion::kV2;
+  if (version.has_value()) {
+    zarr_version = version.value();
+  } else if (spec.contains("zarr_version")) {
+    auto version_result = mdio::zarr::ParseVersion(spec["zarr_version"]);
+    if (version_result.ok()) {
+      zarr_version = version_result.value();
+    }
+  }
+
   // Validation should only return status codes. If it returns data then it
   // should be a "constructor"
   auto status = validate_dataset(spec);
@@ -459,7 +583,8 @@ Construct(nlohmann::json& spec /*NOLINT*/, const std::string& path) {
 
   std::vector<nlohmann::json> datasetSpec;
   for (auto& variable : spec["variables"]) {
-    auto variableSpec = from_json_to_spec(variable, dimensionMap, path);
+    auto variableSpec =
+        from_json_to_spec(variable, dimensionMap, path, zarr_version);
     if (!variableSpec.status().ok()) {
       return variableSpec.status();
     }

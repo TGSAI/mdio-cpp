@@ -34,6 +34,7 @@
 #include "mdio/dataset_factory.h"
 #include "mdio/variable.h"
 #include "mdio/variable_collection.h"
+#include "mdio/zarr/zarr.h"
 #include "tensorstore/driver/zarr/metadata.h"
 #include "tensorstore/util/future.h"
 #include "tensorstore/util/option.h"
@@ -50,78 +51,25 @@ namespace internal {
  * @brief Retrieves the .zarray JSON metadata from the given `metadata`.
  *
  * This function derives the .zarray JSON metadata without actually reading it.
+ * This is a compatibility wrapper that delegates to the zarr V2 implementation.
  *
  * @param metadata The input JSON metadata.
  * @return An `mdio::Result` containing the .zarray JSON metadata on success, or
  * an error on failure.
+ * @deprecated Use zarr::v2::GetZarray directly for V2 stores.
  */
 inline Result<nlohmann::json> get_zarray(const ::nlohmann::json metadata) {
-  // derive .zarray json metadata (without reading it).
-  auto json =
-      metadata;  // Why am I doing this? It's an extra copy that does nothing!
-  nlohmann::json zarray;
-  if (!json.contains("metadata")) {
-    json["metadata"] = nlohmann::json::object();  // Just add an empty object
-    json["metadata"]["attributes"] =
-        nlohmann::json::object();  // We need attributes as well
-  }
-
-  // these fields can have defaults:
-  if (!json["metadata"].contains("order")) {
-    zarray["order"] = "C";
-  } else {
-    zarray["order"] = json["metadata"]["order"];
-  }
-  if (!json["metadata"].contains("filters")) {
-    zarray["filters"] = nullptr;
-  } else {
-    zarray["filters"] = json["metadata"]["filters"];
-  }
-
-  if (!json["metadata"].contains("fill_value")) {
-    zarray["fill_value"] = nullptr;
-  } else {
-    zarray["fill_value"] = json["metadata"]["fill_value"];
-  }
-
-  if (!json["metadata"].contains("zarr_format")) {
-    zarray["zarr_format"] = 2;
-  } else {
-    zarray["zarr_format"] = json["metadata"]["zarr_format"];
-  }
-
-  if (!json["metadata"].contains("chunks") &&
-      json["metadata"].contains("shape")) {
-    zarray["chunks"] = json["metadata"]["shape"];
-  } else {
-    zarray["chunks"] = json["metadata"]["chunks"];
-  }
-
-  if (!json["metadata"].contains("compressor")) {
-    zarray["compressor"] = nullptr;
-  } else {
-    zarray["compressor"] = json["metadata"]["compressor"];
-  }
-
-  if (!json["metadata"].contains("dimension_separator")) {
-    zarray["dimension_separator"] = "/";
-  } else {
-    zarray["dimension_separator"] = json["metadata"]["dimension_separator"];
-  }
-
-  zarray["shape"] = json["metadata"]["shape"];
-  zarray["dtype"] = json["metadata"]["dtype"];
-
-  // fixme chunks must be configured ...
-  MDIO_ASSIGN_OR_RETURN(
-      auto zarr_metadata,
-      tensorstore::internal_zarr::ZarrMetadata::FromJson(zarray))
-
-  return ::nlohmann::json(zarr_metadata);
+  return zarr::v2::GetZarray(metadata);
 }
 
 /**
- * @brief Writes the zmetadata for the dataset.
+ * @brief Writes the metadata for the dataset.
+ *
+ * For Zarr V2, writes consolidated metadata (.zmetadata, .zgroup, .zattrs).
+ * For Zarr V3, writes only root zarr.json (no consolidated metadata support).
+ *
+ * This overload auto-detects the Zarr version from the first variable's
+ * driver specification.
  *
  * @param dataset_metadata The metadata for the dataset.
  * @param json_variables The JSON variables.
@@ -130,121 +78,11 @@ inline Result<nlohmann::json> get_zarray(const ::nlohmann::json metadata) {
 inline Future<void> write_zmetadata(
     const ::nlohmann::json& dataset_metadata,
     const std::vector<::nlohmann::json>& json_variables) {
-  // header material at the root of the dataset ...
-  // Configure a kvstore (we can't deduce if it's in memory etc).
-  // {
-  //    "kvstore",
-  //    {
-  //        {"driver", "file"},
-  //        {"path", "name"}
-  //    }
-  //}
-  auto zattrs = dataset_metadata;
-
-  // FIXME - generalize for zarr v3
-  ::nlohmann::json zgroup;
-  zgroup["zarr_format"] = 2;
-
-  // The consolidated metadata for the datset
-  ::nlohmann::json zmetadata;
-
-  // FIXME - don't hard code here ...
-  zmetadata["zarr_consolidated_format"] = 1;
-
-  zmetadata["metadata"][".zattrs"] = zattrs;
-  zmetadata["metadata"][".zgroup"] = zgroup;
-
-  std::string zarray_key;
-  std::string zattrs_key;
-  std::string driver =
-      json_variables[0]["kvstore"]["driver"].get<std::string>();
-
-  for (const auto& json : json_variables) {
-    zarray_key =
-        std::filesystem::path(json["kvstore"]["path"]).stem() / ".zarray";
-    zattrs_key =
-        std::filesystem::path(json["kvstore"]["path"]).stem() / ".zattrs";
-
-    MDIO_ASSIGN_OR_RETURN(zmetadata["metadata"][zarray_key], get_zarray(json))
-
-    nlohmann::json fixedJson = json["attributes"];
-    fixedJson["_ARRAY_DIMENSIONS"] = fixedJson["dimension_names"];
-    fixedJson.erase("dimension_names");
-    // We do not want to be seralizing the variable_name. It should be
-    // self-describing
-    if (fixedJson.contains("variable_name")) {
-      fixedJson.erase("variable_name");
-    }
-    if (fixedJson.contains("long_name") &&
-        fixedJson["long_name"].get<std::string>() == "") {
-      fixedJson.erase("long_name");
-    }
-    if (fixedJson.contains("metadata")) {
-      if (fixedJson["metadata"].contains("chunkGrid")) {
-        fixedJson["metadata"].erase("chunkGrid");
-      }
-      for (auto& item : fixedJson["metadata"].items()) {
-        fixedJson[item.key()] = std::move(item.value());
-      }
-      fixedJson.erase("metadata");
-    }
-    // Case where an empty array of coordinates were provided
-    if (fixedJson.contains("coordinates")) {
-      auto coords = fixedJson["coordinates"];
-      if (coords.empty() ||
-          (coords.is_string() && coords.get<std::string>() == "")) {
-        fixedJson.erase("coordinates");
-      }
-    }
-    zmetadata["metadata"][zattrs_key] = fixedJson;
+  zarr::ZarrVersion version = zarr::ZarrVersion::kV2;
+  if (!json_variables.empty()) {
+    version = zarr::GetVersionFromSpec(json_variables[0]);
   }
-
-  nlohmann::json kvstore = nlohmann::json::object();
-  kvstore["driver"] = driver;
-  std::vector<std::string> file_parts = absl::StrSplit(
-      json_variables[0]["kvstore"]["path"].get<std::string>(), '/');
-  size_t toRemove = file_parts.back().size();
-  std::string strippedPath =
-      json_variables[0]["kvstore"]["path"].get<std::string>().substr(
-          0, json_variables[0]["kvstore"]["path"].get<std::string>().size() -
-                 toRemove - 1);
-  kvstore["path"] = strippedPath;
-
-  if (driver == "gcs" || driver == "s3") {
-    kvstore["bucket"] =
-        json_variables[0]["kvstore"]["bucket"].get<std::string>();
-    std::string cloudPath = kvstore["path"].get<std::string>();
-    kvstore["path"] = cloudPath;
-  }
-
-  auto kvs_future = tensorstore::kvstore::Open(kvstore);
-
-  auto zattrs_future = tensorstore::MapFutureValue(
-      tensorstore::InlineExecutor{},
-      [zattrs = std::move(zattrs)](const tensorstore::KvStore& kvstore) {
-        return tensorstore::kvstore::Write(kvstore, "/.zattrs",
-                                           absl::Cord(zattrs.dump(4)));
-      },
-      kvs_future);
-
-  auto zmetadata_future = tensorstore::MapFutureValue(
-      tensorstore::InlineExecutor{},
-      [zmetadata = std::move(zmetadata)](const tensorstore::KvStore& kvstore) {
-        return tensorstore::kvstore::Write(kvstore, "/.zmetadata",
-                                           absl::Cord(zmetadata.dump(4)));
-      },
-      kvs_future);
-
-  auto zgroup_future = tensorstore::MapFutureValue(
-      tensorstore::InlineExecutor{},
-      [zgroup = std::move(zgroup)](const tensorstore::KvStore& kvstore) {
-        return tensorstore::kvstore::Write(kvstore, "/.zgroup",
-                                           absl::Cord(zgroup.dump(4)));
-      },
-      kvs_future);
-
-  return tensorstore::WaitAllFuture(zattrs_future, zmetadata_future,
-                                    zgroup_future);
+  return zarr::WriteDatasetMetadata(version, dataset_metadata, json_variables);
 }
 
 /**
@@ -269,7 +107,11 @@ inline Future<tensorstore::KvStore> dataset_kvs_store(
     kvstore["driver"] = "s3";
   } else {
     kvstore["driver"] = "file";
-    kvstore["path"] = output_file;
+    std::string path = std::string(output_file);
+    if (!path.empty() && path.back() != '/') {
+      path.push_back('/');
+    }
+    kvstore["path"] = path;
     return tensorstore::kvstore::Open(kvstore);
   }  // FIXME - we need azure support ...
 
@@ -284,6 +126,9 @@ inline Future<tensorstore::KvStore> dataset_kvs_store(
   for (std::size_t i = 2; i < file_parts.size(); ++i) {
     filepath += "/" + file_parts[i];
   }
+  if (!filepath.empty() && filepath.back() != '/') {
+    filepath.push_back('/');
+  }
   // update the bucket and path ...
   kvstore["bucket"] = bucket;
   kvstore["path"] = filepath;
@@ -292,105 +137,52 @@ inline Future<tensorstore::KvStore> dataset_kvs_store(
 }
 
 /**
- * @brief Retrieves the .zmetadata for the dataset.
- * This is for executing a read on the dataset's consolidated metadata.
- * It will also attempt to infer the driver based on the prefix of the path.
- * It will default to the "file" driver if no prefix is found.
+ * @brief Retrieves the metadata for the dataset with auto-detection.
+ * This version auto-detects the Zarr version by checking for V3 markers first.
  * @param dataset_path The path to the dataset.
- * @return An `mdio::Future` containing the .zmetadata JSON on success, or an
+ * @return An `mdio::Future` containing the metadata JSON on success, or an
  * error on failure.
  */
 inline Future<std::tuple<::nlohmann::json, std::vector<::nlohmann::json>>>
 from_zmetadata(const std::string& dataset_path) {
-  // e.g. dataset_path = "zarrs/acceptance/";
-  //  FIXME - enable async
-  auto kvs_future = mdio::internal::dataset_kvs_store(dataset_path).result();
+  auto kvs_future = mdio::internal::dataset_kvs_store(dataset_path);
 
-  if (!kvs_future.ok()) {
-    return internal::CheckMissingDriverStatus(kvs_future.status());
-  }
-  auto kvs_read_result =
-      tensorstore::kvstore::Read(kvs_future.value(), ".zmetadata").result();
-  if (!kvs_read_result.ok()) {
-    return internal::CheckMissingDriverStatus(kvs_read_result.status());
-  }
+  auto pair = tensorstore::PromiseFuturePair<
+      std::tuple<::nlohmann::json, std::vector<::nlohmann::json>>>::Make();
 
-  ::nlohmann::json zmetadata;
-  try {
-    zmetadata =
-        ::nlohmann::json::parse(std::string(kvs_read_result.value().value));
-  } catch (const nlohmann::json::parse_error& e) {
-    // It's a common error to not have a trailing slash on the dataset path.
-    if (!dataset_path.empty() && dataset_path.back() != '/') {
-      std::string fixPath = dataset_path + "/";
-      return mdio::internal::from_zmetadata(fixPath);
-    }
-    return absl::Status(absl::StatusCode::kInvalidArgument, e.what());
-  }
+  kvs_future.ExecuteWhenReady(
+      [promise = std::move(pair.promise),
+       dataset_path](tensorstore::ReadyFuture<tensorstore::KvStore> ready_kvs) {
+        if (!ready_kvs.result().ok()) {
+          promise.SetResult(
+              internal::CheckMissingDriverStatus(ready_kvs.result().status()));
+          return;
+        }
 
-  if (!zmetadata.contains("metadata")) {
-    return absl::Status(absl::StatusCode::kInvalidArgument,
-                        "zmetadata does not contain metadata.");
-  }
+        // Auto-detect version
+        auto version_future = zarr::DetectVersion(ready_kvs.value());
+        version_future.ExecuteWhenReady(
+            [promise = std::move(promise), dataset_path,
+             kvs = ready_kvs.value()](
+                tensorstore::ReadyFuture<zarr::ZarrVersion> version_ready) {
+              zarr::ZarrVersion version = zarr::ZarrVersion::kV2;
+              if (version_ready.result().ok()) {
+                version = version_ready.value();
+              }
 
-  if (!zmetadata["metadata"].contains(".zattrs")) {
-    return absl::Status(absl::StatusCode::kInvalidArgument,
-                        "zmetadata does not contain dataset metadata.");
-  }
+              auto result_future = zarr::ReadDatasetMetadata(
+                  version, dataset_path,
+                  tensorstore::MakeReadyFuture<tensorstore::KvStore>(kvs));
 
-  auto dataset_metadata = zmetadata["metadata"][".zattrs"];
+              result_future.ExecuteWhenReady(
+                  [promise = std::move(promise)](
+                      tensorstore::ReadyFuture<std::tuple<
+                          ::nlohmann::json, std::vector<::nlohmann::json>>>
+                          result) { promise.SetResult(result.result()); });
+            });
+      });
 
-  std::string driver = "file";
-  // TODO(BrianMichell): Make this more robust. May be invalid if the stored
-  // path gets mangled somehow. Infer the driver
-  if (dataset_path.length() > 5) {
-    if (dataset_path.substr(0, 5) == "gs://") {
-      driver = "gcs";
-    } else if (dataset_path.substr(0, 5) == "s3://") {
-      driver = "s3";
-    }
-  }
-
-  std::string bucket;
-  std::string cloudPath;
-  if (driver != "file") {
-    std::string providedPath =
-        dataset_path.substr(5);  // Strip the gs:// or s3://
-    size_t bucketLen = providedPath.find_first_of('/');
-    bucket = providedPath.substr(0, bucketLen);  // Extract the bucket name
-    cloudPath = providedPath.substr(
-        bucketLen + 1, providedPath.length() - 2);  // Extract the path
-  }
-
-  // Remove .zattrs from metadata
-  zmetadata["metadata"].erase(".zattrs");
-  std::vector<nlohmann::json> json_vars_from_zmeta;
-  // Assemble a list of json for opening the variables in the dataset.
-  for (auto& element : zmetadata["metadata"].items()) {
-    // FIXME - remove hard code .zarray
-    if (element.key().substr(element.key().find_last_of(".") + 1) == "zarray") {
-      std::string variable_name =
-          element.key().substr(0, element.key().find("/"));
-      nlohmann::json new_dict = {
-          {"driver", "zarr"},
-          {"kvstore",
-           // {{"driver", driver}, {"path", dataset_path + "/" + variable_name}}}};
-    {{"driver", driver}, {"path", dataset_path + variable_name}}}};
-      if (driver != "file") {
-        new_dict["kvstore"]["bucket"] = bucket;
-        new_dict["kvstore"]["path"] = cloudPath + variable_name;
-      }
-      json_vars_from_zmeta.push_back(new_dict);
-    }
-  }
-  if (!json_vars_from_zmeta.size()) {
-    return absl::Status(absl::StatusCode::kInvalidArgument,
-                        "Not variables found in zmetadata.");
-  }
-
-  return tensorstore::ReadyFuture<
-      std::tuple<::nlohmann::json, std::vector<::nlohmann::json>>>(
-      std::make_tuple(dataset_metadata, json_vars_from_zmeta));
+  return pair.future;
 }
 }  // namespace internal
 
@@ -1265,10 +1057,15 @@ class Dataset {
                               variableName + "'.");
     }
 
+    // Detect Zarr version from the spec
+    std::string driverName = specJson.contains("driver")
+                                 ? specJson["driver"].get<std::string>()
+                                 : "zarr";
+
     // Create a new Variable with the selected field
     std::string baseStr = R"(
             {
-                "driver": "zarr",
+                "driver": "DRIVER_PLACEHOLDER",
                 "field": "FIELD",
                 "kvstore": {
                     "driver": "DRIVER",
@@ -1277,6 +1074,7 @@ class Dataset {
             }
         )";
     nlohmann::json base = nlohmann::json::parse(baseStr, nullptr, false);
+    base["driver"] = driverName;
     if (base.is_discarded()) {
       return absl::Status(absl::StatusCode::kInternal,
                           "Failed to parse base JSON.");
