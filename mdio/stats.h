@@ -414,16 +414,32 @@ class UserAttributes {
         std::vector<internal::SummaryStats> statsCollection;
         if (j.contains("statsV1")) {
           auto statsJson = j["statsV1"];
+          // statsV1 may be stored as a serialized JSON string in some
+          // third-party Zarr stores; parse it if needed.
+          auto parse_if_string = [](const nlohmann::json& val)
+              -> mdio::Result<nlohmann::json> {
+            if (val.is_string()) {
+              try {
+                return nlohmann::json::parse(val.get<std::string>());
+              } catch (const std::exception& e) {
+                return absl::InvalidArgumentError(
+                    std::string("Error parsing statsV1 string: ") + e.what());
+              }
+            }
+            return val;
+          };
           if (statsJson.is_array()) {
             for (auto& s : statsJson) {
-              auto statsRes = internal::SummaryStats::FromJson<T>(s);
+              MDIO_ASSIGN_OR_RETURN(auto parsed, parse_if_string(s));
+              auto statsRes = internal::SummaryStats::FromJson<T>(parsed);
               if (!statsRes.status().ok()) {
                 return statsRes.status();
               }
               statsCollection.emplace_back(statsRes.value());
             }
           } else {
-            auto statsRes = internal::SummaryStats::FromJson<T>(statsJson);
+            MDIO_ASSIGN_OR_RETURN(auto parsed, parse_if_string(statsJson));
+            auto statsRes = internal::SummaryStats::FromJson<T>(parsed);
             if (!statsRes.status().ok()) {
               return statsRes.status();
             }
