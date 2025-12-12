@@ -953,7 +953,7 @@ namespace DatasetTestV3 {
       "metadata": {
         "chunkGrid": {
           "name": "regular",
-          "configuration": { "chunkShape": [128, 128, 128] }
+          "configuration": { "chunkShape": [4, 512, 512] }
         }
       },
       "coordinates": ["inline", "crossline", "depth", "cdp-x", "cdp-y"]
