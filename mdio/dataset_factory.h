@@ -412,10 +412,9 @@ inline tensorstore::Result<nlohmann::json> from_json_to_spec(
         }
       } else if (!dtype_str.empty() && dtype_str[0] == 'f') {
         variableStub["metadata"]["fill_value"] = std::nan("");
+      } else if (dtype_str == "bool") {
+        variableStub["metadata"]["fill_value"] = false;
       } else {
-        // Provide an explicit default for integral/boolean types to satisfy the
-        // TensorStore Zarr3 parser, which rejects null fill values for numeric
-        // dtypes.
         variableStub["metadata"]["fill_value"] = 0;
       }
     } else if (version == mdio::zarr::ZarrVersion::kV2) {
