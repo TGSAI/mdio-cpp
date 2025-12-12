@@ -108,6 +108,7 @@ if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   set(mdio_INTERNAL_DEPS
     tensorstore::driver_array
     tensorstore::driver_zarr
+    tensorstore::driver_zarr3
     tensorstore::driver_json
     tensorstore::kvstore_file
     tensorstore::stack
