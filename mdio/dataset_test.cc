@@ -1389,4 +1389,286 @@ TEST(Dataset, mockV0) {
       << reopenedDsFut.value();
 }
 
+// Tests for Dataset::from_json with explicit Zarr version parameter
+TEST(Dataset, fromJsonWithZarrV2) {
+  std::filesystem::remove_all("zarrs/acceptance_v2_explicit");
+  auto json_vars = GetToyExample();
+
+  // Use explicit V2 version
+  auto dataset =
+      mdio::Dataset::from_json(json_vars, "zarrs/acceptance_v2_explicit",
+                               mdio::zarr::ZarrVersion::kV2,
+                               mdio::constants::kCreateClean);
+
+  ASSERT_TRUE(dataset.status().ok()) << dataset.status();
+
+  auto ds = dataset.value();
+  EXPECT_EQ(ds.getMetadata()["name"], "campos_3d") << ds.getMetadata();
+
+  // Verify variables were created
+  std::vector<std::string> varList = ds.variables.get_keys();
+  EXPECT_EQ(varList.size(), 9) << "Expected 9 variables";
+
+  std::filesystem::remove_all("zarrs/acceptance_v2_explicit");
+}
+
+TEST(Dataset, fromJsonWithOptionalZarrVersion) {
+  std::filesystem::remove_all("zarrs/acceptance_optional_version");
+  auto json_vars = GetToyExample();
+
+  // Use optional V2 version
+  auto dataset = mdio::Dataset::from_json(
+      json_vars, "zarrs/acceptance_optional_version",
+      std::optional<mdio::zarr::ZarrVersion>(mdio::zarr::ZarrVersion::kV2),
+      mdio::constants::kCreateClean);
+
+  ASSERT_TRUE(dataset.status().ok()) << dataset.status();
+
+  auto ds = dataset.value();
+  EXPECT_EQ(ds.getMetadata()["name"], "campos_3d") << ds.getMetadata();
+
+  std::filesystem::remove_all("zarrs/acceptance_optional_version");
+}
+
+TEST(Dataset, fromJsonWithNulloptVersion) {
+  std::filesystem::remove_all("zarrs/acceptance_nullopt_version");
+  auto json_vars = GetToyExample();
+
+  // Use nullopt - should default to V2 or auto-detect
+  std::optional<mdio::zarr::ZarrVersion> version = std::nullopt;
+  auto dataset = mdio::Dataset::from_json(
+      json_vars, "zarrs/acceptance_nullopt_version", version,
+      mdio::constants::kCreateClean);
+
+  ASSERT_TRUE(dataset.status().ok()) << dataset.status();
+
+  auto ds = dataset.value();
+  EXPECT_EQ(ds.getMetadata()["name"], "campos_3d") << ds.getMetadata();
+
+  std::filesystem::remove_all("zarrs/acceptance_nullopt_version");
+}
+
+TEST(Dataset, fromJsonWithZarrV3NoStructArray) {
+  // Zarr V3 does not yet support struct arrays, so test with a schema
+  // that does not have struct arrays
+  std::string schemaNoStruct = R"(
+    {
+      "metadata": {
+        "name": "campos_3d_v3_test",
+        "apiVersion": "1.0.0",
+        "createdOn": "2023-12-12T15:02:06.413469-06:00"
+      },
+      "variables": [
+        {
+          "name": "image",
+          "dataType": "float32",
+          "dimensions": [
+            {"name": "inline", "size": 64},
+            {"name": "crossline", "size": 128},
+            {"name": "depth", "size": 96}
+          ],
+          "metadata": {
+            "chunkGrid": {
+              "name": "regular",
+              "configuration": { "chunkShape": [32, 32, 32] }
+            }
+          },
+          "coordinates": ["inline", "crossline", "depth"]
+        },
+        {
+          "name": "inline",
+          "dataType": "uint32",
+          "dimensions": [{"name": "inline", "size": 64}]
+        },
+        {
+          "name": "crossline",
+          "dataType": "uint32",
+          "dimensions": [{"name": "crossline", "size": 128}]
+        },
+        {
+          "name": "depth",
+          "dataType": "uint32",
+          "dimensions": [{"name": "depth", "size": 96}]
+        }
+      ]
+    }
+  )";
+
+  std::filesystem::remove_all("zarrs/acceptance_v3_from_json");
+  nlohmann::json json_vars = nlohmann::json::parse(schemaNoStruct);
+
+  // Use explicit V3 version
+  auto dataset = mdio::Dataset::from_json(json_vars, "zarrs/acceptance_v3_from_json",
+                                          mdio::zarr::ZarrVersion::kV3,
+                                          mdio::constants::kCreateClean);
+
+  ASSERT_TRUE(dataset.status().ok()) << dataset.status();
+
+  auto ds = dataset.value();
+  EXPECT_EQ(ds.getMetadata()["name"], "campos_3d_v3_test") << ds.getMetadata();
+
+  // Verify variables were created
+  std::vector<std::string> varList = ds.variables.get_keys();
+  EXPECT_EQ(varList.size(), 4) << "Expected 4 variables";
+
+  std::filesystem::remove_all("zarrs/acceptance_v3_from_json");
+}
+
+TEST(Dataset, fromJsonV3ReadWrite) {
+  std::string schemaNoStruct = R"(
+    {
+      "metadata": {
+        "name": "v3_read_write_test",
+        "apiVersion": "1.0.0",
+        "createdOn": "2023-12-12T15:02:06.413469-06:00"
+      },
+      "variables": [
+        {
+          "name": "data",
+          "dataType": "float32",
+          "dimensions": [
+            {"name": "x", "size": 16},
+            {"name": "y", "size": 16}
+          ],
+          "metadata": {
+            "chunkGrid": {
+              "name": "regular",
+              "configuration": { "chunkShape": [8, 8] }
+            }
+          }
+        },
+        {
+          "name": "x",
+          "dataType": "int32",
+          "dimensions": [{"name": "x", "size": 16}]
+        },
+        {
+          "name": "y",
+          "dataType": "int32",
+          "dimensions": [{"name": "y", "size": 16}]
+        }
+      ]
+    }
+  )";
+
+  std::filesystem::remove_all("zarrs/v3_read_write");
+  nlohmann::json json_vars = nlohmann::json::parse(schemaNoStruct);
+
+  // Create with V3
+  auto datasetRes = mdio::Dataset::from_json(json_vars, "zarrs/v3_read_write",
+                                             mdio::zarr::ZarrVersion::kV3,
+                                             mdio::constants::kCreateClean);
+  ASSERT_TRUE(datasetRes.status().ok()) << datasetRes.status();
+  auto ds = datasetRes.value();
+
+  // Get the data variable and write some values
+  auto dataVarRes = ds.variables.get<mdio::dtypes::float32_t>("data");
+  ASSERT_TRUE(dataVarRes.status().ok()) << dataVarRes.status();
+  auto dataVar = dataVarRes.value();
+
+  auto dataDataRes = dataVar.Read();
+  ASSERT_TRUE(dataDataRes.status().ok()) << dataDataRes.status();
+  auto dataData = dataDataRes.value();
+
+  auto accessor = dataData.get_data_accessor().data();
+  accessor[0] = 1.5f;
+  accessor[1] = 2.5f;
+  accessor[255] = 100.0f;
+
+  auto writeFut = dataVar.Write(dataData);
+  ASSERT_TRUE(writeFut.status().ok()) << writeFut.status();
+
+  // Re-read and verify
+  auto rereadFut = dataVar.Read();
+  ASSERT_TRUE(rereadFut.status().ok()) << rereadFut.status();
+  auto rereadData = rereadFut.value();
+  auto rereadAccessor = rereadData.get_data_accessor().data();
+
+  EXPECT_FLOAT_EQ(rereadAccessor[0], 1.5f);
+  EXPECT_FLOAT_EQ(rereadAccessor[1], 2.5f);
+  EXPECT_FLOAT_EQ(rereadAccessor[255], 100.0f);
+
+  std::filesystem::remove_all("zarrs/v3_read_write");
+}
+
+TEST(Dataset, fromJsonIselV2AndV3) {
+  std::string schemaNoStruct = R"(
+    {
+      "metadata": {
+        "name": "isel_test",
+        "apiVersion": "1.0.0",
+        "createdOn": "2023-12-12T15:02:06.413469-06:00"
+      },
+      "variables": [
+        {
+          "name": "data",
+          "dataType": "float32",
+          "dimensions": [
+            {"name": "x", "size": 32},
+            {"name": "y", "size": 32},
+            {"name": "z", "size": 16}
+          ]
+        },
+        {
+          "name": "x",
+          "dataType": "int32",
+          "dimensions": [{"name": "x", "size": 32}]
+        },
+        {
+          "name": "y",
+          "dataType": "int32",
+          "dimensions": [{"name": "y", "size": 32}]
+        },
+        {
+          "name": "z",
+          "dataType": "int32",
+          "dimensions": [{"name": "z", "size": 16}]
+        }
+      ]
+    }
+  )";
+
+  // Test V2
+  {
+    std::filesystem::remove_all("zarrs/isel_v2");
+    nlohmann::json json_vars = nlohmann::json::parse(schemaNoStruct);
+    auto datasetRes = mdio::Dataset::from_json(json_vars, "zarrs/isel_v2",
+                                               mdio::zarr::ZarrVersion::kV2,
+                                               mdio::constants::kCreateClean);
+    ASSERT_TRUE(datasetRes.status().ok()) << datasetRes.status();
+    auto ds = datasetRes.value();
+
+    mdio::RangeDescriptor<mdio::Index> desc1 = {"x", 0, 10, 1};
+    mdio::RangeDescriptor<mdio::Index> desc2 = {"y", 5, 20, 1};
+    auto sliceRes = ds.isel(desc1, desc2);
+    ASSERT_TRUE(sliceRes.status().ok()) << sliceRes.status();
+
+    auto slice = sliceRes.value();
+    EXPECT_EQ(slice.domain.rank(), 3);
+
+    std::filesystem::remove_all("zarrs/isel_v2");
+  }
+
+  // Test V3
+  {
+    std::filesystem::remove_all("zarrs/isel_v3");
+    nlohmann::json json_vars = nlohmann::json::parse(schemaNoStruct);
+    auto datasetRes = mdio::Dataset::from_json(json_vars, "zarrs/isel_v3",
+                                               mdio::zarr::ZarrVersion::kV3,
+                                               mdio::constants::kCreateClean);
+    ASSERT_TRUE(datasetRes.status().ok()) << datasetRes.status();
+    auto ds = datasetRes.value();
+
+    mdio::RangeDescriptor<mdio::Index> desc1 = {"x", 0, 10, 1};
+    mdio::RangeDescriptor<mdio::Index> desc2 = {"y", 5, 20, 1};
+    auto sliceRes = ds.isel(desc1, desc2);
+    ASSERT_TRUE(sliceRes.status().ok()) << sliceRes.status();
+
+    auto slice = sliceRes.value();
+    EXPECT_EQ(slice.domain.rank(), 3);
+
+    std::filesystem::remove_all("zarrs/isel_v3");
+  }
+}
+
 }  // namespace

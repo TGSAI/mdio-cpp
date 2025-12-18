@@ -22,6 +22,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -169,7 +170,6 @@ from_zmetadata(const std::string& dataset_path) {
               if (version_ready.result().ok()) {
                 version = version_ready.value();
               }
-
               auto result_future = zarr::ReadDatasetMetadata(
                   version, dataset_path,
                   tensorstore::MakeReadyFuture<tensorstore::KvStore>(kvs));
@@ -178,7 +178,9 @@ from_zmetadata(const std::string& dataset_path) {
                   [promise = std::move(promise)](
                       tensorstore::ReadyFuture<std::tuple<
                           ::nlohmann::json, std::vector<::nlohmann::json>>>
-                          result) { promise.SetResult(result.result()); });
+                          result) {
+                    promise.SetResult(result.result());
+                  });
             });
       });
 
@@ -279,12 +281,98 @@ class Dataset {
   }
 
   /**
+   * @brief Constructs a Dataset from a JSON schema with explicit Zarr version.
+   * This method will validate the JSON schema against the MDIO Dataset schema
+   * and use the specified Zarr format version.
+   * @param json_schema The JSON schema to validate.
+   * @param path The path to create/open the dataset.
+   * @param zarr_version The Zarr format version to use (kV2 or kV3).
+   * @param options Variadic options for dataset creation/opening.
+   * @details \b Usage
+   *
+   * Create a Zarr V3 dataset given a schema and a path:
+   * @code
+   * auto dataset_future = mdio::Dataset::from_json(
+   *   json_spec,
+   *   dataset_path,
+   *   mdio::zarr::ZarrVersion::kV3,
+   *   mdio::constants::kCreate
+   * );
+   * @endcode
+   *
+   * @return An `mdio::Future` resolves to a Dataset if successful, or an error
+   * if the schema is invalid.
+   */
+  template <typename... Option>
+  static Future<Dataset> from_json(::nlohmann::json& json_schema /*NOLINT*/,
+                                   const std::string& path,
+                                   zarr::ZarrVersion zarr_version,
+                                   Option&&... options) {
+    // json describing the vars ...
+    MDIO_ASSIGN_OR_RETURN(auto validated_schema,
+                          Construct(json_schema, path, zarr_version))
+    auto [dataset_metadata, json_vars] = validated_schema;
+
+    return mdio::Dataset::Open(dataset_metadata, json_vars,
+                               std::forward<Option>(options)...);
+  }
+
+  /**
+   * @brief Constructs a Dataset from a JSON schema with optional Zarr version.
+   * This method will validate the JSON schema against the MDIO Dataset schema
+   * and optionally use the specified Zarr format version.
+   * @param json_schema The JSON schema to validate.
+   * @param path The path to create/open the dataset.
+   * @param zarr_version Optional Zarr format version. If not specified,
+   *        auto-detects from the schema or defaults to V2.
+   * @param options Variadic options for dataset creation/opening.
+   * @details \b Usage
+   *
+   * Create a dataset with optional Zarr version:
+   * @code
+   * // With explicit version
+   * auto dataset_future = mdio::Dataset::from_json(
+   *   json_spec,
+   *   dataset_path,
+   *   std::optional<mdio::zarr::ZarrVersion>(mdio::zarr::ZarrVersion::kV3),
+   *   mdio::constants::kCreate
+   * );
+   *
+   * // Without version (use std::nullopt for auto-detection or default to V2)
+   * std::optional<mdio::zarr::ZarrVersion> version = std::nullopt;
+   * auto dataset_future = mdio::Dataset::from_json(
+   *   json_spec,
+   *   dataset_path,
+   *   version,
+   *   mdio::constants::kCreate
+   * );
+   * @endcode
+   *
+   * @return An `mdio::Future` resolves to a Dataset if successful, or an error
+   * if the schema is invalid.
+   */
+  template <typename... Option>
+  static Future<Dataset> from_json(
+      ::nlohmann::json& json_schema /*NOLINT*/, const std::string& path,
+      std::optional<zarr::ZarrVersion> zarr_version, Option&&... options) {
+    // json describing the vars ...
+    MDIO_ASSIGN_OR_RETURN(auto validated_schema,
+                          Construct(json_schema, path, zarr_version))
+    auto [dataset_metadata, json_vars] = validated_schema;
+
+    return mdio::Dataset::Open(dataset_metadata, json_vars,
+                               std::forward<Option>(options)...);
+  }
+
+  /**
    * @brief Constructs a Dataset from a JSON schema.
    * This method will validate the JSON schema against the MDIO Dataset schema.
    * @param json_schema The JSON schema to validate.
+   * @param path The path to create/open the dataset.
+   * @param options Variadic options for dataset creation/opening.
    * @details \b Usage
    *
-   * Create  a dataset given a schema and a path, for a new dataset use options,
+   * Create a dataset given a schema and a path, for a new dataset use options,
    * @code
    * auto dataset_future = mdio::Dataset::from_json(
    *   json_spec,

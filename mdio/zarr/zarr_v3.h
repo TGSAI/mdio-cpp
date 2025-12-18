@@ -232,6 +232,10 @@ inline Future<void> WriteMetadata(
       json_variables[0]["kvstore"]["path"].get<std::string>().substr(
           0, json_variables[0]["kvstore"]["path"].get<std::string>().size() -
                  toRemove - 1);
+  // Ensure basePath has trailing slash for directory operations
+  if (!basePath.empty() && basePath.back() != '/') {
+    basePath.push_back('/');
+  }
 
   nlohmann::json kvstore = nlohmann::json::object();
   kvstore["driver"] = driver;
@@ -244,12 +248,23 @@ inline Future<void> WriteMetadata(
 
   auto kvs_future = tensorstore::kvstore::Open(kvstore);
 
-  // Write root group zarr.json with dataset attributes
-  auto root_metadata = CreateGroupMetadata(dataset_metadata);
+  // Extract variable names from json_variables for discovery
+  nlohmann::json var_names = nlohmann::json::array();
+  for (const auto& var : json_variables) {
+    std::string path = var["kvstore"]["path"].get<std::string>();
+    std::vector<std::string> path_parts = absl::StrSplit(path, '/');
+    var_names.push_back(path_parts.back());
+  }
+
+  // Create root metadata with variables list for discovery
+  nlohmann::json root_attrs = dataset_metadata;
+  root_attrs["variables"] = var_names;
+  auto root_metadata = CreateGroupMetadata(root_attrs);
+
   auto root_future = tensorstore::MapFutureValue(
       tensorstore::InlineExecutor{},
       [root_metadata](const tensorstore::KvStore& kvs) {
-        return tensorstore::kvstore::Write(kvs, "/zarr.json",
+        return tensorstore::kvstore::Write(kvs, "zarr.json",
                                            absl::Cord(root_metadata.dump(4)));
       },
       kvs_future);
@@ -291,83 +306,91 @@ ReadMetadata(const std::string& dataset_path,
 
         auto kvs = ready_kvs.value();
 
-        // Read root zarr.json
-        auto root_read = tensorstore::kvstore::Read(kvs, "zarr.json").result();
-        if (!root_read.ok()) {
-          promise.SetResult(root_read.status());
-          return;
-        }
+        // Read root zarr.json using async chaining to avoid deadlock
+        auto root_read_future = tensorstore::kvstore::Read(kvs, "zarr.json");
 
-        ::nlohmann::json root_json;
-        try {
-          root_json =
-              ::nlohmann::json::parse(std::string(root_read.value().value));
-        } catch (const nlohmann::json::parse_error& e) {
-          promise.SetResult(
-              absl::InvalidArgumentError(std::string("JSON parse error: ") +
-                                         e.what()));
-          return;
-        }
+        root_read_future.ExecuteWhenReady(
+            [promise = std::move(promise), dataset_path](
+                tensorstore::ReadyFuture<tensorstore::kvstore::ReadResult>
+                    root_read_ready) {
+              if (!root_read_ready.result().ok()) {
+                promise.SetResult(root_read_ready.result().status());
+                return;
+              }
 
-        // Extract attributes as dataset metadata
-        nlohmann::json dataset_metadata = nlohmann::json::object();
-        if (root_json.contains("attributes")) {
-          dataset_metadata = root_json["attributes"];
-        }
+              ::nlohmann::json root_json;
+              try {
+                root_json = ::nlohmann::json::parse(
+                    std::string(root_read_ready.value().value));
+              } catch (const nlohmann::json::parse_error& e) {
+                promise.SetResult(absl::InvalidArgumentError(
+                    std::string("JSON parse error: ") + e.what()));
+                return;
+              }
 
-        // Infer the driver
-        std::string driver = "file";
-        std::string bucket;
-        std::string cloudPath;
-        if (dataset_path.length() > 5) {
-          if (dataset_path.substr(0, 5) == "gs://") {
-            driver = "gcs";
-          } else if (dataset_path.substr(0, 5) == "s3://") {
-            driver = "s3";
-          }
-        }
-        if (driver != "file") {
-          std::string providedPath = dataset_path.substr(5);
-          size_t bucketLen = providedPath.find_first_of('/');
-          bucket = providedPath.substr(0, bucketLen);
-          cloudPath = providedPath.substr(bucketLen + 1,
-                                          providedPath.length() - 2);
-        }
+              // Extract attributes as dataset metadata
+              nlohmann::json dataset_metadata = nlohmann::json::object();
+              if (root_json.contains("attributes")) {
+                dataset_metadata = root_json["attributes"];
+              }
 
-        // For V3, we need to discover arrays by looking for zarr.json files
-        // in subdirectories. Since kvstore::List returns a sender (not a future),
-        // we'll use a simpler approach: check if the metadata contains array info.
-        // If not found, we return an error asking the user to specify variables.
-        
-        // For now, we'll extract variable names from the root zarr.json attributes
-        // if they contain a "variables" or similar field, or return an error.
-        std::vector<nlohmann::json> json_vars;
-        
-        // Check if dataset_metadata contains variable information
-        if (dataset_metadata.contains("variables")) {
-          for (const auto& var_name : dataset_metadata["variables"]) {
-            std::string name = var_name.get<std::string>();
-            nlohmann::json var_spec = {
-                {"driver", std::string(kDriverName)},
-                {"kvstore",
-                 {{"driver", driver}, {"path", dataset_path + name}}}};
-            if (driver != "file") {
-              var_spec["kvstore"]["bucket"] = bucket;
-              var_spec["kvstore"]["path"] = cloudPath + name;
-            }
-            json_vars.push_back(var_spec);
-          }
-        }
+              // Infer the driver
+              std::string driver = "file";
+              std::string bucket;
+              std::string cloudPath;
+              if (dataset_path.length() > 5) {
+                if (dataset_path.substr(0, 5) == "gs://") {
+                  driver = "gcs";
+                } else if (dataset_path.substr(0, 5) == "s3://") {
+                  driver = "s3";
+                }
+              }
+              if (driver != "file") {
+                std::string providedPath = dataset_path.substr(5);
+                size_t bucketLen = providedPath.find_first_of('/');
+                bucket = providedPath.substr(0, bucketLen);
+                cloudPath = providedPath.substr(bucketLen + 1,
+                                                providedPath.length() - 2);
+              }
 
-        if (json_vars.empty()) {
-          // Return error - V3 discovery requires variable names in metadata
-          promise.SetResult(absl::InvalidArgumentError(
-              "Zarr V3 store discovery requires 'variables' list in root "
-              "zarr.json attributes. Please specify variable specs explicitly."));
-          return;
-        }
+              std::vector<nlohmann::json> json_vars;
 
-        promise.SetResult(std::make_tuple(dataset_metadata, json_vars));
+              // Check if dataset_metadata contains variable information
+              if (dataset_metadata.contains("variables")) {
+                for (const auto& var_name : dataset_metadata["variables"]) {
+                  std::string name = var_name.get<std::string>();
+                  // Ensure proper path separator
+                  std::string sep =
+                      (!dataset_path.empty() && dataset_path.back() != '/')
+                          ? "/"
+                          : "";
+                  nlohmann::json var_spec = {
+                      {"driver", std::string(kDriverName)},
+                      {"kvstore",
+                       {{"driver", driver},
+                        {"path", dataset_path + sep + name}}}};
+                  if (driver != "file") {
+                    var_spec["kvstore"]["bucket"] = bucket;
+                    std::string cloud_sep =
+                        (!cloudPath.empty() && cloudPath.back() != '/') ? "/"
+                                                                        : "";
+                    var_spec["kvstore"]["path"] = cloudPath + cloud_sep + name;
+                  }
+                  json_vars.push_back(var_spec);
+                }
+              }
+
+              if (json_vars.empty()) {
+                // Return error - V3 discovery requires variable names
+                promise.SetResult(absl::InvalidArgumentError(
+                    "Zarr V3 store discovery requires 'variables' list in root "
+                    "zarr.json attributes. Please specify variable specs "
+                    "explicitly."));
+                return;
+              }
+
+              promise.SetResult(std::make_tuple(dataset_metadata, json_vars));
+            });
       });
 
   return pair.future;
@@ -459,7 +482,7 @@ inline Future<nlohmann::json> ReadVariableAttributes(
     const tensorstore::KvStore& kvstore) {
   auto pair = tensorstore::PromiseFuturePair<nlohmann::json>::Make();
 
-  auto read_future = tensorstore::kvstore::Read(kvstore, "/zarr.json");
+  auto read_future = tensorstore::kvstore::Read(kvstore, "zarr.json");
   read_future.ExecuteWhenReady(
       [promise = std::move(pair.promise)](
           tensorstore::ReadyFuture<tensorstore::kvstore::ReadResult>
