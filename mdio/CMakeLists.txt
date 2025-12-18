@@ -281,6 +281,7 @@ mdio_cc_test(
     GTest::gmock_main
     tensorstore::driver_array
     tensorstore::driver_zarr
+    tensorstore::driver_zarr3
     tensorstore::driver_json
     tensorstore::kvstore_file
     tensorstore::stack
@@ -305,6 +306,7 @@ mdio_cc_test(
     GTest::gmock_main
     tensorstore::driver_array
     tensorstore::driver_zarr
+    tensorstore::driver_zarr3
     tensorstore::driver_json
     tensorstore::kvstore_file
     tensorstore::stack
@@ -352,6 +354,7 @@ mdio_cc_test(
     GTest::gmock_main
     tensorstore::driver_array
     tensorstore::driver_zarr
+    tensorstore::driver_zarr3
     tensorstore::driver_json
     tensorstore::kvstore_file
     tensorstore::tensorstore
