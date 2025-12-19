@@ -36,7 +36,7 @@ static AbslLogInit absl_log_init;
 // TODO(End user): User should point to their own S3 bucket here.
 // You may find the test dataset at: TODO: Upload the test dataset to a public
 // object store
-/*NOLINT*/ std::string const S3_PATH = "s3://USER_BUCKET";
+/*NOLINT*/ std::string const S3_PATH = "s3://USER_BUCKET/mdio_cpp_testing";
 
 /**
  * @brief Returns a string representation of the Zarr version for naming.
@@ -307,7 +307,7 @@ std::string GetSimpleManifest() {
 )";
 
 TEST(S3, create) {
-  if (S3_PATH == "s3://USER_BUCKET") {
+  if (S3_PATH == "s3://USER_BUCKET/mdio_cpp_testing") {
     GTEST_SKIP() << "Please set the S3_PATH to your own bucket in the "
                     "s3_test.cc file.";
   }
@@ -318,7 +318,7 @@ TEST(S3, create) {
 }
 
 TEST(S3, open) {
-  if (S3_PATH == "s3://USER_BUCKET") {
+  if (S3_PATH == "s3://USER_BUCKET/mdio_cpp_testing") {
     GTEST_SKIP() << "Please set the S3_PATH to your own bucket in the "
                     "s3_test.cc file.";
   }
@@ -331,7 +331,7 @@ TEST(S3, open) {
 }
 
 TEST(S3, write) {
-  if (S3_PATH == "s3://USER_BUCKET") {
+  if (S3_PATH == "s3://USER_BUCKET/mdio_cpp_testing") {
     GTEST_SKIP() << "Please set the S3_PATH to your own bucket in the "
                     "s3_test.cc file.";
   }
@@ -433,7 +433,7 @@ TEST(S3, write) {
 }
 
 TEST(S3, read) {
-  if (S3_PATH == "s3://USER_BUCKET") {
+  if (S3_PATH == "s3://USER_BUCKET/mdio_cpp_testing") {
     GTEST_SKIP() << "Please set the S3_PATH to your own bucket in the "
                     "s3_test.cc file.";
   }
@@ -469,7 +469,7 @@ class S3VersionTest
 };
 
 TEST_P(S3VersionTest, create) {
-  if (S3_PATH == "s3://USER_BUCKET") {
+  if (S3_PATH == "s3://USER_BUCKET/mdio_cpp_testing") {
     GTEST_SKIP() << "Please set the S3_PATH to your own bucket in the "
                     "s3_test.cc file.";
   }
@@ -480,7 +480,7 @@ TEST_P(S3VersionTest, create) {
 }
 
 TEST_P(S3VersionTest, open) {
-  if (S3_PATH == "s3://USER_BUCKET") {
+  if (S3_PATH == "s3://USER_BUCKET/mdio_cpp_testing") {
     GTEST_SKIP() << "Please set the S3_PATH to your own bucket in the "
                     "s3_test.cc file.";
   }
@@ -496,7 +496,7 @@ TEST_P(S3VersionTest, open) {
 }
 
 TEST_P(S3VersionTest, readWrite) {
-  if (S3_PATH == "s3://USER_BUCKET") {
+  if (S3_PATH == "s3://USER_BUCKET/mdio_cpp_testing") {
     GTEST_SKIP() << "Please set the S3_PATH to your own bucket in the "
                     "s3_test.cc file.";
   }
