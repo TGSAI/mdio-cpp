@@ -134,6 +134,8 @@ mdio_cc_test(
     tensorstore::util_status_testutil
     nlohmann_json_schema_validator
     tensorstore::kvstore_s3
+    absl::log_initialize
+    absl::log_globals
 )
 
 mdio_cc_test(

@@ -15,10 +15,23 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "absl/log/globals.h"
+#include "absl/log/initialize.h"
+
 #include "mdio/dataset.h"
 #include "mdio/zarr/zarr.h"
 
 namespace {
+
+// Initialize Abseil logging before tests run to suppress verbose AWS logs
+struct AbslLogInit {
+  AbslLogInit() {
+    absl::InitializeLog();
+    // kError = show only errors, kInfinity = suppress all logs
+    absl::SetStderrThreshold(absl::LogSeverityAtLeast::kInfinity);
+  }
+};
+static AbslLogInit absl_log_init;
 
 // TODO(End user): User should point to their own S3 bucket here.
 // You may find the test dataset at: TODO: Upload the test dataset to a public
