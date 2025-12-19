@@ -101,6 +101,7 @@ mdio_cc_test(
     GTest::gmock_main
     tensorstore::driver_array
     tensorstore::driver_zarr
+    tensorstore::driver_zarr3
     tensorstore::driver_json
     tensorstore::kvstore_file
     tensorstore::stack
@@ -125,6 +126,7 @@ mdio_cc_test(
     GTest::gmock_main
     tensorstore::driver_array
     tensorstore::driver_zarr
+    tensorstore::driver_zarr3
     tensorstore::driver_json
     tensorstore::kvstore_file
     tensorstore::stack
@@ -331,15 +333,8 @@ mdio_cc_test(
     ${mdio_DEFAULT_LINKOPTS}
   DEPS
     GTest::gmock_main
-    tensorstore::driver_array
-    tensorstore::driver_zarr
     tensorstore::driver_json
-    tensorstore::kvstore_file
-    tensorstore::stack
     tensorstore::tensorstore
-    tensorstore::index_space_dim_expression
-    tensorstore::index_space_index_transform
-    tensorstore::util_status_testutil
     nlohmann_json_schema_validator
 )
 
