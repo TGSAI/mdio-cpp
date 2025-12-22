@@ -37,16 +37,18 @@ namespace utils {
  * @param delete_sliced_out_chunks If true, chunks that fall completely outside
  * the slice descriptors will be deleted. If false, chunks that fall completely
  * outside the slice descriptors will remain untouched but inaccessable.
+ * @param context Optional TensorStore context for credentials/configuration.
  * @param descriptors The descriptors to use for the slice. Only considers the
  * label and stop value.
  * @return A future of the trim operation.
  */
 template <typename... Descriptors>
-Future<void> TrimDataset(std::string dataset_path,
-                         bool delete_sliced_out_chunks,
-                         const Descriptors&... descriptors) {
+Future<void> TrimDataset(
+    std::string dataset_path, bool delete_sliced_out_chunks,
+    tensorstore::Context context, const Descriptors&... descriptors) {
   // Open the dataset
-  auto dsRes = mdio::Dataset::Open(dataset_path, mdio::constants::kOpen);
+  auto dsRes =
+      mdio::Dataset::Open(dataset_path, mdio::constants::kOpen, context);
   if (!dsRes.status().ok()) {
     return dsRes.status();
   }
@@ -111,6 +113,30 @@ Future<void> TrimDataset(std::string dataset_path,
   }
 
   return ds.CommitMetadata();
+}
+
+/**
+ * @brief Trims the dataset to the specified dimensions (using default context).
+ * DANGER: This operation will mutate the dataset on disk. Use caution when
+ * calling this method! This function is not part of the Dataset class to avoid
+ * accidental data destruction. Additionally this function should only be used
+ * on a fully written dataset to avoid race conditions and data corruption.
+ *
+ * @tparam ...Descriptors Expects an mdio::RangeDescriptor<mdio::Index>
+ * @param dataset_path The path to the dataset to trim.
+ * @param delete_sliced_out_chunks If true, chunks that fall completely outside
+ * the slice descriptors will be deleted. If false, chunks that fall completely
+ * outside the slice descriptors will remain untouched but inaccessable.
+ * @param descriptors The descriptors to use for the slice. Only considers the
+ * label and stop value.
+ * @return A future of the trim operation.
+ */
+template <typename... Descriptors>
+Future<void> TrimDataset(std::string dataset_path,
+                         bool delete_sliced_out_chunks,
+                         const Descriptors&... descriptors) {
+  return TrimDataset(dataset_path, delete_sliced_out_chunks,
+                     tensorstore::Context::Default(), descriptors...);
 }
 
 }  // namespace utils

@@ -407,10 +407,10 @@ Result<Variable<T, R, M>> from_json(
  * the created variable.
  */
 template <typename T = void, DimensionIndex R = dynamic_rank,
-          ReadWriteMode M = ReadWriteMode::dynamic, typename... Option>
+          ReadWriteMode M = ReadWriteMode::dynamic>
 Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
                                          const nlohmann::json& json_var,
-                                         Option&&... options) {
+                                         TransactionalOpenOptions&& options) {
   auto spec = tensorstore::MakeReadyFuture<::nlohmann::json>(json_var);
 
   // FIXME - add schematized validation of the variable.
@@ -461,7 +461,11 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
   auto future_json_store = tensorstore::MakeReadyFuture<::nlohmann::json>(
       json_spec_without_metadata);
 
-  auto publish = [zarr_version](const ::nlohmann::json& json_var,
+  // Extract context from the TransactionalOpenOptions directly
+  tensorstore::Context context = options.context;
+  tensorstore::OpenMode open_mode = options.open_mode;
+
+  auto publish = [zarr_version, context](const ::nlohmann::json& json_var,
                                 bool isCloudStore,
                                 const tensorstore::TensorStore<T, R, M>& store)
       -> Future<tensorstore::TimestampedStorageGeneration> {
@@ -476,7 +480,7 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
   // this is intended to handle the struct array where we "reopen" the store
   // but this time as struct ... but we loose the capactity for forward options.
   // FIXME - strip "create/delete existing" and foward other options.
-  auto apply_reopen = [](const tensorstore::TensorStore<T, R, M>& store,
+  auto apply_reopen = [context](const tensorstore::TensorStore<T, R, M>& store,
                          const ::nlohmann::json& attributes,
                          const ::nlohmann::json& json_spec) {
     // try {
@@ -484,7 +488,8 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
         json_spec_cpy.erase("field");
         json_spec_cpy["open_as_void"] = true;
     // } catch (ex)
-    return tensorstore::Open<T, R, M>(json_spec_cpy);
+    return tensorstore::Open<T, R, M>(json_spec_cpy, context,
+                                      tensorstore::OpenMode::open);
   };
 
   auto build = [](const ::nlohmann::json& metadata,
@@ -504,9 +509,9 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
     return from_json<T, R, M>(metadata, labeled_store);
   };
 
-  // Start by creating a future for the store ...
+  // Start by creating a future for the store with explicit context
   auto future_store = tensorstore::Open<T, R, M>(
-      json_spec_with_open_flag, std::forward<Option>(options)...);
+      json_spec_with_open_flag, context, open_mode);
 
   auto handled_store = future_store;
   if (do_handle_structarray) {
@@ -550,6 +555,21 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
 }
 
 /**
+ * @brief Creates a Variable from a JSON specification (variadic options version).
+ * This overload accepts individual options and converts them to TransactionalOpenOptions.
+ */
+template <typename T = void, DimensionIndex R = dynamic_rank,
+          ReadWriteMode M = ReadWriteMode::dynamic, typename... Option>
+Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
+                                         const nlohmann::json& json_var,
+                                         Option&&... options) {
+  TransactionalOpenOptions transact_options;
+  TENSORSTORE_RETURN_IF_ERROR(
+      tensorstore::internal::SetAll(transact_options, std::forward<Option>(options)...));
+  return CreateVariable<T, R, M>(json_spec, json_var, std::move(transact_options));
+}
+
+/**
  * @brief Opens a Variable from a JSON specification.
  * Provide an Open method for an existing file...
  * @tparam T The data type of the Variable.
@@ -561,9 +581,9 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
  * Variable.
  */
 template <typename T = void, DimensionIndex R = dynamic_rank,
-          ReadWriteMode M = ReadWriteMode::dynamic, typename... Option>
+          ReadWriteMode M = ReadWriteMode::dynamic>
 Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
-                                       Option&&... options) {
+                                       TransactionalOpenOptions&& options) {
   // Infer the name from the path
   std::string variable_name = json_store["kvstore"]["path"].get<std::string>();
   std::vector<std::string> pathComponents = absl::StrSplit(variable_name, "/");
@@ -588,14 +608,18 @@ Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
   // option. store_spec["recheck_cached_data"] = false;  // This could become
   // problematic if we are doing read/write operations.
 
+  // Extract context directly from TransactionalOpenOptions
+  tensorstore::Context context = options.context;
+  tensorstore::OpenMode open_mode = options.open_mode;
+
   auto spec = tensorstore::MakeReadyFuture<::nlohmann::json>(store_spec);
 
-  // open a store:
+  // open a store with explicit context for credentials
   auto future_store =
-      tensorstore::Open<T, R, M>(store_spec, std::forward<Option>(options)...);
+      tensorstore::Open<T, R, M>(store_spec, context, open_mode);
 
-  // start by creating a kvstore future ...
-  auto kvs_future = tensorstore::kvstore::Open(store_spec["kvstore"]);
+  // start by creating a kvstore future with context for credentials
+  auto kvs_future = tensorstore::kvstore::Open(store_spec["kvstore"], context);
 
   // Detect Zarr version from the store spec
   zarr::ZarrVersion zarr_version = zarr::GetVersionFromSpec(store_spec);
@@ -739,13 +763,31 @@ Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
           // store_spec["open_as_void"] = true;
           auto cpy = json_store;
           cpy["open_as_void"] = true;
-          return OpenVariable<T, R, M>(cpy, std::forward<Option>(options)...);
+          // Reconstruct options for the recursive call
+          TransactionalOpenOptions retry_options;
+          retry_options.context = context;
+          retry_options.open_mode = open_mode;
+          return OpenVariable<T, R, M>(cpy, std::move(retry_options));
       }
   }
 
   return tensorstore::MapFutureValue(
       tensorstore::InlineExecutor{}, make_variable, metadata, future_store,
       tensorstore::MakeReadyFuture<::nlohmann::json>(suppliedAttributes));
+}
+
+/**
+ * @brief Opens a Variable from a JSON specification (variadic options version).
+ * This overload accepts individual options and converts them to TransactionalOpenOptions.
+ */
+template <typename T = void, DimensionIndex R = dynamic_rank,
+          ReadWriteMode M = ReadWriteMode::dynamic, typename... Option>
+Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
+                                       Option&&... options) {
+  TransactionalOpenOptions transact_options;
+  TENSORSTORE_RETURN_IF_ERROR(
+      tensorstore::internal::SetAll(transact_options, std::forward<Option>(options)...));
+  return OpenVariable<T, R, M>(json_store, std::move(transact_options));
 }
 
 /**

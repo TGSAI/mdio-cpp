@@ -59,17 +59,20 @@ namespace zarr {
  * @param version The Zarr version to use.
  * @param dataset_metadata The metadata for the dataset.
  * @param json_variables The JSON variables.
+ * @param context Optional TensorStore context for credentials/configuration.
  * @return An `mdio::Future<void>` representing the asynchronous write.
  */
 inline Future<void> WriteDatasetMetadata(
     ZarrVersion version, const ::nlohmann::json& dataset_metadata,
-    const std::vector<::nlohmann::json>& json_variables) {
+    const std::vector<::nlohmann::json>& json_variables,
+    tensorstore::Context context = tensorstore::Context::Default()) {
   switch (version) {
     case ZarrVersion::kV3:
-      return v3::WriteMetadata(dataset_metadata, json_variables);
+      return v3::WriteMetadata(dataset_metadata, json_variables, context);
     case ZarrVersion::kV2:
     default:
-      return v2::WriteConsolidatedMetadata(dataset_metadata, json_variables);
+      return v2::WriteConsolidatedMetadata(dataset_metadata, json_variables,
+                                           context);
   }
 }
 

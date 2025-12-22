@@ -176,11 +176,13 @@ inline nlohmann::json PrepareVariableAttributes(const nlohmann::json& json) {
  *
  * @param dataset_metadata The metadata for the dataset.
  * @param json_variables The JSON variables.
+ * @param context Optional TensorStore context for credentials/configuration.
  * @return An `mdio::Future<void>` representing the asynchronous write.
  */
 inline Future<void> WriteConsolidatedMetadata(
     const ::nlohmann::json& dataset_metadata,
-    const std::vector<::nlohmann::json>& json_variables) {
+    const std::vector<::nlohmann::json>& json_variables,
+    tensorstore::Context context = tensorstore::Context::Default()) {
   auto zattrs = dataset_metadata;
   ::nlohmann::json zgroup = CreateZgroup();
 
@@ -223,7 +225,7 @@ inline Future<void> WriteConsolidatedMetadata(
     kvstore["path"] = cloudPath;
   }
 
-  auto kvs_future = tensorstore::kvstore::Open(kvstore);
+  auto kvs_future = tensorstore::kvstore::Open(kvstore, context);
 
   auto zattrs_future = tensorstore::MapFutureValue(
       tensorstore::InlineExecutor{},

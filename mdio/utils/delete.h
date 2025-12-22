@@ -31,14 +31,18 @@ namespace utils {
  * deletion. This is intended to provide a safe interface to delete MDIO
  * datasets.
  * @param dataset_path The path to the dataset
+ * @param context Optional TensorStore context for credentials/configuration.
  * @return OK result if the dataset was valid and deleted successfully,
  * otherwise an error result
  */
-inline Result<void> DeleteDataset(const std::string dataset_path) {
+inline Result<void> DeleteDataset(
+    const std::string dataset_path,
+    tensorstore::Context context = tensorstore::Context::Default()) {
   // Open the dataset
   // This is to ensure that what is getting deleted by MDIO is a valid MDIO
   // dataset itself.
-  auto dsRes = mdio::Dataset::Open(dataset_path, mdio::constants::kOpen);
+  auto dsRes =
+      mdio::Dataset::Open(dataset_path, mdio::constants::kOpen, context);
   if (!dsRes.status().ok()) {
     return dsRes.status();
   }
@@ -62,7 +66,7 @@ inline Result<void> DeleteDataset(const std::string dataset_path) {
   }
   kvs["path"] = path;
 
-  auto kvsFuture = tensorstore::kvstore::Open(kvs);
+  auto kvsFuture = tensorstore::kvstore::Open(kvs, context);
   if (!kvsFuture.status().ok()) {
     return kvsFuture.status();
   }

@@ -216,11 +216,13 @@ inline nlohmann::json PrepareVariableAttributes(const nlohmann::json& json) {
  *
  * @param dataset_metadata The metadata for the dataset.
  * @param json_variables The JSON variables.
+ * @param context Optional TensorStore context for credentials/configuration.
  * @return An `mdio::Future<void>` representing the asynchronous write.
  */
 inline Future<void> WriteMetadata(
     const ::nlohmann::json& dataset_metadata,
-    const std::vector<::nlohmann::json>& json_variables) {
+    const std::vector<::nlohmann::json>& json_variables,
+    tensorstore::Context context = tensorstore::Context::Default()) {
   // Determine the base path and driver
   std::string driver =
       json_variables[0]["kvstore"]["driver"].get<std::string>();
@@ -246,7 +248,7 @@ inline Future<void> WriteMetadata(
         json_variables[0]["kvstore"]["bucket"].get<std::string>();
   }
 
-  auto kvs_future = tensorstore::kvstore::Open(kvstore);
+  auto kvs_future = tensorstore::kvstore::Open(kvstore, context);
 
   // Extract variable names from json_variables for discovery
   nlohmann::json var_names = nlohmann::json::array();

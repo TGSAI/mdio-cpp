@@ -74,16 +74,19 @@ inline Result<nlohmann::json> get_zarray(const ::nlohmann::json metadata) {
  *
  * @param dataset_metadata The metadata for the dataset.
  * @param json_variables The JSON variables.
+ * @param context Optional TensorStore context for credentials/configuration.
  * @return An `mdio::Future<void>` representing the asynchronous write.
  */
 inline Future<void> write_zmetadata(
     const ::nlohmann::json& dataset_metadata,
-    const std::vector<::nlohmann::json>& json_variables) {
+    const std::vector<::nlohmann::json>& json_variables,
+    tensorstore::Context context = tensorstore::Context::Default()) {
   zarr::ZarrVersion version = zarr::ZarrVersion::kV2;
   if (!json_variables.empty()) {
     version = zarr::GetVersionFromSpec(json_variables[0]);
   }
-  return zarr::WriteDatasetMetadata(version, dataset_metadata, json_variables);
+  return zarr::WriteDatasetMetadata(version, dataset_metadata, json_variables,
+                                    context);
 }
 
 /**
@@ -92,9 +95,11 @@ inline Future<void> write_zmetadata(
  * It will also attempt to infer the driver based on the prefix of the path.
  * It will default to the "file" driver if no prefix is found.
  * @param dataset_path The path to the dataset.
+ * @param context Optional TensorStore context for credentials/configuration.
  */
 inline Future<tensorstore::KvStore> dataset_kvs_store(
-    const std::string& dataset_path) {
+    const std::string& dataset_path,
+    tensorstore::Context context = tensorstore::Context::Default()) {
   // the tensorstore driver needs a bucket field
   ::nlohmann::json kvstore;
 
@@ -113,7 +118,7 @@ inline Future<tensorstore::KvStore> dataset_kvs_store(
       path.push_back('/');
     }
     kvstore["path"] = path;
-    return tensorstore::kvstore::Open(kvstore);
+    return tensorstore::kvstore::Open(kvstore, context);
   }  // FIXME - we need azure support ...
 
   std::vector<std::string> file_parts = absl::StrSplit(output_file, '/');
@@ -134,19 +139,22 @@ inline Future<tensorstore::KvStore> dataset_kvs_store(
   kvstore["bucket"] = bucket;
   kvstore["path"] = filepath;
 
-  return tensorstore::kvstore::Open(kvstore);
+  return tensorstore::kvstore::Open(kvstore, context);
 }
 
 /**
  * @brief Retrieves the metadata for the dataset with auto-detection.
  * This version auto-detects the Zarr version by checking for V3 markers first.
  * @param dataset_path The path to the dataset.
+ * @param context Optional TensorStore context for credentials/configuration.
  * @return An `mdio::Future` containing the metadata JSON on success, or an
  * error on failure.
  */
 inline Future<std::tuple<::nlohmann::json, std::vector<::nlohmann::json>>>
-from_zmetadata(const std::string& dataset_path) {
-  auto kvs_future = mdio::internal::dataset_kvs_store(dataset_path);
+from_zmetadata(
+    const std::string& dataset_path,
+    tensorstore::Context context = tensorstore::Context::Default()) {
+  auto kvs_future = mdio::internal::dataset_kvs_store(dataset_path, context);
 
   auto pair = tensorstore::PromiseFuturePair<
       std::tuple<::nlohmann::json, std::vector<::nlohmann::json>>>::Make();
@@ -199,11 +207,13 @@ class Dataset {
  public:
   Dataset(const nlohmann::json& metadata, const VariableCollection& variables,
           const coordinate_map& coordinates,
-          const tensorstore::IndexDomain<>& domain)
+          const tensorstore::IndexDomain<>& domain,
+          tensorstore::Context context = tensorstore::Context::Default())
       : metadata(metadata),
         variables(variables),
         coordinates(coordinates),
-        domain(domain) {}
+        domain(domain),
+        context_(context) {}
 
   friend std::ostream& operator<<(std::ostream& os, const Dataset& dataset) {
     // Output metadata
@@ -459,7 +469,7 @@ class Dataset {
                               .shape(shape)
                               .labels(labels)
                               .Finalize())
-    return Dataset{metadata, vars, coordinates, new_domain};
+    return Dataset{metadata, vars, coordinates, new_domain, context_};
   }
 
   /**
@@ -914,7 +924,7 @@ class Dataset {
       coords = {{label, coordinates.at(label)}};
     }
 
-    return Dataset{metadata, vars, coords, domain};
+    return Dataset{metadata, vars, coords, domain, context_};
   }
 
   /**
@@ -943,8 +953,12 @@ class Dataset {
                           "Open from path is only valid in open-mode.");
     }
 
-    MDIO_ASSIGN_OR_RETURN(auto params_from_zmetadata,
-                          mdio::internal::from_zmetadata(dataset_path).result());
+    // Extract context from options for metadata reading
+    tensorstore::Context context = transact_options.context;
+
+    MDIO_ASSIGN_OR_RETURN(
+        auto params_from_zmetadata,
+        mdio::internal::from_zmetadata(dataset_path, context).result());
     auto [dataset_metadata, json_vars] = params_from_zmetadata;
 
     return mdio::Dataset::Open(dataset_metadata, json_vars,
@@ -973,6 +987,9 @@ class Dataset {
     bool do_create = transact_options.open_mode == constants::kCreateClean ||
                      transact_options.open_mode == constants::kCreate;
 
+    // Extract context from options for metadata writing
+    tensorstore::Context context = transact_options.context;
+
     // FIXME - publish dataset
     std::vector<Future<mdio::Variable<>>> variables;
     std::vector<tensorstore::Promise<void>> promises;
@@ -999,7 +1016,7 @@ class Dataset {
     // here we have to publish the zmetadata ...
     if (do_create) {
       futures.push_back(
-          mdio::internal::write_zmetadata(metadata, json_variables));
+          mdio::internal::write_zmetadata(metadata, json_variables, context));
     }
 
     // ready when everything's available ...
@@ -1008,7 +1025,7 @@ class Dataset {
     auto pair = tensorstore::PromiseFuturePair<Dataset>::Make();
     all_done_future.ExecuteWhenReady(
         [promise = std::move(pair.promise), variables = std::move(variables),
-         metadata](tensorstore::ReadyFuture<void> readyFut) {
+         metadata, context](tensorstore::ReadyFuture<void> readyFut) {
           if (metadata.contains("api_version") &&
               !metadata.contains("apiVersion")) {
             promise.SetResult(
@@ -1075,7 +1092,7 @@ class Dataset {
           }
 
           Dataset new_dataset{metadata, collection, coords,
-                              dataset_domain.value()};
+                              dataset_domain.value(), context};
           promise.SetResult(std::move(new_dataset));
         });
     return pair.future;
@@ -1298,7 +1315,7 @@ class Dataset {
 
     // Now let's get the .zmetadata going.
     auto zmetadata_future =
-        mdio::internal::write_zmetadata(metadata, json_vars);
+        mdio::internal::write_zmetadata(metadata, json_vars, context_);
     // Finally we can loop through the updated Variables and update them.
 
     std::vector<tensorstore::Future<tensorstore::TimestampedStorageGeneration>>
@@ -1358,8 +1375,17 @@ class Dataset {
   /// enumerate the dimensions
   tensorstore::IndexDomain<> domain;
 
+  /**
+   * @brief Gets the context used to open this Dataset.
+   * @return The TensorStore context.
+   */
+  tensorstore::Context getContext() const { return context_; }
+
  private:
   /// the metadata associated with the dataset (root .zattrs)
   ::nlohmann::json metadata;
+
+  /// the context used to open/create this dataset
+  tensorstore::Context context_;
 };
 }  // namespace mdio
