@@ -542,6 +542,42 @@ TEST_P(VariableTest, SETUP) {
   auto f8 =
       mdio::internal::CreateVariable(f8Store, f8Metadata, std::move(options));
   ASSERT_TRUE(f8.status().ok()) << f8.status();
+
+  // Create u1 (uint8)
+  auto u1Spec = CreateTypedVariableSpec(version_, "u1", base_path_, "<u1",
+                                        "uint8", "1-byte unsigned integer test");
+  auto u1Schema = mdio::internal::ValidateAndProcessJson(u1Spec).value();
+  auto [u1Store, u1Metadata] = u1Schema;
+  auto u1 =
+      mdio::internal::CreateVariable(u1Store, u1Metadata, std::move(options));
+  ASSERT_TRUE(u1.status().ok()) << u1.status();
+
+  // Create u2 (uint16)
+  auto u2Spec = CreateTypedVariableSpec(version_, "u2", base_path_, "<u2",
+                                        "uint16", "2-byte unsigned integer test");
+  auto u2Schema = mdio::internal::ValidateAndProcessJson(u2Spec).value();
+  auto [u2Store, u2Metadata] = u2Schema;
+  auto u2 =
+      mdio::internal::CreateVariable(u2Store, u2Metadata, std::move(options));
+  ASSERT_TRUE(u2.status().ok()) << u2.status();
+
+  // Create u8 (uint64)
+  auto u8Spec = CreateTypedVariableSpec(version_, "u8", base_path_, "<u8",
+                                        "uint64", "8-byte unsigned integer test");
+  auto u8Schema = mdio::internal::ValidateAndProcessJson(u8Spec).value();
+  auto [u8Store, u8Metadata] = u8Schema;
+  auto u8 =
+      mdio::internal::CreateVariable(u8Store, u8Metadata, std::move(options));
+  ASSERT_TRUE(u8.status().ok()) << u8.status();
+
+  // Create b1 (bool)
+  auto b1Spec = CreateTypedVariableSpec(version_, "b1", base_path_, "|b1",
+                                        "bool", "boolean test");
+  auto b1Schema = mdio::internal::ValidateAndProcessJson(b1Spec).value();
+  auto [b1Store, b1Metadata] = b1Schema;
+  auto b1 =
+      mdio::internal::CreateVariable(b1Store, b1Metadata, std::move(options));
+  ASSERT_TRUE(b1.status().ok()) << b1.status();
 }
 
 TEST_P(VariableTest, open) {
@@ -708,6 +744,14 @@ TEST_P(VariableTest, dtype) {
                                    mdio::constants::kOpen);
   auto f8 = mdio::Variable<>::Open(CreateBaseSpec(version_, "f8", base_path_),
                                    mdio::constants::kOpen);
+  auto u1 = mdio::Variable<>::Open(CreateBaseSpec(version_, "u1", base_path_),
+                                   mdio::constants::kOpen);
+  auto u2 = mdio::Variable<>::Open(CreateBaseSpec(version_, "u2", base_path_),
+                                   mdio::constants::kOpen);
+  auto u8 = mdio::Variable<>::Open(CreateBaseSpec(version_, "u8", base_path_),
+                                   mdio::constants::kOpen);
+  auto b1 = mdio::Variable<>::Open(CreateBaseSpec(version_, "b1", base_path_),
+                                   mdio::constants::kOpen);
 
   ASSERT_TRUE(i2.status().ok()) << i2.status();
   ASSERT_TRUE(i4.status().ok()) << i4.status();
@@ -715,6 +759,10 @@ TEST_P(VariableTest, dtype) {
   ASSERT_TRUE(f2.status().ok()) << f2.status();
   ASSERT_TRUE(f4.status().ok()) << f4.status();
   ASSERT_TRUE(f8.status().ok()) << f8.status();
+  ASSERT_TRUE(u1.status().ok()) << u1.status();
+  ASSERT_TRUE(u2.status().ok()) << u2.status();
+  ASSERT_TRUE(u8.status().ok()) << u8.status();
+  ASSERT_TRUE(b1.status().ok()) << b1.status();
 
   EXPECT_EQ(i2.value().dtype(), mdio::constants::kInt16);
   EXPECT_EQ(i4.value().dtype(), mdio::constants::kInt32);
@@ -722,6 +770,10 @@ TEST_P(VariableTest, dtype) {
   EXPECT_EQ(f2.value().dtype(), mdio::constants::kFloat16);
   EXPECT_EQ(f4.value().dtype(), mdio::constants::kFloat32);
   EXPECT_EQ(f8.value().dtype(), mdio::constants::kFloat64);
+  EXPECT_EQ(u1.value().dtype(), mdio::constants::kUint8);
+  EXPECT_EQ(u2.value().dtype(), mdio::constants::kUint16);
+  EXPECT_EQ(u8.value().dtype(), mdio::constants::kUint64);
+  EXPECT_EQ(b1.value().dtype(), mdio::constants::kBool);
 }
 
 TEST_P(VariableTest, domain) {
@@ -741,6 +793,10 @@ TEST_P(VariableTest, TEARDOWN) {
   std::filesystem::remove_all(base_path_ + "/f2");
   std::filesystem::remove_all(base_path_ + "/f4");
   std::filesystem::remove_all(base_path_ + "/f8");
+  std::filesystem::remove_all(base_path_ + "/u1");
+  std::filesystem::remove_all(base_path_ + "/u2");
+  std::filesystem::remove_all(base_path_ + "/u8");
+  std::filesystem::remove_all(base_path_ + "/b1");
   ASSERT_TRUE(true);
 }
 

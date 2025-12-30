@@ -98,6 +98,57 @@ TEST(ZarrDriver, ParseVersion_Invalid) {
   EXPECT_FALSE(result.ok());
 }
 
+TEST(ZarrDriver, ParseVersion_InvalidType_Array) {
+  nlohmann::json version_spec = nlohmann::json::array({2, 3});
+  auto result = mdio::zarr::ParseVersion(version_spec);
+  EXPECT_FALSE(result.ok());
+  EXPECT_THAT(result.status().message(),
+              testing::HasSubstr("Expected integer or string"));
+}
+
+TEST(ZarrDriver, ParseVersion_InvalidType_Object) {
+  nlohmann::json version_spec = {{"version", 2}};
+  auto result = mdio::zarr::ParseVersion(version_spec);
+  EXPECT_FALSE(result.ok());
+  EXPECT_THAT(result.status().message(),
+              testing::HasSubstr("Expected integer or string"));
+}
+
+TEST(ZarrDriver, ParseVersion_InvalidType_Null) {
+  nlohmann::json version_spec = nullptr;
+  auto result = mdio::zarr::ParseVersion(version_spec);
+  EXPECT_FALSE(result.ok());
+  EXPECT_THAT(result.status().message(),
+              testing::HasSubstr("Expected integer or string"));
+}
+
+TEST(ZarrDriver, ParseVersion_InvalidType_Boolean) {
+  nlohmann::json version_spec = true;
+  auto result = mdio::zarr::ParseVersion(version_spec);
+  EXPECT_FALSE(result.ok());
+  EXPECT_THAT(result.status().message(),
+              testing::HasSubstr("Expected integer or string"));
+}
+
+TEST(ZarrDriver, ZarrConfig_DefaultValues) {
+  mdio::zarr::ZarrConfig config;
+
+  EXPECT_EQ(config.version, mdio::zarr::ZarrVersion::kV2);
+  EXPECT_TRUE(config.use_consolidated_metadata);
+  EXPECT_EQ(config.dimension_separator, "/");
+}
+
+TEST(ZarrDriver, ZarrConfig_CustomValues) {
+  mdio::zarr::ZarrConfig config;
+  config.version = mdio::zarr::ZarrVersion::kV3;
+  config.use_consolidated_metadata = false;
+  config.dimension_separator = ".";
+
+  EXPECT_EQ(config.version, mdio::zarr::ZarrVersion::kV3);
+  EXPECT_FALSE(config.use_consolidated_metadata);
+  EXPECT_EQ(config.dimension_separator, ".");
+}
+
 TEST(ZarrDriver, SupportsConsolidatedMetadata_V2) {
   EXPECT_TRUE(
       mdio::zarr::SupportsConsolidatedMetadata(mdio::zarr::ZarrVersion::kV2));
@@ -302,6 +353,108 @@ TEST(ZarrV2, PrepareVariableAttributes) {
   EXPECT_EQ(attrs["key"], "value");
   EXPECT_FALSE(attrs.contains("metadata"));
   EXPECT_FALSE(attrs.contains("chunkGrid"));
+}
+
+TEST(ZarrV2, GetZarray_WithDefaults) {
+  // Test GetZarray with minimal metadata - should apply defaults
+  nlohmann::json input = {
+      {"metadata", {{"shape", {100, 200}}, {"dtype", "<f4"}}}};
+  auto result = mdio::zarr::v2::GetZarray(input);
+  ASSERT_TRUE(result.ok()) << result.status();
+
+  auto zarray = result.value();
+  EXPECT_EQ(zarray["order"], "C");
+  EXPECT_TRUE(zarray["filters"].is_null());
+  EXPECT_TRUE(zarray["fill_value"].is_null());
+  EXPECT_EQ(zarray["zarr_format"], 2);
+  EXPECT_EQ(zarray["dimension_separator"], "/");
+  // chunks should default to shape when not provided
+  EXPECT_EQ(zarray["chunks"], zarray["shape"]);
+}
+
+TEST(ZarrV2, GetZarray_WithAllFields) {
+  nlohmann::json input = {
+      {"metadata",
+       {{"shape", {100, 200}},
+        {"dtype", "<f4"},
+        {"chunks", {50, 50}},
+        {"order", "F"},
+        {"fill_value", 0.0},
+        {"zarr_format", 2},
+        {"dimension_separator", "."},
+        {"compressor", {{"id", "blosc"}}}}}};
+  auto result = mdio::zarr::v2::GetZarray(input);
+  ASSERT_TRUE(result.ok()) << result.status();
+
+  auto zarray = result.value();
+  EXPECT_EQ(zarray["order"], "F");
+  EXPECT_EQ(zarray["dimension_separator"], ".");
+  EXPECT_EQ(zarray["chunks"][0], 50);
+  EXPECT_EQ(zarray["chunks"][1], 50);
+}
+
+TEST(ZarrV2, GetZarray_NoMetadataKey) {
+  // Test GetZarray without metadata key - should create empty metadata
+  nlohmann::json input = nlohmann::json::object();
+  // Note: This will fail because shape and dtype are required
+  // but it tests the metadata initialization path
+  auto result = mdio::zarr::v2::GetZarray(input);
+  // Should fail because shape/dtype are not provided
+  EXPECT_FALSE(result.ok());
+}
+
+TEST(ZarrV2, PrepareVariableAttributes_EmptyCoordinatesString) {
+  // Test with empty string coordinates - should be removed
+  nlohmann::json input = {
+      {"attributes",
+       {{"dimension_names", {"x", "y"}},
+        {"coordinates", ""},
+        {"long_name", "Test Variable"}}}};
+
+  auto attrs = mdio::zarr::v2::PrepareVariableAttributes(input);
+
+  EXPECT_TRUE(attrs.contains("_ARRAY_DIMENSIONS"));
+  EXPECT_FALSE(attrs.contains("coordinates"));
+  EXPECT_TRUE(attrs.contains("long_name"));
+}
+
+TEST(ZarrV2, PrepareVariableAttributes_EmptyCoordinatesArray) {
+  // Test with empty array coordinates - should be removed
+  nlohmann::json input = {
+      {"attributes",
+       {{"dimension_names", {"x", "y"}},
+        {"coordinates", nlohmann::json::array()},
+        {"long_name", "Test Variable"}}}};
+
+  auto attrs = mdio::zarr::v2::PrepareVariableAttributes(input);
+
+  EXPECT_TRUE(attrs.contains("_ARRAY_DIMENSIONS"));
+  EXPECT_FALSE(attrs.contains("coordinates"));
+}
+
+TEST(ZarrV2, PrepareVariableAttributes_ValidCoordinates) {
+  nlohmann::json input = {
+      {"attributes",
+       {{"dimension_names", {"x", "y"}},
+        {"coordinates", "cdp-x cdp-y"},
+        {"long_name", "Test Variable"}}}};
+
+  auto attrs = mdio::zarr::v2::PrepareVariableAttributes(input);
+
+  EXPECT_TRUE(attrs.contains("coordinates"));
+  EXPECT_EQ(attrs["coordinates"], "cdp-x cdp-y");
+}
+
+TEST(ZarrV2, PrepareVariableAttributes_EmptyLongName) {
+  // Test with empty long_name - should be removed
+  nlohmann::json input = {
+      {"attributes",
+       {{"dimension_names", {"x", "y"}},
+        {"long_name", ""}}}};
+
+  auto attrs = mdio::zarr::v2::PrepareVariableAttributes(input);
+
+  EXPECT_FALSE(attrs.contains("long_name"));
 }
 
 }  // namespace ZarrV2Tests
