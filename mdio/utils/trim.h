@@ -43,9 +43,10 @@ namespace utils {
  * @return A future of the trim operation.
  */
 template <typename... Descriptors>
-Future<void> TrimDataset(
-    std::string dataset_path, bool delete_sliced_out_chunks,
-    tensorstore::Context context, const Descriptors&... descriptors) {
+Future<void> TrimDataset(std::string dataset_path,
+                         bool delete_sliced_out_chunks,
+                         tensorstore::Context context,
+                         const Descriptors&... descriptors) {
   // Open the dataset
   auto dsRes =
       mdio::Dataset::Open(dataset_path, mdio::constants::kOpen, context);

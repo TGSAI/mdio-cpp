@@ -43,6 +43,10 @@
  * @endcode
  */
 
+#include <string>
+#include <tuple>
+#include <vector>
+
 #include "mdio/zarr/zarr_driver.h"
 #include "mdio/zarr/zarr_v2.h"
 #include "mdio/zarr/zarr_v3.h"

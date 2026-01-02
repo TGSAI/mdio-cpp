@@ -18,6 +18,7 @@
 #include <filesystem>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include "absl/strings/str_split.h"
@@ -435,41 +436,38 @@ Future<tensorstore::TimestampedStorageGeneration> WriteVariableAttributes(
     const tensorstore::TensorStore<T, R, M>& store,
     const ::nlohmann::json& json_var, bool isCloudStore) {
   // For Zarr V3, we need to read the existing zarr.json and update attributes
-  auto read_future =
-      tensorstore::kvstore::Read(store.kvstore(), "zarr.json");
+  auto read_future = tensorstore::kvstore::Read(store.kvstore(), "zarr.json");
 
-  auto pair =
-      tensorstore::PromiseFuturePair<
-          tensorstore::TimestampedStorageGeneration>::Make();
+  auto pair = tensorstore::PromiseFuturePair<
+      tensorstore::TimestampedStorageGeneration>::Make();
 
-  read_future.ExecuteWhenReady(
-      [promise = std::move(pair.promise), store, json_var](
-          tensorstore::ReadyFuture<tensorstore::kvstore::ReadResult>
-              ready_result) {
-        nlohmann::json zarr_json;
-        if (ready_result.result().ok() && ready_result.value().has_value()) {
-          try {
-            zarr_json = nlohmann::json::parse(
-                std::string(ready_result.value().value));
-          } catch (...) {
-            zarr_json = nlohmann::json::object();
-          }
-        }
+  read_future.ExecuteWhenReady([promise = std::move(pair.promise), store,
+                                json_var](tensorstore::ReadyFuture<
+                                          tensorstore::kvstore::ReadResult>
+                                              ready_result) {
+    nlohmann::json zarr_json;
+    if (ready_result.result().ok() && ready_result.value().has_value()) {
+      try {
+        zarr_json =
+            nlohmann::json::parse(std::string(ready_result.value().value));
+      } catch (...) {
+        zarr_json = nlohmann::json::object();
+      }
+    }
 
-        // Prepare and update attributes
-        auto attrs = PrepareVariableAttributes(
-            nlohmann::json{{"attributes", json_var}});
-        zarr_json["attributes"] = attrs;
+    // Prepare and update attributes
+    auto attrs =
+        PrepareVariableAttributes(nlohmann::json{{"attributes", json_var}});
+    zarr_json["attributes"] = attrs;
 
-        // Write back
-        auto write_result = tensorstore::kvstore::Write(
-            store.kvstore(), "zarr.json", absl::Cord(zarr_json.dump(4)));
-        write_result.ExecuteWhenReady(
-            [promise = std::move(promise)](
-                tensorstore::ReadyFuture<
-                    tensorstore::TimestampedStorageGeneration>
-                    write_ready) { promise.SetResult(write_ready.result()); });
-      });
+    // Write back
+    auto write_result = tensorstore::kvstore::Write(
+        store.kvstore(), "zarr.json", absl::Cord(zarr_json.dump(4)));
+    write_result.ExecuteWhenReady(
+        [promise = std::move(promise)](
+            tensorstore::ReadyFuture<tensorstore::TimestampedStorageGeneration>
+                write_ready) { promise.SetResult(write_ready.result()); });
+  });
 
   return pair.future;
 }
@@ -494,8 +492,8 @@ inline Future<nlohmann::json> ReadVariableAttributes(
           return;
         }
         try {
-          auto zarr_json = nlohmann::json::parse(
-              std::string(ready_result.value().value));
+          auto zarr_json =
+              nlohmann::json::parse(std::string(ready_result.value().value));
           if (zarr_json.contains("attributes")) {
             promise.SetResult(zarr_json["attributes"]);
           } else {

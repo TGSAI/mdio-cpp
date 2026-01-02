@@ -40,7 +40,8 @@ std::string GetGcsPathSuffix(mdio::zarr::ZarrVersion version) {
 }
 
 /**
- * @brief Returns the manifest without struct arrays (compatible with both V2 and V3).
+ * @brief Returns the manifest without struct arrays (compatible with both V2
+ * and V3).
  */
 std::string GetSimpleManifest() {
   return R"(

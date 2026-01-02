@@ -50,7 +50,7 @@ std::string ZarrVersionToString(mdio::zarr::ZarrVersion version) {
  */
 std::string GetBasePath(mdio::zarr::ZarrVersion version) {
   return version == mdio::zarr::ZarrVersion::kV3 ? "variable_test_v3"
-                                                  : "variable_test";
+                                                 : "variable_test";
 }
 
 /**
@@ -343,10 +343,12 @@ TEST(Variable, structArray) {
   auto json_spec = GetJsonSpecStruct();
 
   // auto variable =
-  //     mdio::Variable<>::Open(json_spec, mdio::constants::kCreateClean).result();
-  auto varRes = mdio::Variable<>::Open(json_spec, mdio::constants::kCreateClean);
+  //     mdio::Variable<>::Open(json_spec,
+  //     mdio::constants::kCreateClean).result();
+  auto varRes =
+      mdio::Variable<>::Open(json_spec, mdio::constants::kCreateClean);
   if (!varRes.status().ok()) {
-      std::cout << varRes.status() << std::endl;
+    std::cout << varRes.status() << std::endl;
   }
   auto variable = varRes.result();
 
@@ -404,7 +406,7 @@ TEST(Variable, structArrayOpen) {
   // variable = mdio::Variable<>::Open(open_json_spec).result();
   auto varRes = mdio::Variable<>::Open(open_json_spec);
   if (!varRes.status().ok()) {
-      std::cout << varRes.status() << std::endl;
+    std::cout << varRes.status() << std::endl;
   }
   variable = varRes.result();
 
@@ -1428,8 +1430,7 @@ TEST_P(VariableVersionTest, readWrite) {
   ASSERT_TRUE(varDataRes.status().ok()) << varDataRes.status();
   auto varData = varDataRes.value();
 
-  auto data =
-      reinterpret_cast<int16_t*>(varData.get_data_accessor().data());
+  auto data = reinterpret_cast<int16_t*>(varData.get_data_accessor().data());
   data[0] = 1234;
   data[1] = 5678;
 
@@ -1461,7 +1462,8 @@ TEST_P(VariableVersionTest, getIntervals) {
 
 TEST_P(VariableVersionTest, outOfBoundsSlice) {
   auto spec = CreateTestVariableSpec(version_, base_path_);
-  auto var = mdio::Variable<>::Open(spec, mdio::constants::kCreateClean).result();
+  auto var =
+      mdio::Variable<>::Open(spec, mdio::constants::kCreateClean).result();
 
   ASSERT_TRUE(var.ok());
   EXPECT_THAT(var->dimensions().shape(), ::testing::ElementsAre(500, 500));

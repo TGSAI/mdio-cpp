@@ -668,8 +668,7 @@ TEST(EncodeBase64, binaryData) {
 TEST(ToZarrDtype, unknownDtype) {
   auto result = to_zarr_dtype("unknown_dtype");
   ASSERT_FALSE(result.status().ok());
-  EXPECT_THAT(result.status().message(),
-              testing::HasSubstr("Unknown dtype"));
+  EXPECT_THAT(result.status().message(), testing::HasSubstr("Unknown dtype"));
 }
 
 TEST(ToZarrDtype, validDtypes) {
@@ -683,37 +682,45 @@ TEST(ToZarrDtype, validDtypes) {
 TEST(TransformCompressor, nonBloscCompressorV2) {
   nlohmann::json input = {{"compressor", {{"name", "gzip"}}}};
   nlohmann::json variable = {{"metadata", nlohmann::json::object()}};
-  auto status = transform_compressor(input, variable, mdio::zarr::ZarrVersion::kV2);
+  auto status =
+      transform_compressor(input, variable, mdio::zarr::ZarrVersion::kV2);
   ASSERT_FALSE(status.ok());
-  EXPECT_THAT(status.message(), testing::HasSubstr("Only blosc compressor is supported"));
+  EXPECT_THAT(status.message(),
+              testing::HasSubstr("Only blosc compressor is supported"));
 }
 
 TEST(TransformCompressor, nonBloscCompressorV3) {
   nlohmann::json input = {{"compressor", {{"name", "gzip"}}}};
   nlohmann::json variable = {{"metadata", nlohmann::json::object()}};
-  auto status = transform_compressor(input, variable, mdio::zarr::ZarrVersion::kV3);
+  auto status =
+      transform_compressor(input, variable, mdio::zarr::ZarrVersion::kV3);
   ASSERT_FALSE(status.ok());
-  EXPECT_THAT(status.message(), testing::HasSubstr("Only blosc compressor is supported"));
+  EXPECT_THAT(status.message(),
+              testing::HasSubstr("Only blosc compressor is supported"));
 }
 
 TEST(TransformCompressor, missingCompressorName) {
   nlohmann::json input = {{"compressor", {{"algorithm", "zstd"}}}};
   nlohmann::json variable = {{"metadata", nlohmann::json::object()}};
-  auto status = transform_compressor(input, variable, mdio::zarr::ZarrVersion::kV2);
+  auto status =
+      transform_compressor(input, variable, mdio::zarr::ZarrVersion::kV2);
   ASSERT_FALSE(status.ok());
-  EXPECT_THAT(status.message(), testing::HasSubstr("Compressor name must be specified"));
+  EXPECT_THAT(status.message(),
+              testing::HasSubstr("Compressor name must be specified"));
 }
 
 TEST(TransformCompressor, noCompressorV2) {
   nlohmann::json input = nlohmann::json::object();
   nlohmann::json variable = {{"metadata", nlohmann::json::object()}};
-  auto status = transform_compressor(input, variable, mdio::zarr::ZarrVersion::kV2);
+  auto status =
+      transform_compressor(input, variable, mdio::zarr::ZarrVersion::kV2);
   ASSERT_TRUE(status.ok());
   EXPECT_TRUE(variable["metadata"]["compressor"].is_null());
 }
 
 TEST(TransformMetadata, gcsPath) {
-  nlohmann::json variable = {{"kvstore", {{"driver", "file"}, {"path", "myvar"}}}};
+  nlohmann::json variable = {
+      {"kvstore", {{"driver", "file"}, {"path", "myvar"}}}};
   auto status = transform_metadata("gs://my-bucket/path/to/dataset", variable);
   ASSERT_TRUE(status.ok()) << status;
   EXPECT_EQ(variable["kvstore"]["driver"], "gcs");
@@ -723,7 +730,8 @@ TEST(TransformMetadata, gcsPath) {
 }
 
 TEST(TransformMetadata, s3Path) {
-  nlohmann::json variable = {{"kvstore", {{"driver", "file"}, {"path", "myvar"}}}};
+  nlohmann::json variable = {
+      {"kvstore", {{"driver", "file"}, {"path", "myvar"}}}};
   auto status = transform_metadata("s3://my-bucket/path/to/dataset", variable);
   ASSERT_TRUE(status.ok()) << status;
   EXPECT_EQ(variable["kvstore"]["driver"], "s3");
@@ -733,7 +741,8 @@ TEST(TransformMetadata, s3Path) {
 }
 
 TEST(TransformMetadata, localPath) {
-  nlohmann::json variable = {{"kvstore", {{"driver", "file"}, {"path", "myvar"}}}};
+  nlohmann::json variable = {
+      {"kvstore", {{"driver", "file"}, {"path", "myvar"}}}};
   auto status = transform_metadata("/local/path/to/dataset", variable);
   ASSERT_TRUE(status.ok()) << status;
   EXPECT_EQ(variable["kvstore"]["driver"], "file");

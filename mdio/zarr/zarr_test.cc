@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <vector>
 
 #include "tensorstore/kvstore/kvstore.h"
 #include "tensorstore/kvstore/operations.h"
@@ -223,9 +224,7 @@ TEST(ZarrDriver, GetConsolidatedMetadataFileName) {
 
 namespace ZarrV2Tests {
 
-TEST(ZarrV2, DriverName) {
-  EXPECT_EQ(mdio::zarr::v2::kDriverName, "zarr");
-}
+TEST(ZarrV2, DriverName) { EXPECT_EQ(mdio::zarr::v2::kDriverName, "zarr"); }
 
 TEST(ZarrV2, ZarrFormat) { EXPECT_EQ(mdio::zarr::v2::kZarrFormat, 2); }
 
@@ -375,16 +374,15 @@ TEST(ZarrV2, GetZarray_WithDefaults) {
 }
 
 TEST(ZarrV2, GetZarray_WithAllFields) {
-  nlohmann::json input = {
-      {"metadata",
-       {{"shape", {100, 200}},
-        {"dtype", "<f4"},
-        {"chunks", {50, 50}},
-        {"order", "F"},
-        {"fill_value", 0.0},
-        {"zarr_format", 2},
-        {"dimension_separator", "."},
-        {"compressor", {{"id", "blosc"}}}}}};
+  nlohmann::json input = {{"metadata",
+                           {{"shape", {100, 200}},
+                            {"dtype", "<f4"},
+                            {"chunks", {50, 50}},
+                            {"order", "F"},
+                            {"fill_value", 0.0},
+                            {"zarr_format", 2},
+                            {"dimension_separator", "."},
+                            {"compressor", {{"id", "blosc"}}}}}};
   auto result = mdio::zarr::v2::GetZarray(input);
   ASSERT_TRUE(result.ok()) << result.status();
 
@@ -407,11 +405,10 @@ TEST(ZarrV2, GetZarray_NoMetadataKey) {
 
 TEST(ZarrV2, PrepareVariableAttributes_EmptyCoordinatesString) {
   // Test with empty string coordinates - should be removed
-  nlohmann::json input = {
-      {"attributes",
-       {{"dimension_names", {"x", "y"}},
-        {"coordinates", ""},
-        {"long_name", "Test Variable"}}}};
+  nlohmann::json input = {{"attributes",
+                           {{"dimension_names", {"x", "y"}},
+                            {"coordinates", ""},
+                            {"long_name", "Test Variable"}}}};
 
   auto attrs = mdio::zarr::v2::PrepareVariableAttributes(input);
 
@@ -422,11 +419,10 @@ TEST(ZarrV2, PrepareVariableAttributes_EmptyCoordinatesString) {
 
 TEST(ZarrV2, PrepareVariableAttributes_EmptyCoordinatesArray) {
   // Test with empty array coordinates - should be removed
-  nlohmann::json input = {
-      {"attributes",
-       {{"dimension_names", {"x", "y"}},
-        {"coordinates", nlohmann::json::array()},
-        {"long_name", "Test Variable"}}}};
+  nlohmann::json input = {{"attributes",
+                           {{"dimension_names", {"x", "y"}},
+                            {"coordinates", nlohmann::json::array()},
+                            {"long_name", "Test Variable"}}}};
 
   auto attrs = mdio::zarr::v2::PrepareVariableAttributes(input);
 
@@ -435,11 +431,10 @@ TEST(ZarrV2, PrepareVariableAttributes_EmptyCoordinatesArray) {
 }
 
 TEST(ZarrV2, PrepareVariableAttributes_ValidCoordinates) {
-  nlohmann::json input = {
-      {"attributes",
-       {{"dimension_names", {"x", "y"}},
-        {"coordinates", "cdp-x cdp-y"},
-        {"long_name", "Test Variable"}}}};
+  nlohmann::json input = {{"attributes",
+                           {{"dimension_names", {"x", "y"}},
+                            {"coordinates", "cdp-x cdp-y"},
+                            {"long_name", "Test Variable"}}}};
 
   auto attrs = mdio::zarr::v2::PrepareVariableAttributes(input);
 
@@ -450,9 +445,7 @@ TEST(ZarrV2, PrepareVariableAttributes_ValidCoordinates) {
 TEST(ZarrV2, PrepareVariableAttributes_EmptyLongName) {
   // Test with empty long_name - should be removed
   nlohmann::json input = {
-      {"attributes",
-       {{"dimension_names", {"x", "y"}},
-        {"long_name", ""}}}};
+      {"attributes", {{"dimension_names", {"x", "y"}}, {"long_name", ""}}}};
 
   auto attrs = mdio::zarr::v2::PrepareVariableAttributes(input);
 
@@ -467,9 +460,7 @@ TEST(ZarrV2, PrepareVariableAttributes_EmptyLongName) {
 
 namespace ZarrV3Tests {
 
-TEST(ZarrV3, DriverName) {
-  EXPECT_EQ(mdio::zarr::v3::kDriverName, "zarr3");
-}
+TEST(ZarrV3, DriverName) { EXPECT_EQ(mdio::zarr::v3::kDriverName, "zarr3"); }
 
 TEST(ZarrV3, ZarrFormat) { EXPECT_EQ(mdio::zarr::v3::kZarrFormat, 3); }
 
@@ -526,8 +517,7 @@ TEST(ZarrV3, CreateGroupMetadata_WithAttributes) {
 TEST(ZarrV3, CreateArrayMetadata) {
   std::vector<int64_t> shape = {100, 200};
   std::vector<int64_t> chunks = {50, 50};
-  auto metadata =
-      mdio::zarr::v3::CreateArrayMetadata(shape, chunks, "float32");
+  auto metadata = mdio::zarr::v3::CreateArrayMetadata(shape, chunks, "float32");
 
   EXPECT_EQ(metadata["zarr_format"], 3);
   EXPECT_EQ(metadata["node_type"], "array");
@@ -582,11 +572,10 @@ TEST(ZarrV3, ConvertToMdioMetadata) {
 
 TEST(ZarrV3, PrepareVariableAttributes_EmptyCoordinates) {
   // Test empty string coordinates - should be removed (covers line 204)
-  nlohmann::json input = {
-      {"attributes",
-       {{"dimension_names", {"x", "y"}},
-        {"coordinates", ""},
-        {"long_name", "Test Variable"}}}};
+  nlohmann::json input = {{"attributes",
+                           {{"dimension_names", {"x", "y"}},
+                            {"coordinates", ""},
+                            {"long_name", "Test Variable"}}}};
 
   auto attrs = mdio::zarr::v3::PrepareVariableAttributes(input);
 
@@ -595,10 +584,9 @@ TEST(ZarrV3, PrepareVariableAttributes_EmptyCoordinates) {
   EXPECT_TRUE(attrs.contains("long_name"));
 
   // Also test empty array coordinates
-  nlohmann::json input2 = {
-      {"attributes",
-       {{"dimension_names", {"x", "y"}},
-        {"coordinates", nlohmann::json::array()}}}};
+  nlohmann::json input2 = {{"attributes",
+                            {{"dimension_names", {"x", "y"}},
+                             {"coordinates", nlohmann::json::array()}}}};
 
   auto attrs2 = mdio::zarr::v3::PrepareVariableAttributes(input2);
   EXPECT_FALSE(attrs2.contains("coordinates"));
@@ -614,8 +602,7 @@ TEST(ZarrV3, ReadVariableAttributes) {
   nlohmann::json test_zarr_json = {
       {"zarr_format", 3},
       {"node_type", "array"},
-      {"attributes",
-       {{"_ARRAY_DIMENSIONS", {"x", "y"}}, {"units", "meters"}}}};
+      {"attributes", {{"_ARRAY_DIMENSIONS", {"x", "y"}}, {"units", "meters"}}}};
 
   std::ofstream out(tmpDir / "zarr.json");
   out << test_zarr_json.dump(4);
@@ -680,14 +667,12 @@ TEST(ZarrV3, ReadVariableAttributes_NoAttributesInFile) {
 namespace ZarrUnifiedTests {
 
 TEST(ZarrUnified, GetDriverNameForVersion_V2) {
-  auto name =
-      mdio::zarr::GetDriverNameForVersion(mdio::zarr::ZarrVersion::kV2);
+  auto name = mdio::zarr::GetDriverNameForVersion(mdio::zarr::ZarrVersion::kV2);
   EXPECT_EQ(name, "zarr");
 }
 
 TEST(ZarrUnified, GetDriverNameForVersion_V3) {
-  auto name =
-      mdio::zarr::GetDriverNameForVersion(mdio::zarr::ZarrVersion::kV3);
+  auto name = mdio::zarr::GetDriverNameForVersion(mdio::zarr::ZarrVersion::kV3);
   EXPECT_EQ(name, "zarr3");
 }
 

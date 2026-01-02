@@ -416,8 +416,8 @@ class UserAttributes {
           auto statsJson = j["statsV1"];
           // statsV1 may be stored as a serialized JSON string in some
           // third-party Zarr stores; parse it if needed.
-          auto parse_if_string = [](const nlohmann::json& val)
-              -> mdio::Result<nlohmann::json> {
+          auto parse_if_string =
+              [](const nlohmann::json& val) -> mdio::Result<nlohmann::json> {
             if (val.is_string()) {
               try {
                 return nlohmann::json::parse(val.get<std::string>());

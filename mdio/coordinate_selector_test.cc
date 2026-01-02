@@ -55,9 +55,8 @@ std::string ZarrVersionToString(mdio::zarr::ZarrVersion version) {
  * @brief Returns the base path for test data based on Zarr version.
  */
 std::string GetBasePath(mdio::zarr::ZarrVersion version) {
-  return version == mdio::zarr::ZarrVersion::kV3
-             ? "generic_with_coords_v3.mdio"
-             : "generic_with_coords.mdio";
+  return version == mdio::zarr::ZarrVersion::kV3 ? "generic_with_coords_v3.mdio"
+                                                 : "generic_with_coords.mdio";
 }
 
 mdio::Result<std::string> SetupDataset(
@@ -159,8 +158,8 @@ mdio::Result<std::string> SetupDataset(
     })";
 
   auto schema = ::nlohmann::json::parse(schema_str);
-  auto dsFut =
-      mdio::Dataset::from_json(schema, ds_path, version, mdio::constants::kCreateClean);
+  auto dsFut = mdio::Dataset::from_json(schema, ds_path, version,
+                                        mdio::constants::kCreateClean);
   if (!dsFut.status().ok()) {
     return ds_path;
   }

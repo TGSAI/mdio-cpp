@@ -54,11 +54,12 @@ std::string ZarrVersionToString(mdio::zarr::ZarrVersion version) {
  */
 std::string GetBasePath(mdio::zarr::ZarrVersion version) {
   return version == mdio::zarr::ZarrVersion::kV3 ? "zarrs/dataset_test_v3"
-                                                  : "zarrs/dataset_test";
+                                                 : "zarrs/dataset_test";
 }
 
 /**
- * @brief Returns a schema without struct arrays (compatible with both V2 and V3).
+ * @brief Returns a schema without struct arrays (compatible with both V2 and
+ * V3).
  */
 ::nlohmann::json GetSimpleSchema() {
   std::string schema = R"(
@@ -1559,8 +1560,7 @@ TEST_P(DatasetVersionTest, fromJsonWithOptionalVersion) {
   auto json_vars = GetSimpleSchema();
 
   auto dataset = mdio::Dataset::from_json(
-      json_vars, base_path_,
-      std::optional<mdio::zarr::ZarrVersion>(version_),
+      json_vars, base_path_, std::optional<mdio::zarr::ZarrVersion>(version_),
       mdio::constants::kCreateClean);
 
   ASSERT_TRUE(dataset.status().ok()) << dataset.status();
@@ -1699,8 +1699,9 @@ TEST(DatasetVersionNullopt, fromJsonWithNulloptVersion) {
   auto json_vars = GetSimpleSchema();
 
   std::optional<mdio::zarr::ZarrVersion> version = std::nullopt;
-  auto dataset = mdio::Dataset::from_json(json_vars, "zarrs/nullopt_version",
-                                          version, mdio::constants::kCreateClean);
+  auto dataset =
+      mdio::Dataset::from_json(json_vars, "zarrs/nullopt_version", version,
+                               mdio::constants::kCreateClean);
 
   ASSERT_TRUE(dataset.status().ok()) << dataset.status();
   EXPECT_EQ(dataset.value().getMetadata()["name"], "simple_dataset");
@@ -1734,8 +1735,7 @@ TEST(Dataset, selWithDimensionIndex) {
 
   auto sliceRes = ds.sel(indexDesc);
   ASSERT_FALSE(sliceRes.status().ok());
-  EXPECT_THAT(sliceRes.status().message(),
-              testing::HasSubstr("not found"));
+  EXPECT_THAT(sliceRes.status().message(), testing::HasSubstr("not found"));
 }
 
 TEST(Dataset, selWithRepeatedLabels) {

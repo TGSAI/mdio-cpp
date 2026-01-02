@@ -18,6 +18,7 @@
 #include <filesystem>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include "absl/strings/str_split.h"
@@ -263,9 +264,8 @@ inline Future<void> WriteConsolidatedMetadata(
  * @return A future containing dataset metadata and variable JSON specs.
  */
 inline Future<std::tuple<::nlohmann::json, std::vector<::nlohmann::json>>>
-ReadConsolidatedMetadata(
-    const std::string& dataset_path,
-    tensorstore::Future<tensorstore::KvStore> kvs_future) {
+ReadConsolidatedMetadata(const std::string& dataset_path,
+                         tensorstore::Future<tensorstore::KvStore> kvs_future) {
   // Normalize the dataset path once so we can safely append variable names.
   std::string normalized_path = dataset_path;
   if (!normalized_path.empty() && normalized_path.back() != '/') {
@@ -307,9 +307,10 @@ ReadConsolidatedMetadata(
 
         auto read_future = tensorstore::kvstore::Read(kvs, ".zmetadata");
         read_future.ExecuteWhenReady(
-            [promise = std::move(promise), dataset_path, normalized_path, driver,
-             bucket, cloudPath](tensorstore::ReadyFuture<
-                                tensorstore::kvstore::ReadResult> ready_read) {
+            [promise = std::move(promise), dataset_path, normalized_path,
+             driver, bucket, cloudPath](
+                tensorstore::ReadyFuture<tensorstore::kvstore::ReadResult>
+                    ready_read) {
               if (!ready_read.result().ok()) {
                 promise.SetResult(ready_read.result().status());
                 return;
@@ -318,8 +319,8 @@ ReadConsolidatedMetadata(
 
               ::nlohmann::json zmetadata;
               try {
-                zmetadata = ::nlohmann::json::parse(
-                    std::string(read_result.value));
+                zmetadata =
+                    ::nlohmann::json::parse(std::string(read_result.value));
               } catch (const nlohmann::json::parse_error& e) {
                 if (!dataset_path.empty() && dataset_path.back() != '/') {
                   promise.SetResult(absl::InvalidArgumentError(
@@ -389,15 +390,15 @@ ReadConsolidatedMetadata(
  */
 inline nlohmann::json CreateVariableSpec(const std::string& variable_name,
                                          const std::string& path = "") {
-  nlohmann::json spec = {{"driver", std::string(kDriverName)},
-                         {"kvstore",
-                          {{"driver", "file"}, {"path", variable_name}}},
-                         {"metadata",
-                          {{"dtype", "DATA_TYPE"},
-                           {"dimension_separator", "/"},
-                           {"shape", "SHAPE"},
-                           {"chunks", "CHUNKS"}}},
-                         {"attributes", nlohmann::json::object()}};
+  nlohmann::json spec = {
+      {"driver", std::string(kDriverName)},
+      {"kvstore", {{"driver", "file"}, {"path", variable_name}}},
+      {"metadata",
+       {{"dtype", "DATA_TYPE"},
+        {"dimension_separator", "/"},
+        {"shape", "SHAPE"},
+        {"chunks", "CHUNKS"}}},
+      {"attributes", nlohmann::json::object()}};
   return spec;
 }
 

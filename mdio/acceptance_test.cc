@@ -61,7 +61,7 @@ std::string ZarrVersionToString(mdio::zarr::ZarrVersion version) {
  */
 std::string GetBasePath(mdio::zarr::ZarrVersion version) {
   return version == mdio::zarr::ZarrVersion::kV3 ? "zarrs/acceptance_v3"
-                                                  : "zarrs/acceptance";
+                                                 : "zarrs/acceptance";
 }
 
 /**
@@ -485,7 +485,7 @@ class VariableTest : public ::testing::TestWithParam<mdio::zarr::ZarrVersion> {
 TEST_P(VariableTest, SETUP) {
   // Ensure directory exists
   std::filesystem::create_directories(base_path_);
-  
+
   mdio::TransactionalOpenOptions options;
   auto opt = options.Set(std::move(mdio::constants::kCreateClean));
 
@@ -544,8 +544,9 @@ TEST_P(VariableTest, SETUP) {
   ASSERT_TRUE(f8.status().ok()) << f8.status();
 
   // Create u1 (uint8)
-  auto u1Spec = CreateTypedVariableSpec(version_, "u1", base_path_, "<u1",
-                                        "uint8", "1-byte unsigned integer test");
+  auto u1Spec =
+      CreateTypedVariableSpec(version_, "u1", base_path_, "<u1", "uint8",
+                              "1-byte unsigned integer test");
   auto u1Schema = mdio::internal::ValidateAndProcessJson(u1Spec).value();
   auto [u1Store, u1Metadata] = u1Schema;
   auto u1 =
@@ -553,8 +554,9 @@ TEST_P(VariableTest, SETUP) {
   ASSERT_TRUE(u1.status().ok()) << u1.status();
 
   // Create u2 (uint16)
-  auto u2Spec = CreateTypedVariableSpec(version_, "u2", base_path_, "<u2",
-                                        "uint16", "2-byte unsigned integer test");
+  auto u2Spec =
+      CreateTypedVariableSpec(version_, "u2", base_path_, "<u2", "uint16",
+                              "2-byte unsigned integer test");
   auto u2Schema = mdio::internal::ValidateAndProcessJson(u2Spec).value();
   auto [u2Store, u2Metadata] = u2Schema;
   auto u2 =
@@ -562,8 +564,9 @@ TEST_P(VariableTest, SETUP) {
   ASSERT_TRUE(u2.status().ok()) << u2.status();
 
   // Create u8 (uint64)
-  auto u8Spec = CreateTypedVariableSpec(version_, "u8", base_path_, "<u8",
-                                        "uint64", "8-byte unsigned integer test");
+  auto u8Spec =
+      CreateTypedVariableSpec(version_, "u8", base_path_, "<u8", "uint64",
+                              "8-byte unsigned integer test");
   auto u8Schema = mdio::internal::ValidateAndProcessJson(u8Spec).value();
   auto [u8Store, u8Metadata] = u8Schema;
   auto u8 =
@@ -837,7 +840,7 @@ class VariableDataTest
 TEST_P(VariableDataTest, SETUP) {
   // Ensure directory exists
   std::filesystem::create_directories(base_path_);
-  
+
   mdio::TransactionalOpenOptions options;
   auto opt = options.Set(std::move(mdio::constants::kCreateClean));
 
@@ -934,8 +937,9 @@ class DatasetTest : public ::testing::TestWithParam<mdio::zarr::ZarrVersion> {
     version_ = GetParam();
     base_path_ = GetBasePath(version_);
     dataset_manifest_ = GetDatasetManifest(version_);
-    expected_var_count_ =
-        version_ == mdio::zarr::ZarrVersion::kV3 ? 8 : 9;  // V2 has struct array
+    expected_var_count_ = version_ == mdio::zarr::ZarrVersion::kV3
+                              ? 8
+                              : 9;  // V2 has struct array
   }
 
   mdio::zarr::ZarrVersion version_;
@@ -983,8 +987,8 @@ TEST_P(DatasetTest, condensed) {
 
   // Now test opening with just the path
   auto ds = mdio::Dataset::Open(base_path_, mdio::constants::kOpen);
-  ASSERT_TRUE(ds.status().ok()) << "Failed to open with trailing slash: "
-                                << ds.status();
+  ASSERT_TRUE(ds.status().ok())
+      << "Failed to open with trailing slash: " << ds.status();
 
   // Test without trailing slash
   std::string path_no_slash = base_path_;
@@ -992,8 +996,8 @@ TEST_P(DatasetTest, condensed) {
     path_no_slash.pop_back();
   }
   auto ds2 = mdio::Dataset::Open(path_no_slash, mdio::constants::kOpen);
-  ASSERT_TRUE(ds2.status().ok()) << "Failed to open without trailing slash: "
-                                 << ds2.status();
+  ASSERT_TRUE(ds2.status().ok())
+      << "Failed to open without trailing slash: " << ds2.status();
 }
 
 TEST_P(DatasetTest, read) {
@@ -1195,8 +1199,9 @@ TEST_P(DatasetTest, fromJson) {
   std::filesystem::remove_all(base_path_ + "/from_json_test");
 
   nlohmann::json j = nlohmann::json::parse(dataset_manifest_);
-  auto dataset = mdio::Dataset::from_json(j, base_path_ + "/from_json_test",
-                                          version_, mdio::constants::kCreateClean);
+  auto dataset =
+      mdio::Dataset::from_json(j, base_path_ + "/from_json_test", version_,
+                               mdio::constants::kCreateClean);
   ASSERT_TRUE(dataset.status().ok()) << dataset.status();
 
   std::vector<std::string> varList = dataset.value().variables.get_keys();
@@ -1519,9 +1524,9 @@ TEST(VariableV2Compat, zarrCompatibility) {
   auto opt = options.Set(std::move(mdio::constants::kCreateClean));
 
   std::vector<std::tuple<std::string, std::string, std::string>> vars = {
-      {"i2", "<i2", "2-byte integer"},   {"i4", "<i4", "4-byte integer"},
-      {"i8", "<i8", "8-byte integer"},   {"f2", "<f2", "2-byte float"},
-      {"f4", "<f4", "4-byte float"},     {"f8", "<f8", "8-byte float"},
+      {"i2", "<i2", "2-byte integer"}, {"i4", "<i4", "4-byte integer"},
+      {"i8", "<i8", "8-byte integer"}, {"f2", "<f2", "2-byte float"},
+      {"f4", "<f4", "4-byte float"},   {"f8", "<f8", "8-byte float"},
   };
 
   for (const auto& [name, dtype, long_name] : vars) {
@@ -1568,8 +1573,7 @@ TEST(VariableV2Compat, zarrCompatibility) {
   for (const auto& arg : args) {
     pid_t pid = fork();
     if (pid == 0) {
-      int result =
-          executePythonScript(srcPath, {"zarrs/compat_test/" + arg});
+      int result = executePythonScript(srcPath, {"zarrs/compat_test/" + arg});
       if (result == 0xfd00) {
         GTEST_SKIP() << "Zarr compatibility skipped due to import error";
         exit(SUCCESS_CODE);

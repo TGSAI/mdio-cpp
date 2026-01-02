@@ -44,13 +44,13 @@ std::string ZarrVersionToString(mdio::zarr::ZarrVersion version) {
  * @brief Returns the base path for test data based on Zarr version.
  */
 std::string GetBasePath(mdio::zarr::ZarrVersion version) {
-  return version == mdio::zarr::ZarrVersion::kV3
-             ? "zarrs/testing/utils_v3.mdio"
-             : "zarrs/testing/utils.mdio";
+  return version == mdio::zarr::ZarrVersion::kV3 ? "zarrs/testing/utils_v3.mdio"
+                                                 : "zarrs/testing/utils.mdio";
 }
 
 /**
- * @brief Returns manifest without struct arrays (compatible with both V2 and V3).
+ * @brief Returns manifest without struct arrays (compatible with both V2 and
+ * V3).
  */
 std::string GetSimpleManifest() {
   return R"(
@@ -159,14 +159,15 @@ std::string GetSimpleManifest() {
 }
 
 /**
- * Sets up an inert dataset for testing destructive operations (V2/V3 compatible)
+ * Sets up an inert dataset for testing destructive operations (V2/V3
+ * compatible)
  */
 mdio::Future<mdio::Dataset> SETUP(
     const std::string& path,
     mdio::zarr::ZarrVersion version = mdio::zarr::ZarrVersion::kV2) {
   auto j = nlohmann::json::parse(GetSimpleManifest());
-  auto dsRes = mdio::Dataset::from_json(j, path, version,
-                                        mdio::constants::kCreateClean);
+  auto dsRes =
+      mdio::Dataset::from_json(j, path, version, mdio::constants::kCreateClean);
   return dsRes;
 }
 

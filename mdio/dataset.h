@@ -151,9 +151,8 @@ inline Future<tensorstore::KvStore> dataset_kvs_store(
  * error on failure.
  */
 inline Future<std::tuple<::nlohmann::json, std::vector<::nlohmann::json>>>
-from_zmetadata(
-    const std::string& dataset_path,
-    tensorstore::Context context = tensorstore::Context::Default()) {
+from_zmetadata(const std::string& dataset_path,
+               tensorstore::Context context = tensorstore::Context::Default()) {
   auto kvs_future = mdio::internal::dataset_kvs_store(dataset_path, context);
 
   auto pair = tensorstore::PromiseFuturePair<
@@ -186,9 +185,7 @@ from_zmetadata(
                   [promise = std::move(promise)](
                       tensorstore::ReadyFuture<std::tuple<
                           ::nlohmann::json, std::vector<::nlohmann::json>>>
-                          result) {
-                    promise.SetResult(result.result());
-                  });
+                          result) { promise.SetResult(result.result()); });
             });
       });
 

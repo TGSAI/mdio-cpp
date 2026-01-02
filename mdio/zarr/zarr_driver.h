@@ -16,6 +16,7 @@
 #define MDIO_ZARR_ZARR_DRIVER_H_
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "mdio/impl.h"
@@ -93,17 +94,16 @@ inline Result<ZarrVersion> ParseVersion(const nlohmann::json& version_spec) {
  * @return Future<ZarrVersion> The detected version or an error if unable to
  * determine.
  */
-inline Future<ZarrVersion> DetectVersion(
-    const tensorstore::KvStore& kvstore) {
+inline Future<ZarrVersion> DetectVersion(const tensorstore::KvStore& kvstore) {
   // Check for zarr.json first (V3 indicator)
   auto v3_check = tensorstore::kvstore::Read(kvstore, "zarr.json");
 
   auto pair = tensorstore::PromiseFuturePair<ZarrVersion>::Make();
 
   v3_check.ExecuteWhenReady(
-      [promise = pair.promise, kvstore](
-          tensorstore::ReadyFuture<tensorstore::kvstore::ReadResult>
-              v3_result) mutable {
+      [promise = pair.promise,
+       kvstore](tensorstore::ReadyFuture<tensorstore::kvstore::ReadResult>
+                    v3_result) mutable {
         if (v3_result.result().ok() && v3_result.value().has_value()) {
           promise.SetResult(ZarrVersion::kV3);
           return;

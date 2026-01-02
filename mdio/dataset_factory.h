@@ -22,13 +22,12 @@
 #include <unordered_map>
 #include <vector>
 
-#include "mdio/dataset_validator.h"
-#include "mdio/impl.h"
-#include "mdio/zarr/zarr.h"
-
 #include "absl/strings/escaping.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_split.h"
+#include "mdio/dataset_validator.h"
+#include "mdio/impl.h"
+#include "mdio/zarr/zarr.h"
 
 /**
  * @brief Encodes a string in base64

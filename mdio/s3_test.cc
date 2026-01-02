@@ -17,7 +17,6 @@
 
 #include "absl/log/globals.h"
 #include "absl/log/initialize.h"
-
 #include "mdio/dataset.h"
 #include "mdio/zarr/zarr.h"
 
@@ -53,7 +52,8 @@ std::string GetS3PathSuffix(mdio::zarr::ZarrVersion version) {
 }
 
 /**
- * @brief Returns the manifest without struct arrays (compatible with both V2 and V3).
+ * @brief Returns the manifest without struct arrays (compatible with both V2
+ * and V3).
  */
 std::string GetSimpleManifest() {
   return R"(
@@ -456,8 +456,7 @@ TEST(S3, read) {
 // Parameterized S3 Tests for V2/V3
 // ============================================================================
 
-class S3VersionTest
-    : public ::testing::TestWithParam<mdio::zarr::ZarrVersion> {
+class S3VersionTest : public ::testing::TestWithParam<mdio::zarr::ZarrVersion> {
  protected:
   void SetUp() override {
     version_ = GetParam();
