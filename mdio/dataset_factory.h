@@ -83,14 +83,10 @@ inline absl::Status transform_dtype(
       (version == mdio::zarr::ZarrVersion::kV3) ? "data_type" : "dtype";
 
   if (input["dataType"].contains("fields")) {
-    if (version == mdio::zarr::ZarrVersion::kV3) {
-      // V3 doesn't support structured dtypes in the same way
-      return absl::InvalidArgumentError(
-          "Structured dtypes are not yet supported in Zarr V3");
-    }
+    // Structured dtypes are supported in both V2 and V3
     nlohmann::json dtypeFields = nlohmann::json::array();
     for (const auto& field : input["dataType"]["fields"]) {
-      auto dtype = to_zarr_dtype(field["format"]);
+      auto dtype = to_zarr_dtype(field["format"], version);
       if (!dtype.status().ok()) {
         return dtype.status();
       }

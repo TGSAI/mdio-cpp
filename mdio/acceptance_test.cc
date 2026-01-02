@@ -175,133 +175,17 @@ nlohmann::json CreateBaseSpec(mdio::zarr::ZarrVersion version,
 
 /**
  * @brief Returns the dataset manifest JSON for the given version.
+ * Both versions use the same manifest structure including struct arrays.
  */
 std::string GetDatasetManifest(mdio::zarr::ZarrVersion version) {
   std::string name =
       version == mdio::zarr::ZarrVersion::kV3 ? "campos_3d_v3" : "campos_3d";
 
-  // Note: V3 doesn't support struct arrays yet, so we use a slightly different
-  // manifest
-  if (version == mdio::zarr::ZarrVersion::kV3) {
-    return R"(
+  // clang-format off
+  std::string manifest = R"(
 {
   "metadata": {
-    "name": "campos_3d_v3",
-    "apiVersion": "1.0.0",
-    "createdOn": "2023-12-12T15:02:06.413469-06:00",
-    "attributes": {
-      "textHeader": [
-        "C01 .......................... ",
-        "C02 .......................... ",
-        "C03 .......................... "
-      ],
-      "foo": "bar"
-    }
-  },
-  "variables": [
-    {
-      "name": "image",
-      "dataType": "float32",
-      "dimensions": [
-        {"name": "inline", "size": 256},
-        {"name": "crossline", "size": 512},
-        {"name": "depth", "size": 384}
-      ],
-      "metadata": {
-        "chunkGrid": {
-          "name": "regular",
-          "configuration": { "chunkShape": [128, 128, 128] }
-        },
-        "statsV1": {
-          "count": 100,
-          "sum": 1215.1,
-          "sumSquares": 125.12,
-          "min": 5.61,
-          "max": 10.84,
-          "histogram": {"binCenters":  [1, 2], "counts":  [10, 15]}
-        },
-        "attributes": {
-          "fizz": "buzz"
-        }
-    },
-      "coordinates": ["inline", "crossline", "depth", "cdp-x", "cdp-y"],
-      "compressor": {"name": "blosc", "algorithm": "zstd"}
-    },
-    {
-      "name": "velocity",
-      "dataType": "float64",
-      "dimensions": ["inline", "crossline", "depth"],
-      "metadata": {
-        "chunkGrid": {
-          "name": "regular",
-          "configuration": { "chunkShape": [128, 128, 128] }
-        },
-        "unitsV1": {"speed": "m/s"}
-      },
-      "coordinates": ["inline", "crossline", "depth", "cdp-x", "cdp-y"]
-    },
-    {
-      "name": "image_inline",
-      "dataType": "int16",
-      "dimensions": ["inline", "crossline", "depth"],
-      "longName": "inline optimized version of 3d_stack",
-      "compressor": {"name": "blosc", "algorithm": "zstd"},
-      "metadata": {
-        "chunkGrid": {
-          "name": "regular",
-          "configuration": { "chunkShape": [4, 512, 512] }
-        }
-      },
-      "coordinates": ["inline", "crossline", "depth", "cdp-x", "cdp-y"]
-    },
-    {
-      "name": "inline",
-      "dataType": "uint32",
-      "dimensions": [{"name": "inline", "size": 256}]
-    },
-    {
-      "name": "crossline",
-      "dataType": "uint32",
-      "dimensions": [{"name": "crossline", "size": 512}]
-    },
-    {
-      "name": "depth",
-      "dataType": "uint32",
-      "dimensions": [{"name": "depth", "size": 384}],
-      "metadata": {
-        "unitsV1": { "length": "m" }
-      }
-    },
-    {
-      "name": "cdp-x",
-      "dataType": "float32",
-      "dimensions": [
-        {"name": "inline", "size": 256},
-        {"name": "crossline", "size": 512}
-      ],
-      "metadata": {
-        "unitsV1": { "length": "m" }
-      }
-    },
-    {
-      "name": "cdp-y",
-      "dataType": "float32",
-      "dimensions": [
-        {"name": "inline", "size": 256},
-        {"name": "crossline", "size": 512}
-      ],
-      "metadata": {
-        "unitsV1": { "length": "m" }
-      }
-    }
-  ]
-}
-    )";
-  } else {
-    return R"(
-{
-  "metadata": {
-    "name": "campos_3d",
+    "name": ")" + name + R"(",
     "apiVersion": "1.0.0",
     "createdOn": "2023-12-12T15:02:06.413469-06:00",
     "attributes": {
@@ -431,7 +315,8 @@ std::string GetDatasetManifest(mdio::zarr::ZarrVersion version) {
   ]
 }
     )";
-  }
+  // clang-format on
+  return manifest;
 }
 
 /**
@@ -937,9 +822,7 @@ class DatasetTest : public ::testing::TestWithParam<mdio::zarr::ZarrVersion> {
     version_ = GetParam();
     base_path_ = GetBasePath(version_);
     dataset_manifest_ = GetDatasetManifest(version_);
-    expected_var_count_ = version_ == mdio::zarr::ZarrVersion::kV3
-                              ? 8
-                              : 9;  // V2 has struct array
+    expected_var_count_ = 9;  // Both versions support struct arrays
   }
 
   mdio::zarr::ZarrVersion version_;
@@ -1030,25 +913,29 @@ TEST_P(DatasetTest, write) {
   auto ds = dataset.value();
 
   std::vector<std::string> names = ds.variables.get_keys();
+
+  // Construct a vector of Variables to work with
   std::vector<mdio::Variable<>> openVariables;
   for (auto& key : names) {
     auto var = ds.get_variable(key);
     openVariables.emplace_back(var.value());
   }
 
+  // Now we can start opening all the Variables
   std::vector<mdio::Future<mdio::VariableData<>>> readVariablesFutures;
   for (auto& v : openVariables) {
-    readVariablesFutures.emplace_back(v.Read());
+    auto read = v.Read();
+    readVariablesFutures.emplace_back(read);
   }
 
+  // Now we make sure all the reads were successful
   std::vector<mdio::VariableData<>> readVariables;
   for (auto& v : readVariablesFutures) {
     ASSERT_TRUE(v.status().ok()) << v.status();
     readVariables.emplace_back(v.value());
   }
 
-  // Modify some data
-  for (auto& variable : readVariables) {
+  for (auto variable : readVariables) {
     std::string name = variable.variableName;
     mdio::DataType dtype = variable.dtype();
     if (dtype == mdio::constants::kFloat32 && name == "image") {
@@ -1062,6 +949,12 @@ TEST_P(DatasetTest, write) {
       auto data =
           reinterpret_cast<int16_t*>(variable.get_data_accessor().data());
       data[0] = 0xff;
+    } else if (dtype == mdio::constants::kByte && name == "image_headers") {
+      auto data = reinterpret_cast<mdio::dtypes::byte_t*>(
+          variable.get_data_accessor().data());
+      for (int i = 0; i < 12; i++) {
+        data[i] = std::byte(0xff);
+      }
     } else if (name == "inline") {
       auto data =
           reinterpret_cast<uint32_t*>(variable.get_data_accessor().data());
@@ -1083,7 +976,8 @@ TEST_P(DatasetTest, write) {
     }
   }
 
-  // Pair and write
+  // Pair the Variables to the VariableData objects via name matching so we can
+  // write them out correctly This makes an assumption that the vectors are 1-1
   std::map<std::size_t, std::size_t> variableIdxPair;
   for (std::size_t i = 0; i < openVariables.size(); i++) {
     for (std::size_t j = 0; j < readVariables.size(); j++) {
@@ -1095,31 +989,78 @@ TEST_P(DatasetTest, write) {
     }
   }
 
+  // Now we can write the Variables back to the store
   std::vector<mdio::WriteFutures> writeFutures;
   for (auto& idxPair : variableIdxPair) {
-    writeFutures.emplace_back(
-        openVariables[idxPair.second].Write(readVariables[idxPair.first]));
+    auto write =
+        openVariables[idxPair.second].Write(readVariables[idxPair.first]);
+    writeFutures.emplace_back(write);
   }
 
+  // Now we make sure all the writes were successful
   for (auto& w : writeFutures) {
     ASSERT_TRUE(w.status().ok()) << w.status();
   }
 
-  // Verify writes
+  // Test SelectField and negative case for struct arrays
+  std::string fielded = "image_headers";
+  ASSERT_TRUE(ds.SelectField(fielded, "cdp-x").status().ok());
+  auto wf = ds.get_variable(fielded).value().Write(readVariables[4]);
+  ASSERT_FALSE(wf.status().ok()) << wf.status();
+
   std::string driver = GetTestDriverName(version_);
   nlohmann::json imageJson;
   imageJson["driver"] = driver;
   imageJson["kvstore"]["driver"] = "file";
   imageJson["kvstore"]["path"] = base_path_ + "/image";
 
+  nlohmann::json velocityJson;
+  velocityJson["driver"] = driver;
+  velocityJson["kvstore"]["driver"] = "file";
+  velocityJson["kvstore"]["path"] = base_path_ + "/velocity";
+
+  nlohmann::json imageInlineJson;
+  imageInlineJson["driver"] = driver;
+  imageInlineJson["kvstore"]["driver"] = "file";
+  imageInlineJson["kvstore"]["path"] = base_path_ + "/image_inline";
+
+  nlohmann::json imageHeadersJson;
+  imageHeadersJson["driver"] = driver;
+  imageHeadersJson["kvstore"]["driver"] = "file";
+  imageHeadersJson["kvstore"]["path"] = base_path_ + "/image_headers";
+
   auto image = mdio::Variable<>::Open(imageJson, mdio::constants::kOpen);
+  auto velocity = mdio::Variable<>::Open(velocityJson, mdio::constants::kOpen);
+  auto imageInline =
+      mdio::Variable<>::Open(imageInlineJson, mdio::constants::kOpen);
+  auto imageHeaders =
+      mdio::Variable<>::Open(imageHeadersJson, mdio::constants::kOpen);
+
   ASSERT_TRUE(image.status().ok()) << image.status();
+  ASSERT_TRUE(velocity.status().ok()) << velocity.status();
+  ASSERT_TRUE(imageInline.status().ok()) << imageInline.status();
+  ASSERT_TRUE(imageHeaders.status().ok()) << imageHeaders.status();
 
   auto imageData = image.result()->Read();
+  auto velocityData = velocity.result()->Read();
+  auto imageInlineData = imageInline.result()->Read();
+  auto imageHeadersData = imageHeaders.result()->Read();
+
   ASSERT_TRUE(imageData.status().ok()) << imageData.status();
+  ASSERT_TRUE(velocityData.status().ok()) << velocityData.status();
+  ASSERT_TRUE(imageInlineData.status().ok()) << imageInlineData.status();
+  ASSERT_TRUE(imageHeadersData.status().ok()) << imageHeadersData.status();
+
   auto castedImage =
       reinterpret_cast<float*>(imageData.value().get_data_accessor().data());
-  EXPECT_EQ(castedImage[0], 3.14f);
+  auto castedVelociy = reinterpret_cast<double*>(
+      velocityData.value().get_data_accessor().data());
+  auto castedImageInline = reinterpret_cast<int16_t*>(
+      imageInlineData.value().get_data_accessor().data());
+
+  EXPECT_EQ(castedImage[0], 3.14f) << castedImage[0];
+  EXPECT_EQ(castedVelociy[0], 2.71828) << castedVelociy[0];
+  EXPECT_EQ(castedImageInline[0], 0xff) << castedImageInline[0];
 }
 
 TEST_P(DatasetTest, name) {
@@ -1208,6 +1149,169 @@ TEST_P(DatasetTest, fromJson) {
   EXPECT_EQ(varList.size(), expected_var_count_);
 
   std::filesystem::remove_all(base_path_ + "/from_json_test");
+}
+
+TEST_P(DatasetTest, selectField) {
+  std::string manifest = R"(
+{
+  "metadata": {
+    "name": "select_field_test",
+    "apiVersion": "1.0.0",
+    "createdOn": "2023-12-12T15:02:06.413469-06:00"
+  },
+  "variables": [
+    {
+      "name": "image_headers",
+      "dataType": {
+        "fields": [
+          {"name": "cdp-x", "format": "int32"},
+          {"name": "cdp-y", "format": "int32"},
+          {"name": "elevation", "format": "float16"},
+          {"name": "some_scalar", "format": "float16"}
+        ]
+      },
+      "dimensions": [
+        {"name": "inline", "size": 128},
+        {"name": "crossline", "size": 128}
+      ],
+      "metadata": {
+        "chunkGrid": {
+          "name": "regular",
+          "configuration": { "chunkShape": [64, 64] }
+        }
+      },
+      "coordinates": ["inline", "crossline"]
+    },
+    {
+      "name": "inline",
+      "dataType": "uint32",
+      "dimensions": [{"name": "inline", "size": 128}]
+    },
+    {
+      "name": "crossline",
+      "dataType": "uint32",
+      "dimensions": [{"name": "crossline", "size": 128}]
+    }
+  ]
+}
+  )";
+
+  std::string test_path = base_path_ + "/select_field_test";
+  std::filesystem::remove_all(test_path);
+  nlohmann::json j = nlohmann::json::parse(manifest);
+  auto dataset = mdio::Dataset::from_json(j, test_path, version_,
+                                          mdio::constants::kCreateClean);
+  ASSERT_TRUE(dataset.status().ok()) << dataset.status();
+
+  auto ds = dataset.value();
+  std::string name = "image_headers";
+
+  EXPECT_TRUE(ds.get_variable(name).value().dtype() == mdio::constants::kByte)
+      << "Failed to pull byte array from image_headers";
+  EXPECT_EQ(ds.get_variable(name).value().get_store().rank(), 3)
+      << "Expected structarray to be of rank 3";
+
+  EXPECT_TRUE(ds.SelectField("image_headers", "cdp-x").status().ok())
+      << "Failed to pull cdp-x from image_headers";
+  EXPECT_TRUE(ds.get_variable(name).value().dtype() == mdio::constants::kInt32)
+      << "Failed to pull int32 from image_headers";
+  EXPECT_EQ(ds.get_variable(name).value().get_store().rank(), 2)
+      << "Expected cdp-x to be of rank 2";
+
+  EXPECT_TRUE(ds.SelectField("image_headers", "elevation").status().ok())
+      << "Failed to pull elevation from image_headers";
+  EXPECT_TRUE(ds.get_variable(name).value().dtype() ==
+              mdio::constants::kFloat16)
+      << "Failed to pull float16 from image_headers";
+  EXPECT_EQ(ds.get_variable(name).value().get_store().rank(), 2)
+      << "Expected elevation to be of rank 2";
+
+  EXPECT_TRUE(ds.SelectField("image_headers", "").status().ok())
+      << "Failed to set to byte array";
+  EXPECT_TRUE(ds.get_variable(name).value().dtype() == mdio::constants::kByte)
+      << "Failed to pull byte array from image_headers";
+  EXPECT_EQ(ds.get_variable(name).value().get_store().rank(), 3)
+      << "Expected structarray to be of rank 3";
+
+  EXPECT_FALSE(ds.SelectField("image", "NotAField").status().ok())
+      << "Somehow pulled NotAField from image";
+
+  EXPECT_FALSE(ds.SelectField("NotAVariable", "NotAField").status().ok())
+      << "Somehow pulled NotAField from NotAVariable";
+
+  EXPECT_FALSE(ds.SelectField("image_headers", "NotAField").status().ok())
+      << "Somehow pulled NotAField from image_headers";
+
+  std::filesystem::remove_all(test_path);
+}
+
+TEST_P(DatasetTest, fillValue) {
+  std::string manifest = R"(
+{
+  "metadata": {
+    "name": "fill_value_test",
+    "apiVersion": "1.0.0",
+    "createdOn": "2023-12-12T15:02:06.413469-06:00"
+  },
+  "variables": [
+    {
+      "name": "image_headers",
+      "dataType": {
+        "fields": [
+          {"name": "cdp-x", "format": "int32"},
+          {"name": "cdp-y", "format": "int32"},
+          {"name": "elevation", "format": "float16"},
+          {"name": "some_scalar", "format": "float16"}
+        ]
+      },
+      "dimensions": [
+        {"name": "inline", "size": 256},
+        {"name": "crossline", "size": 512}
+      ],
+      "metadata": {
+        "chunkGrid": {
+          "name": "regular",
+          "configuration": { "chunkShape": [128, 128] }
+        }
+      }
+    },
+    {
+      "name": "inline",
+      "dataType": "uint32",
+      "dimensions": [{"name": "inline", "size": 256}]
+    },
+    {
+      "name": "crossline",
+      "dataType": "uint32",
+      "dimensions": [{"name": "crossline", "size": 512}]
+    }
+  ]
+}
+  )";
+
+  std::string test_path = base_path_ + "/fill_value_test";
+  std::filesystem::remove_all(test_path);
+  nlohmann::json j = nlohmann::json::parse(manifest);
+  auto ds = mdio::Dataset::from_json(j, test_path, version_,
+                                     mdio::constants::kCreateClean);
+  ASSERT_TRUE(ds.status().ok()) << ds.status();
+
+  std::string key = "image_headers";
+  auto var = ds.value().get_variable(key);
+  ASSERT_TRUE(var.status().ok()) << var.status();
+  auto vdf = var.value().Read();
+  ASSERT_TRUE(vdf.status().ok()) << vdf.status();
+  auto vd = vdf.value();
+
+  auto data =
+      reinterpret_cast<mdio::dtypes::byte_t*>(vd.get_data_accessor().data());
+  std::byte zero = std::byte(0);
+  for (int i = 0; i < 1000; i++) {
+    ASSERT_EQ(data[i], zero) << "Expected 0 at byte " << i << " but got "
+                             << static_cast<int>(data[i]);
+  }
+
+  std::filesystem::remove_all(test_path);
 }
 
 TEST_P(DatasetTest, TEARDOWN) {
@@ -1363,149 +1467,7 @@ TEST(VariableV2Only, structArrayTeardown) {
   ASSERT_TRUE(true);
 }
 
-TEST(DatasetV2Only, selectField) {
-  // Create dataset first
-  std::string manifest = R"(
-{
-  "metadata": {
-    "name": "select_field_test",
-    "apiVersion": "1.0.0",
-    "createdOn": "2023-12-12T15:02:06.413469-06:00"
-  },
-  "variables": [
-    {
-      "name": "image_headers",
-      "dataType": {
-        "fields": [
-          {"name": "cdp-x", "format": "int32"},
-          {"name": "cdp-y", "format": "int32"},
-          {"name": "elevation", "format": "float16"},
-          {"name": "some_scalar", "format": "float16"}
-        ]
-      },
-      "dimensions": [
-        {"name": "inline", "size": 128},
-        {"name": "crossline", "size": 128}
-      ],
-      "metadata": {
-        "chunkGrid": {
-          "name": "regular",
-          "configuration": { "chunkShape": [64, 64] }
-        }
-      },
-      "coordinates": ["inline", "crossline"]
-    },
-    {
-      "name": "inline",
-      "dataType": "uint32",
-      "dimensions": [{"name": "inline", "size": 128}]
-    },
-    {
-      "name": "crossline",
-      "dataType": "uint32",
-      "dimensions": [{"name": "crossline", "size": 128}]
-    }
-  ]
-}
-  )";
-
-  std::filesystem::remove_all("zarrs/select_field_test");
-  nlohmann::json j = nlohmann::json::parse(manifest);
-  auto dataset = mdio::Dataset::from_json(j, "zarrs/select_field_test",
-                                          mdio::constants::kCreateClean);
-  ASSERT_TRUE(dataset.status().ok()) << dataset.status();
-
-  auto ds = dataset.value();
-  std::string name = "image_headers";
-
-  EXPECT_TRUE(ds.get_variable(name).value().dtype() == mdio::constants::kByte);
-  EXPECT_EQ(ds.get_variable(name).value().get_store().rank(), 3);
-
-  EXPECT_TRUE(ds.SelectField("image_headers", "cdp-x").status().ok());
-  EXPECT_TRUE(ds.get_variable(name).value().dtype() == mdio::constants::kInt32);
-  EXPECT_EQ(ds.get_variable(name).value().get_store().rank(), 2);
-
-  EXPECT_TRUE(ds.SelectField("image_headers", "elevation").status().ok());
-  EXPECT_TRUE(ds.get_variable(name).value().dtype() ==
-              mdio::constants::kFloat16);
-  EXPECT_EQ(ds.get_variable(name).value().get_store().rank(), 2);
-
-  EXPECT_TRUE(ds.SelectField("image_headers", "").status().ok());
-  EXPECT_TRUE(ds.get_variable(name).value().dtype() == mdio::constants::kByte);
-  EXPECT_EQ(ds.get_variable(name).value().get_store().rank(), 3);
-
-  EXPECT_FALSE(ds.SelectField("image_headers", "NotAField").status().ok());
-  EXPECT_FALSE(ds.SelectField("NotAVariable", "NotAField").status().ok());
-
-  std::filesystem::remove_all("zarrs/select_field_test");
-}
-
-TEST(DatasetV2Only, fillValue) {
-  std::string manifest = R"(
-{
-  "metadata": {
-    "name": "fill_value_test",
-    "apiVersion": "1.0.0",
-    "createdOn": "2023-12-12T15:02:06.413469-06:00"
-  },
-  "variables": [
-    {
-      "name": "image_headers",
-      "dataType": {
-        "fields": [
-          {"name": "cdp-x", "format": "int32"},
-          {"name": "cdp-y", "format": "int32"},
-          {"name": "elevation", "format": "float16"},
-          {"name": "some_scalar", "format": "float16"}
-        ]
-      },
-      "dimensions": [
-        {"name": "inline", "size": 256},
-        {"name": "crossline", "size": 512}
-      ],
-      "metadata": {
-        "chunkGrid": {
-          "name": "regular",
-          "configuration": { "chunkShape": [128, 128] }
-        }
-      }
-    },
-    {
-      "name": "inline",
-      "dataType": "uint32",
-      "dimensions": [{"name": "inline", "size": 256}]
-    },
-    {
-      "name": "crossline",
-      "dataType": "uint32",
-      "dimensions": [{"name": "crossline", "size": 512}]
-    }
-  ]
-}
-  )";
-
-  std::filesystem::remove_all("zarrs/fill_value_test");
-  nlohmann::json j = nlohmann::json::parse(manifest);
-  auto ds = mdio::Dataset::from_json(j, "zarrs/fill_value_test",
-                                     mdio::constants::kCreateClean);
-  ASSERT_TRUE(ds.status().ok()) << ds.status();
-
-  std::string key = "image_headers";
-  auto var = ds.value().get_variable(key);
-  ASSERT_TRUE(var.status().ok()) << var.status();
-  auto vdf = var.value().Read();
-  ASSERT_TRUE(vdf.status().ok()) << vdf.status();
-  auto vd = vdf.value();
-
-  auto data =
-      reinterpret_cast<mdio::dtypes::byte_t*>(vd.get_data_accessor().data());
-  std::byte zero = std::byte(0);
-  for (int i = 0; i < 1000; i++) {
-    ASSERT_EQ(data[i], zero) << "Expected 0 at byte " << i;
-  }
-
-  std::filesystem::remove_all("zarrs/fill_value_test");
-}
+// selectField and fillValue tests moved to parameterized DatasetTest
 
 }  // namespace V2OnlyTests
 
