@@ -1135,19 +1135,31 @@ class Dataset {
       return specJsonResult.status();
     }
     nlohmann::json specJson = specJsonResult.value();
-    if (!specJson["metadata"]["dtype"].is_array()) {
+
+    // Detect Zarr version from the spec and get the dtype key
+    std::string driverName = specJson.contains("driver")
+                                 ? specJson["driver"].get<std::string>()
+                                 : "zarr";
+    bool isV3 = (driverName == "zarr3");
+    std::string dtype_key = isV3 ? "data_type" : "dtype";
+
+    // Ensure that the Variable is of dtype structarray
+    if (!specJson["metadata"].contains(dtype_key) ||
+        !specJson["metadata"][dtype_key].is_array()) {
       return absl::Status(
           absl::StatusCode::kInvalidArgument,
           "Variable '" + variableName + "' is not a structured dtype.");
     }
+
+    const auto& dtype_array = specJson["metadata"][dtype_key];
 
     // Ensure the field exists in the Variable
     int found = -1;
     if (fieldName == "") {
       found = -2;
     } else {
-      for (std::size_t i = 0; i < specJson["metadata"]["dtype"].size(); i++) {
-        if (specJson["metadata"]["dtype"][i][0] == fieldName) {
+      for (std::size_t i = 0; i < dtype_array.size(); i++) {
+        if (dtype_array[i][0] == fieldName) {
           found = i;
           break;
         }
@@ -1158,11 +1170,6 @@ class Dataset {
                           "Field: '" + fieldName + "' not found in Variable '" +
                               variableName + "'.");
     }
-
-    // Detect Zarr version from the spec
-    std::string driverName = specJson.contains("driver")
-                                 ? specJson["driver"].get<std::string>()
-                                 : "zarr";
 
     // Create a new Variable with the selected field
     std::string baseStr = R"(
@@ -1182,7 +1189,7 @@ class Dataset {
                           "Failed to parse base JSON.");
     }
     if (found >= 0) {
-      base["field"] = specJson["metadata"]["dtype"][found][0];
+      base["field"] = dtype_array[found][0];
     } else {
       base.erase("field");
     }
