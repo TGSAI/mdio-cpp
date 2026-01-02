@@ -659,10 +659,17 @@ Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
         nlohmann::json::parse(std::string(kvs_read.value), nullptr, false);
     if (zarr_version == zarr::ZarrVersion::kV3) {
       // For V3, extract attributes from zarr.json
+      nlohmann::json result;
       if (parsed.contains("attributes")) {
-        return parsed["attributes"];
+        result = parsed["attributes"];
+      } else {
+        result = nlohmann::json::object();
       }
-      return nlohmann::json::object();
+      // For V3, dimension_names is at the root level of zarr.json
+      if (parsed.contains("dimension_names")) {
+        result["dimension_names"] = parsed["dimension_names"];
+      }
+      return result;
     }
     // For V2, the entire file is attributes
     return parsed;

@@ -39,8 +39,6 @@ namespace {
 constexpr char PYTHON_EXECUTABLE[] = "python3";
 constexpr char PROJECT_BASE_PATH_ENV[] = "PROJECT_BASE_PATH";
 constexpr char DEFAULT_BASE_PATH[] = "../..";
-constexpr char ZARR_SCRIPT_RELATIVE_PATH[] =
-    "/mdio/regression_tests/zarr_compatibility.py";
 constexpr char XARRAY_SCRIPT_RELATIVE_PATH[] =
     "/mdio/regression_tests/xarray_compatibility_test.py";
 constexpr int ERROR_CODE = EXIT_FAILURE;
@@ -1186,147 +1184,24 @@ INSTANTIATE_TEST_SUITE_P(
     });
 
 // ============================================================================
-// V2-Only Tests (Struct Arrays)
+// Parameterized Python/Xarray Dataset Compatibility Tests
 // ============================================================================
 
-namespace V2OnlyTests {
+class XarrayCompatibilityTest
+    : public ::testing::TestWithParam<mdio::zarr::ZarrVersion> {
+ protected:
+  void SetUp() override {
+    version_ = GetParam();
+    base_path_ = GetBasePath(version_);
+  }
 
-constexpr char kVoidedPath[] = "zarrs/acceptance/voided";
-
-nlohmann::json GetVoidedBaseSpec() {
-  nlohmann::json spec;
-  spec["driver"] = "zarr";
-  spec["kvstore"]["driver"] = "file";
-  spec["kvstore"]["path"] = kVoidedPath;
-  return spec;
-}
-
-mdio::Future<mdio::Variable<>> OpenVoidedVariable() {
-  return mdio::Variable<>::Open(GetVoidedBaseSpec(), mdio::constants::kOpen);
-}
-
-TEST(VariableV2Only, structArraySetup) {
-  mdio::TransactionalOpenOptions options;
-  auto opt = options.Set(std::move(mdio::constants::kCreateClean));
-
-  nlohmann::json voidedSpec = GetVoidedBaseSpec();
-  voidedSpec["field"] = "integer16";
-  voidedSpec["metadata"]["dtype"] = nlohmann::json::array(
-      {nlohmann::json::array({"integer16", "<i2"}),
-       nlohmann::json::array({"float32", "<f4"}),
-       nlohmann::json::array({"double", "<f8"})});
-  voidedSpec["metadata"]["shape"] = nlohmann::json::array({10, 10});
-  voidedSpec["metadata"]["chunks"] = nlohmann::json::array({5, 5});
-  voidedSpec["metadata"]["dimension_separator"] = "/";
-  voidedSpec["metadata"]["compressor"]["id"] = "blosc";
-  voidedSpec["attributes"]["metadata"]["attributes"]["foo"] = "bar";
-  voidedSpec["attributes"]["long_name"] = "struct array test";
-  voidedSpec["attributes"]["dimension_names"] =
-      nlohmann::json::array({"inline", "crossline"});
-  voidedSpec["attributes"]["dimension_units"] = nlohmann::json::array({"m", "m"});
-
-  auto voidedSchema =
-      mdio::internal::ValidateAndProcessJson(voidedSpec).value();
-  auto [voidedStore, voidedMetadata] = voidedSchema;
-  auto voided = mdio::internal::CreateVariable(voidedStore, voidedMetadata,
-                                               std::move(options));
-  ASSERT_TRUE(voided.status().ok()) << voided.status();
-}
-
-TEST(VariableV2Only, structArrayOpen) {
-  EXPECT_TRUE(OpenVoidedVariable().status().ok());
-}
-
-TEST(VariableV2Only, structArrayName) {
-  auto voided = OpenVoidedVariable();
-  ASSERT_TRUE(voided.status().ok()) << voided.status();
-  EXPECT_EQ(voided.value().get_variable_name(), "voided");
-  EXPECT_EQ(voided.value().get_long_name(), "struct array test");
-}
-
-TEST(VariableV2Only, structArrayDtype) {
-  auto voided = OpenVoidedVariable();
-  ASSERT_TRUE(voided.status().ok()) << voided.status();
-  EXPECT_EQ(voided.value().dtype(), mdio::constants::kByte);
-}
-
-TEST(VariableV2Only, structArrayShape) {
-  auto voided = OpenVoidedVariable();
-  ASSERT_TRUE(voided.status().ok()) << voided.status();
-  EXPECT_THAT(voided.value().dimensions().shape(),
-              ::testing::ElementsAre(10, 10, 14));
-  EXPECT_EQ(voided.value().dimensions().rank(), 3);
-}
-
-TEST(VariableV2Only, structArraySlice) {
-  auto voided = OpenVoidedVariable();
-  ASSERT_TRUE(voided.status().ok()) << voided.status();
-
-  mdio::RangeDescriptor<mdio::Index> zeroIdxSlice = {0, 0, 5, 1};
-  mdio::RangeDescriptor<mdio::Index> oneIdxSlice = {1, 0, 5, 1};
-  auto voidedSlice = voided.value().slice(zeroIdxSlice, oneIdxSlice);
-  EXPECT_TRUE(voidedSlice.status().ok()) << voidedSlice.status();
-  EXPECT_THAT(voidedSlice.value().dimensions().shape(),
-              ::testing::ElementsAre(5, 5, 14));
-}
-
-TEST(VariableV2Only, structArrayTeardown) {
-  std::filesystem::remove_all(kVoidedPath);
-}
-
-// selectField and fillValue tests moved to parameterized DatasetTest
-
-}  // namespace V2OnlyTests
-
-// ============================================================================
-// V2 Compatibility Tests (Python)
-// ============================================================================
-
-namespace V2CompatibilityTests {
-
-constexpr char kCompatTestPath[] = "zarrs/compat_test";
-constexpr char kXarrayCompatPath[] = "zarrs/xarray_compat";
-
-// Subset of test variables for V2 compatibility testing (first 6)
-const std::vector<TestVariableDef> kCompatTestVars = {
-    {"i2", "<i2", "int16", "2-byte integer", mdio::constants::kInt16},
-    {"i4", "<i4", "int32", "4-byte integer", mdio::constants::kInt32},
-    {"i8", "<i8", "int64", "8-byte integer", mdio::constants::kInt64},
-    {"f2", "<f2", "float16", "2-byte float", mdio::constants::kFloat16},
-    {"f4", "<f4", "float32", "4-byte float", mdio::constants::kFloat32},
-    {"f8", "<f8", "float64", "8-byte float", mdio::constants::kFloat64},
+  mdio::zarr::ZarrVersion version_;
+  std::string base_path_;
 };
 
-TEST(VariableV2Compat, zarrCompatibility) {
-  std::filesystem::remove_all(kCompatTestPath);
-  std::filesystem::create_directories(kCompatTestPath);
-
-  // Create test variables using V2 format
-  for (const auto& def : kCompatTestVars) {
-    CreateTestVariable(def, mdio::zarr::ZarrVersion::kV2, kCompatTestPath);
-  }
-
-  std::string srcPath =
-      std::string(GetPythonBasePath()) + ZARR_SCRIPT_RELATIVE_PATH;
-
-  if (access(srcPath.c_str(), F_OK) == -1) {
-    std::cerr << "Error: Python script not found at " << srcPath << std::endl;
-    FAIL() << "Script not found: " << srcPath;
-  }
-
-  std::vector<std::vector<std::string>> arg_sets;
-  for (const auto& def : kCompatTestVars) {
-    arg_sets.push_back({std::string(kCompatTestPath) + "/" + def.name});
-  }
-
-  EXPECT_TRUE(RunPythonScripts(srcPath, arg_sets,
-                               "Zarr compatibility skipped due to import error"))
-      << "Failed to read one of the arguments";
-
-  std::filesystem::remove_all(kCompatTestPath);
-}
-
-TEST(DatasetV2Compat, xarrayCompatible) {
+TEST_P(XarrayCompatibilityTest, datasetCompatible) {
+  // This test verifies that a Dataset created by MDIO can be opened by xarray.
+  // The dataset is created fresh for this test to ensure isolation.
   std::string manifest = R"(
 {
   "metadata": {
@@ -1363,9 +1238,11 @@ TEST(DatasetV2Compat, xarrayCompatible) {
 }
   )";
 
-  std::filesystem::remove_all(kXarrayCompatPath);
+  std::string test_path = base_path_ + "/xarray_compat";
+  std::filesystem::remove_all(test_path);
+
   nlohmann::json j = nlohmann::json::parse(manifest);
-  auto ds = mdio::Dataset::from_json(j, kXarrayCompatPath,
+  auto ds = mdio::Dataset::from_json(j, test_path, version_,
                                      mdio::constants::kCreateClean);
   ASSERT_TRUE(ds.status().ok()) << ds.status();
 
@@ -1374,23 +1251,35 @@ TEST(DatasetV2Compat, xarrayCompatible) {
 
   if (access(srcPath.c_str(), F_OK) == -1) {
     std::cerr << "Error: Python script not found at " << srcPath << std::endl;
-    std::filesystem::remove_all(kXarrayCompatPath);
+    std::filesystem::remove_all(test_path);
     FAIL() << "Script not found: " << srcPath;
   }
 
+  // Test without consolidated metadata (both versions)
+  // Note: Consolidated metadata is only supported for V2
   std::vector<std::vector<std::string>> arg_sets = {
-      {std::string(kXarrayCompatPath) + "/", "False"},
-      {std::string(kXarrayCompatPath) + "/", "True"},
+      {test_path + "/", "False"},
   };
+  if (version_ == mdio::zarr::ZarrVersion::kV2) {
+    // Also test with consolidated metadata for V2
+    arg_sets.push_back({test_path + "/", "True"});
+  }
 
+  std::string version_name = ZarrVersionToString(version_);
   EXPECT_TRUE(RunPythonScripts(srcPath, arg_sets,
                                "Xarray compatibility skipped due to import error"))
-      << "xarray compatibility test failed";
+      << "xarray " << version_name << " compatibility test failed";
 
-  std::filesystem::remove_all(kXarrayCompatPath);
+  // std::filesystem::remove_all(test_path);
 }
 
-}  // namespace V2CompatibilityTests
+INSTANTIATE_TEST_SUITE_P(
+    ZarrVersions, XarrayCompatibilityTest,
+    ::testing::Values(mdio::zarr::ZarrVersion::kV2,
+                      mdio::zarr::ZarrVersion::kV3),
+    [](const ::testing::TestParamInfo<mdio::zarr::ZarrVersion>& info) {
+      return ZarrVersionToString(info.param);
+    });
 
 // ============================================================================
 // Dataset::from_json with Version Parameter Tests

@@ -169,9 +169,10 @@ inline nlohmann::json PrepareVariableAttributes(const nlohmann::json& json) {
     attrs = json["attributes"];
   }
 
-  // MDIO-specific: Convert dimension_names to _ARRAY_DIMENSIONS
+  // For V3, dimension_names goes at the root level (not in attributes)
+  // so we remove it from attributes here - it will be added at root level
+  // in WriteVariableAttributes
   if (attrs.contains("dimension_names")) {
-    attrs["_ARRAY_DIMENSIONS"] = attrs["dimension_names"];
     attrs.erase("dimension_names");
   }
 
@@ -251,18 +252,9 @@ inline Future<void> WriteMetadata(
 
   auto kvs_future = tensorstore::kvstore::Open(kvstore, context);
 
-  // Extract variable names from json_variables for discovery
-  nlohmann::json var_names = nlohmann::json::array();
-  for (const auto& var : json_variables) {
-    std::string path = var["kvstore"]["path"].get<std::string>();
-    std::vector<std::string> path_parts = absl::StrSplit(path, '/');
-    var_names.push_back(path_parts.back());
-  }
-
-  // Create root metadata with variables list for discovery
-  nlohmann::json root_attrs = dataset_metadata;
-  root_attrs["variables"] = var_names;
-  auto root_metadata = CreateGroupMetadata(root_attrs);
+  // Create root metadata (variables are discovered via directory listing,
+  // not stored in zarr.json)
+  auto root_metadata = CreateGroupMetadata(dataset_metadata);
 
   auto root_future = tensorstore::MapFutureValue(
       tensorstore::InlineExecutor{},
@@ -358,37 +350,51 @@ ReadMetadata(const std::string& dataset_path,
 
               std::vector<nlohmann::json> json_vars;
 
-              // Check if dataset_metadata contains variable information
-              if (dataset_metadata.contains("variables")) {
-                for (const auto& var_name : dataset_metadata["variables"]) {
-                  std::string name = var_name.get<std::string>();
-                  // Ensure proper path separator
-                  std::string sep =
-                      (!dataset_path.empty() && dataset_path.back() != '/')
-                          ? "/"
-                          : "";
-                  nlohmann::json var_spec = {
-                      {"driver", std::string(kDriverName)},
-                      {"kvstore",
-                       {{"driver", driver},
-                        {"path", dataset_path + sep + name}}}};
-                  if (driver != "file") {
-                    var_spec["kvstore"]["bucket"] = bucket;
-                    std::string cloud_sep =
-                        (!cloudPath.empty() && cloudPath.back() != '/') ? "/"
-                                                                        : "";
-                    var_spec["kvstore"]["path"] = cloudPath + cloud_sep + name;
-                  }
-                  json_vars.push_back(var_spec);
+              // For file-based stores, discover variables by scanning directory
+              if (driver == "file") {
+                // Normalize path - remove trailing slash if present
+                std::string normalized_path = dataset_path;
+                while (!normalized_path.empty() &&
+                       normalized_path.back() == '/') {
+                  normalized_path.pop_back();
                 }
+
+                // Scan directory for subdirectories containing zarr.json
+                std::error_code ec;
+                for (const auto& entry :
+                     std::filesystem::directory_iterator(normalized_path, ec)) {
+                  if (entry.is_directory()) {
+                    // Check if this directory contains a zarr.json (is a zarr
+                    // array)
+                    auto zarr_json_path = entry.path() / "zarr.json";
+                    if (std::filesystem::exists(zarr_json_path)) {
+                      std::string var_name = entry.path().filename().string();
+                      nlohmann::json var_spec = {
+                          {"driver", std::string(kDriverName)},
+                          {"kvstore",
+                           {{"driver", "file"},
+                            {"path", normalized_path + "/" + var_name}}}};
+                      json_vars.push_back(var_spec);
+                    }
+                  }
+                }
+                if (ec) {
+                  promise.SetResult(absl::InvalidArgumentError(
+                      "Failed to scan directory: " + ec.message()));
+                  return;
+                }
+              } else {
+                // For cloud stores, fall back to requiring explicit variable
+                // specs
+                promise.SetResult(absl::InvalidArgumentError(
+                    "Zarr V3 cloud store discovery not yet supported. "
+                    "Please specify variable specs explicitly."));
+                return;
               }
 
               if (json_vars.empty()) {
-                // Return error - V3 discovery requires variable names
                 promise.SetResult(absl::InvalidArgumentError(
-                    "Zarr V3 store discovery requires 'variables' list in root "
-                    "zarr.json attributes. Please specify variable specs "
-                    "explicitly."));
+                    "No Zarr V3 arrays found in directory."));
                 return;
               }
 
@@ -455,10 +461,21 @@ Future<tensorstore::TimestampedStorageGeneration> WriteVariableAttributes(
       }
     }
 
+    // Extract dimension_names before preparing attributes (goes at root level)
+    nlohmann::json dimension_names;
+    if (json_var.contains("dimension_names")) {
+      dimension_names = json_var["dimension_names"];
+    }
+
     // Prepare and update attributes
     auto attrs =
         PrepareVariableAttributes(nlohmann::json{{"attributes", json_var}});
     zarr_json["attributes"] = attrs;
+
+    // Add dimension_names at root level (Zarr V3 spec)
+    if (!dimension_names.is_null()) {
+      zarr_json["dimension_names"] = dimension_names;
+    }
 
     // Write back
     auto write_result = tensorstore::kvstore::Write(
@@ -494,11 +511,17 @@ inline Future<nlohmann::json> ReadVariableAttributes(
         try {
           auto zarr_json =
               nlohmann::json::parse(std::string(ready_result.value().value));
+          nlohmann::json attrs;
           if (zarr_json.contains("attributes")) {
-            promise.SetResult(zarr_json["attributes"]);
+            attrs = zarr_json["attributes"];
           } else {
-            promise.SetResult(nlohmann::json::object());
+            attrs = nlohmann::json::object();
           }
+          // Read dimension_names from root level and add to attrs for MDIO
+          if (zarr_json.contains("dimension_names")) {
+            attrs["dimension_names"] = zarr_json["dimension_names"];
+          }
+          promise.SetResult(attrs);
         } catch (const nlohmann::json::parse_error& e) {
           promise.SetResult(absl::InvalidArgumentError(
               std::string("JSON parse error: ") + e.what()));
@@ -521,10 +544,9 @@ inline nlohmann::json ConvertToMdioMetadata(const nlohmann::json& zarr_json) {
     mdio_metadata = zarr_json["attributes"];
   }
 
-  // Convert _ARRAY_DIMENSIONS back to dimension_names
-  if (mdio_metadata.contains("_ARRAY_DIMENSIONS")) {
-    mdio_metadata["dimension_names"] = mdio_metadata["_ARRAY_DIMENSIONS"];
-    mdio_metadata.erase("_ARRAY_DIMENSIONS");
+  // For V3, dimension_names is at root level
+  if (zarr_json.contains("dimension_names")) {
+    mdio_metadata["dimension_names"] = zarr_json["dimension_names"];
   }
 
   return mdio_metadata;
