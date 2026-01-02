@@ -17,7 +17,9 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 #include "tensorstore/kvstore/kvstore.h"
@@ -576,6 +578,97 @@ TEST(ZarrV3, ConvertToMdioMetadata) {
   EXPECT_TRUE(metadata.contains("dimension_names"));
   EXPECT_FALSE(metadata.contains("_ARRAY_DIMENSIONS"));
   EXPECT_TRUE(metadata.contains("key"));
+}
+
+TEST(ZarrV3, PrepareVariableAttributes_EmptyCoordinates) {
+  // Test empty string coordinates - should be removed (covers line 204)
+  nlohmann::json input = {
+      {"attributes",
+       {{"dimension_names", {"x", "y"}},
+        {"coordinates", ""},
+        {"long_name", "Test Variable"}}}};
+
+  auto attrs = mdio::zarr::v3::PrepareVariableAttributes(input);
+
+  EXPECT_TRUE(attrs.contains("_ARRAY_DIMENSIONS"));
+  EXPECT_FALSE(attrs.contains("coordinates"));
+  EXPECT_TRUE(attrs.contains("long_name"));
+
+  // Also test empty array coordinates
+  nlohmann::json input2 = {
+      {"attributes",
+       {{"dimension_names", {"x", "y"}},
+        {"coordinates", nlohmann::json::array()}}}};
+
+  auto attrs2 = mdio::zarr::v3::PrepareVariableAttributes(input2);
+  EXPECT_FALSE(attrs2.contains("coordinates"));
+}
+
+TEST(ZarrV3, ReadVariableAttributes) {
+  // Create a temporary directory with a zarr.json file
+  auto tmpDir = std::filesystem::temp_directory_path() /
+                ("zarr_v3_read_attrs_" + std::to_string(std::rand()));
+  std::filesystem::create_directories(tmpDir);
+
+  // Write a test zarr.json file
+  nlohmann::json test_zarr_json = {
+      {"zarr_format", 3},
+      {"node_type", "array"},
+      {"attributes",
+       {{"_ARRAY_DIMENSIONS", {"x", "y"}}, {"units", "meters"}}}};
+
+  std::ofstream out(tmpDir / "zarr.json");
+  out << test_zarr_json.dump(4);
+  out.close();
+
+  // Open KvStore - file driver needs trailing slash for directories
+  nlohmann::json kvstore_spec = {{"driver", "file"},
+                                 {"path", tmpDir.string() + "/"}};
+
+  auto kvs_result = tensorstore::kvstore::Open(kvstore_spec).result();
+  ASSERT_TRUE(kvs_result.ok()) << kvs_result.status();
+
+  auto attrs_future =
+      mdio::zarr::v3::ReadVariableAttributes(kvs_result.value());
+  auto attrs_result = attrs_future.result();
+  ASSERT_TRUE(attrs_result.ok()) << attrs_result.status();
+
+  auto attrs = attrs_result.value();
+  EXPECT_TRUE(attrs.contains("_ARRAY_DIMENSIONS"));
+  EXPECT_EQ(attrs["units"], "meters");
+
+  // Cleanup
+  std::filesystem::remove_all(tmpDir);
+}
+
+TEST(ZarrV3, ReadVariableAttributes_NoAttributesInFile) {
+  auto tmpDir = std::filesystem::temp_directory_path() /
+                ("zarr_v3_no_attrs_" + std::to_string(std::rand()));
+  std::filesystem::create_directories(tmpDir);
+
+  // Write zarr.json without attributes field
+  nlohmann::json test_zarr_json = {{"zarr_format", 3}, {"node_type", "array"}};
+
+  std::ofstream out(tmpDir / "zarr.json");
+  out << test_zarr_json.dump(4);
+  out.close();
+
+  // File driver needs trailing slash for directories
+  nlohmann::json kvstore_spec = {{"driver", "file"},
+                                 {"path", tmpDir.string() + "/"}};
+  auto kvs_result = tensorstore::kvstore::Open(kvstore_spec).result();
+  ASSERT_TRUE(kvs_result.ok()) << kvs_result.status();
+
+  auto attrs_future =
+      mdio::zarr::v3::ReadVariableAttributes(kvs_result.value());
+  auto attrs_result = attrs_future.result();
+  ASSERT_TRUE(attrs_result.ok()) << attrs_result.status();
+
+  // Should return empty object when no attributes field
+  EXPECT_TRUE(attrs_result.value().is_object());
+  EXPECT_TRUE(attrs_result.value().empty());
+
+  std::filesystem::remove_all(tmpDir);
 }
 
 }  // namespace ZarrV3Tests
