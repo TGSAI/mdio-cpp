@@ -412,20 +412,42 @@ inline tensorstore::Result<nlohmann::json> from_json_to_spec(
       } else {
         variableStub["metadata"]["fill_value"] = 0;
       }
-    } else if (version == mdio::zarr::ZarrVersion::kV2) {
-      // Structured dtypes only for V2
+    } else {
+      // Structured dtypes for both V2 and V3
       // Accumulate the total number of bytes (N)
       uint16_t num_bytes = 0;
-      std::string dtype;
-      for (auto field : variableStub["metadata"]["dtype"]) {
-        dtype = field[1].get<std::string>();
-        if (dtype.at(1) != 'c') {
-          num_bytes += std::stoi(dtype.substr(2));
-        } else {
-          if (dtype.at(2) == '8') {
-            num_bytes += 8;
+      std::string dtype_key =
+          version == mdio::zarr::ZarrVersion::kV3 ? "data_type" : "dtype";
+      for (const auto& field : variableStub["metadata"][dtype_key]) {
+        std::string dtype = field[1].get<std::string>();
+        if (version == mdio::zarr::ZarrVersion::kV2) {
+          // V2 format: "<i2", "<f4", "<c8", etc. - number is byte size
+          if (dtype.at(1) != 'c') {
+            num_bytes += std::stoi(dtype.substr(2));
           } else {
-            num_bytes += 16;
+            // Complex types: c8 = 8 bytes, c16 = 16 bytes
+            if (dtype.at(2) == '8') {
+              num_bytes += 8;
+            } else {
+              num_bytes += 16;
+            }
+          }
+        } else {
+          // V3 format: "int16", "float32", "complex64", etc. - number is bit
+          // size
+          if (dtype.find("complex") == 0) {
+            // complex64 = 8 bytes, complex128 = 16 bytes
+            int bits = std::stoi(dtype.substr(7));
+            num_bytes += bits / 8;
+          } else if (dtype == "bool") {
+            num_bytes += 1;
+          } else {
+            // Extract the number from the end (int16 -> 16, float32 -> 32)
+            size_t pos = dtype.find_first_of("0123456789");
+            if (pos != std::string::npos) {
+              int bits = std::stoi(dtype.substr(pos));
+              num_bytes += bits / 8;
+            }
           }
         }
       }
