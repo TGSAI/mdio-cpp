@@ -646,4 +646,172 @@ TEST(Xarray, open) {
   }
 }
 
+TEST(EncodeBase64, basicEncoding) {
+  std::string input = "Hello, World!";
+  std::string encoded = encode_base64(input);
+  EXPECT_EQ(encoded, "SGVsbG8sIFdvcmxkIQ==");
+}
+
+TEST(EncodeBase64, emptyString) {
+  std::string input = "";
+  std::string encoded = encode_base64(input);
+  EXPECT_EQ(encoded, "");
+}
+
+TEST(EncodeBase64, binaryData) {
+  // Test with null bytes (as used for fill_value encoding)
+  std::string input(8, '\0');
+  std::string encoded = encode_base64(input);
+  EXPECT_EQ(encoded, "AAAAAAAAAAA=");
+}
+
+TEST(ToZarrDtype, unknownDtype) {
+  auto result = to_zarr_dtype("unknown_dtype");
+  ASSERT_FALSE(result.status().ok());
+  EXPECT_THAT(result.status().message(),
+              testing::HasSubstr("Unknown dtype"));
+}
+
+TEST(ToZarrDtype, validDtypes) {
+  EXPECT_TRUE(to_zarr_dtype("float32").status().ok());
+  EXPECT_TRUE(to_zarr_dtype("float64").status().ok());
+  EXPECT_TRUE(to_zarr_dtype("int32").status().ok());
+  EXPECT_TRUE(to_zarr_dtype("uint16").status().ok());
+  EXPECT_TRUE(to_zarr_dtype("bool").status().ok());
+}
+
+TEST(TransformCompressor, nonBloscCompressorV2) {
+  nlohmann::json input = {{"compressor", {{"name", "gzip"}}}};
+  nlohmann::json variable = {{"metadata", nlohmann::json::object()}};
+  auto status = transform_compressor(input, variable, mdio::zarr::ZarrVersion::kV2);
+  ASSERT_FALSE(status.ok());
+  EXPECT_THAT(status.message(), testing::HasSubstr("Only blosc compressor is supported"));
+}
+
+TEST(TransformCompressor, nonBloscCompressorV3) {
+  nlohmann::json input = {{"compressor", {{"name", "gzip"}}}};
+  nlohmann::json variable = {{"metadata", nlohmann::json::object()}};
+  auto status = transform_compressor(input, variable, mdio::zarr::ZarrVersion::kV3);
+  ASSERT_FALSE(status.ok());
+  EXPECT_THAT(status.message(), testing::HasSubstr("Only blosc compressor is supported"));
+}
+
+TEST(TransformCompressor, missingCompressorName) {
+  nlohmann::json input = {{"compressor", {{"algorithm", "zstd"}}}};
+  nlohmann::json variable = {{"metadata", nlohmann::json::object()}};
+  auto status = transform_compressor(input, variable, mdio::zarr::ZarrVersion::kV2);
+  ASSERT_FALSE(status.ok());
+  EXPECT_THAT(status.message(), testing::HasSubstr("Compressor name must be specified"));
+}
+
+TEST(TransformCompressor, noCompressorV2) {
+  nlohmann::json input = nlohmann::json::object();
+  nlohmann::json variable = {{"metadata", nlohmann::json::object()}};
+  auto status = transform_compressor(input, variable, mdio::zarr::ZarrVersion::kV2);
+  ASSERT_TRUE(status.ok());
+  EXPECT_TRUE(variable["metadata"]["compressor"].is_null());
+}
+
+TEST(TransformMetadata, gcsPath) {
+  nlohmann::json variable = {{"kvstore", {{"driver", "file"}, {"path", "myvar"}}}};
+  auto status = transform_metadata("gs://my-bucket/path/to/dataset", variable);
+  ASSERT_TRUE(status.ok()) << status;
+  EXPECT_EQ(variable["kvstore"]["driver"], "gcs");
+  EXPECT_EQ(variable["kvstore"]["bucket"], "my-bucket");
+  EXPECT_THAT(variable["kvstore"]["path"].get<std::string>(),
+              testing::HasSubstr("path/to/dataset"));
+}
+
+TEST(TransformMetadata, s3Path) {
+  nlohmann::json variable = {{"kvstore", {{"driver", "file"}, {"path", "myvar"}}}};
+  auto status = transform_metadata("s3://my-bucket/path/to/dataset", variable);
+  ASSERT_TRUE(status.ok()) << status;
+  EXPECT_EQ(variable["kvstore"]["driver"], "s3");
+  EXPECT_EQ(variable["kvstore"]["bucket"], "my-bucket");
+  EXPECT_THAT(variable["kvstore"]["path"].get<std::string>(),
+              testing::HasSubstr("path/to/dataset"));
+}
+
+TEST(TransformMetadata, localPath) {
+  nlohmann::json variable = {{"kvstore", {{"driver", "file"}, {"path", "myvar"}}}};
+  auto status = transform_metadata("/local/path/to/dataset", variable);
+  ASSERT_TRUE(status.ok()) << status;
+  EXPECT_EQ(variable["kvstore"]["driver"], "file");
+  EXPECT_FALSE(variable["kvstore"].contains("bucket"));
+  EXPECT_THAT(variable["kvstore"]["path"].get<std::string>(),
+              testing::HasSubstr("/local/path/to/dataset"));
+}
+
+TEST(GetDimensions, conflictingSizes) {
+  nlohmann::json spec = R"({
+    "variables": [
+      {
+        "name": "var1",
+        "dimensions": [
+          {"name": "x", "size": 100}
+        ]
+      },
+      {
+        "name": "var2",
+        "dimensions": [
+          {"name": "x", "size": 200}
+        ]
+      }
+    ]
+  })"_json;
+  auto result = get_dimensions(spec);
+  ASSERT_FALSE(result.status().ok());
+  EXPECT_THAT(result.status().message(),
+              testing::HasSubstr("conflicting sizes"));
+}
+
+TEST(GetDimensions, consistentSizes) {
+  nlohmann::json spec = R"({
+    "variables": [
+      {
+        "name": "var1",
+        "dimensions": [
+          {"name": "x", "size": 100},
+          {"name": "y", "size": 50}
+        ]
+      },
+      {
+        "name": "var2",
+        "dimensions": [
+          {"name": "x", "size": 100}
+        ]
+      }
+    ]
+  })"_json;
+  auto result = get_dimensions(spec);
+  ASSERT_TRUE(result.status().ok()) << result.status();
+  auto dims = result.value();
+  EXPECT_EQ(dims["x"], 100);
+  EXPECT_EQ(dims["y"], 50);
+}
+
+TEST(Construct, explicitV3Version) {
+  nlohmann::json j = nlohmann::json::parse(manifest);
+  auto res = Construct(j, "zarrs/v3_dataset", mdio::zarr::ZarrVersion::kV3);
+  ASSERT_TRUE(res.status().ok()) << res.status();
+
+  std::vector<nlohmann::json> variables = std::get<1>(res.value());
+  // All variables should use zarr3 driver
+  for (const auto& variable : variables) {
+    EXPECT_EQ(variable["driver"], "zarr3");
+  }
+}
+
+TEST(Construct, explicitV2Version) {
+  nlohmann::json j = nlohmann::json::parse(manifest);
+  auto res = Construct(j, "zarrs/v2_dataset", mdio::zarr::ZarrVersion::kV2);
+  ASSERT_TRUE(res.status().ok()) << res.status();
+
+  std::vector<nlohmann::json> variables = std::get<1>(res.value());
+  // All variables should use zarr driver (V2)
+  for (const auto& variable : variables) {
+    EXPECT_EQ(variable["driver"], "zarr");
+  }
+}
+
 }  // namespace

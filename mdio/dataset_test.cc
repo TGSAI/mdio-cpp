@@ -1708,4 +1708,82 @@ TEST(DatasetVersionNullopt, fromJsonWithNulloptVersion) {
   std::filesystem::remove_all("zarrs/nullopt_version");
 }
 
+TEST(Dataset, iselWithEmptySlicesVector) {
+  auto json_vars = GetToyExample();
+  auto dataset = mdio::Dataset::from_json(json_vars, "zarrs/acceptance",
+                                          mdio::constants::kCreateClean);
+  ASSERT_TRUE(dataset.status().ok()) << dataset.status();
+  auto ds = dataset.value();
+
+  std::vector<mdio::RangeDescriptor<mdio::Index>> emptySlices;
+  auto sliceRes = ds.isel(emptySlices);
+  ASSERT_FALSE(sliceRes.status().ok());
+  EXPECT_THAT(sliceRes.status().message(),
+              testing::HasSubstr("No slices provided"));
+}
+
+TEST(Dataset, selWithDimensionIndex) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  // Using an index instead of a dimension name should fail
+  // The RangeDescriptor with index 0 instead of "inline"
+  mdio::RangeDescriptor<mdio::dtypes::int32_t> indexDesc = {0, 2, 5, 1};
+
+  auto sliceRes = ds.sel(indexDesc);
+  ASSERT_FALSE(sliceRes.status().ok());
+  EXPECT_THAT(sliceRes.status().message(),
+              testing::HasSubstr("not found"));
+}
+
+TEST(Dataset, selWithRepeatedLabels) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  // Using the same label twice is invalid
+  mdio::ValueDescriptor<mdio::dtypes::int32_t> desc1 = {"inline", 1};
+  mdio::ValueDescriptor<mdio::dtypes::int32_t> desc2 = {"inline", 2};
+
+  auto sliceRes = ds.sel(desc1, desc2);
+  ASSERT_FALSE(sliceRes.status().ok());
+  EXPECT_THAT(sliceRes.status().message(),
+              testing::HasSubstr("not be repeated"));
+}
+
+TEST(Dataset, commitMetadataNoChanges) {
+  const std::string path = "zarrs/acceptance_no_commit";
+  std::filesystem::remove_all(path);
+  auto json_vars = GetToyExample();
+
+  auto datasetRes =
+      mdio::Dataset::from_json(json_vars, path, mdio::constants::kCreateClean);
+  ASSERT_TRUE(datasetRes.status().ok()) << datasetRes.status();
+  auto dataset = datasetRes.value();
+
+  auto commitRes = dataset.CommitMetadata();
+  ASSERT_FALSE(commitRes.status().ok());
+  EXPECT_THAT(commitRes.status().message(),
+              testing::HasSubstr("No variables were modified"));
+
+  std::filesystem::remove_all(path);
+}
+
+TEST(Dataset, selRangeWithSameStartStop) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  mdio::RangeDescriptor<mdio::dtypes::int32_t> rangeDesc = {"inline", 2, 2, 1};
+
+  auto sliceRes = ds.sel(rangeDesc);
+  ASSERT_FALSE(sliceRes.status().ok());
+  EXPECT_THAT(sliceRes.status().message(),
+              testing::HasSubstr("Start and stop values must be different"));
+}
+
 }  // namespace
