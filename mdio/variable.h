@@ -15,7 +15,6 @@
 #ifndef MDIO_VARIABLE_H_
 #define MDIO_VARIABLE_H_
 
-#include <filesystem>
 #include <limits>
 #include <map>
 #include <memory>
@@ -282,9 +281,13 @@ Result<std::tuple<nlohmann::json, nlohmann::json>> ValidateAndProcessJson(
 
   // Create a new JSON and add the kvstore
   nlohmann::json new_json = json_spec["attributes"];
-  // update the variable name
-  new_json["variable_name"] =
-      std::filesystem::path(json_spec["kvstore"]["path"]).stem().string();
+  // update the variable name - extract last path component
+  std::string path = json_spec["kvstore"]["path"].get<std::string>();
+  // Remove trailing slashes
+  path = zarr::NormalizePath(path);
+  // Extract last component (variable name)
+  std::vector<std::string> path_parts = absl::StrSplit(path, '/');
+  new_json["variable_name"] = path_parts.empty() ? path : path_parts.back();
 
   return std::make_tuple(json_for_store, new_json);
 }

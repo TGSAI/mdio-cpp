@@ -252,44 +252,26 @@ inline void transform_shape(
  */
 inline absl::Status transform_metadata(const std::string& path,
                                        nlohmann::json& variable /*NOLINT*/) {
-  std::string bucket =
-      "NULL";  // Default value, if is NULL don't add a bucket field
-  std::string driver = "file";
-  if (absl::StartsWith(path, "gs://")) {
-    driver = "gcs";
-  } else if (absl::StartsWith(path, "s3://")) {
-    driver = "s3";
-  }
+  // Use shared utilities for driver inference and path handling
+  std::string driver = mdio::zarr::InferDriverFromPath(path);
+  std::string var_name = variable["kvstore"]["path"].get<std::string>();
 
-  std::string filepath;
+  variable["kvstore"]["driver"] = driver;
 
-  if (driver != "file") {
-    std::string _path = path;
-    // Ensure _path has a trailing slash or the mdio file will not be created
-    // properly
-    if (_path.back() != '/') {
-      _path += '/';
-    }
-    _path = _path.substr(5);
-    std::vector<std::string> file_parts = absl::StrSplit(_path, '/');
-    if (file_parts.size() < 2) {
+  if (driver == "file") {
+    // Local filesystem - normalize path with trailing slash
+    variable["kvstore"]["path"] =
+        mdio::zarr::NormalizePathWithSlash(path) + var_name;
+  } else {
+    // Cloud storage (GCS or S3) - extract bucket and path
+    auto [bucket, cloud_path] = mdio::zarr::ExtractCloudPath(path);
+    if (bucket.empty()) {
       return absl::InvalidArgumentError(
           "Cloud path requires [gs/s3]://[bucket]/[path to file] name");
     }
-    bucket = file_parts[0];
-    filepath = file_parts[1];
-    for (std::size_t i = 2; i < file_parts.size(); ++i) {
-      filepath += "/" + file_parts[i];
-    }
-    filepath += variable["kvstore"]["path"].get<std::string>();
-  } else {
-    filepath = path + "/";
-    filepath += variable["kvstore"]["path"].get<std::string>();
-  }
-  variable["kvstore"]["path"] = filepath;
-  variable["kvstore"]["driver"] = driver;
-  if (bucket != "NULL") {
     variable["kvstore"]["bucket"] = bucket;
+    variable["kvstore"]["path"] =
+        mdio::zarr::NormalizePathWithSlash(cloud_path) + var_name;
   }
 
   return absl::OkStatus();

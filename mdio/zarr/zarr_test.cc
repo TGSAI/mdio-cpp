@@ -216,6 +216,174 @@ TEST(ZarrDriver, GetConsolidatedMetadataFileName) {
   EXPECT_EQ(filename, ".zmetadata");
 }
 
+// =============================================================================
+// Path and Driver Utility Tests
+// =============================================================================
+
+TEST(ZarrDriver, InferDriverFromPath_LocalFile) {
+  EXPECT_EQ(mdio::zarr::InferDriverFromPath("/path/to/data"), "file");
+  EXPECT_EQ(mdio::zarr::InferDriverFromPath("relative/path"), "file");
+  EXPECT_EQ(mdio::zarr::InferDriverFromPath("./data"), "file");
+}
+
+TEST(ZarrDriver, InferDriverFromPath_GCS) {
+  EXPECT_EQ(mdio::zarr::InferDriverFromPath("gs://bucket/path"), "gcs");
+  EXPECT_EQ(mdio::zarr::InferDriverFromPath("gs://my-bucket/nested/path"),
+            "gcs");
+}
+
+TEST(ZarrDriver, InferDriverFromPath_S3) {
+  EXPECT_EQ(mdio::zarr::InferDriverFromPath("s3://bucket/path"), "s3");
+  EXPECT_EQ(mdio::zarr::InferDriverFromPath("s3://my-bucket/nested/path"),
+            "s3");
+}
+
+TEST(ZarrDriver, InferDriverFromPath_ShortPaths) {
+  // Paths shorter than 5 chars should default to file
+  EXPECT_EQ(mdio::zarr::InferDriverFromPath("abc"), "file");
+  EXPECT_EQ(mdio::zarr::InferDriverFromPath(""), "file");
+}
+
+TEST(ZarrDriver, NormalizePath_RemovesTrailingSlash) {
+  EXPECT_EQ(mdio::zarr::NormalizePath("/path/to/data/"), "/path/to/data");
+  EXPECT_EQ(mdio::zarr::NormalizePath("/path/to/data///"), "/path/to/data");
+}
+
+TEST(ZarrDriver, NormalizePath_NoTrailingSlash) {
+  EXPECT_EQ(mdio::zarr::NormalizePath("/path/to/data"), "/path/to/data");
+}
+
+TEST(ZarrDriver, NormalizePath_EmptyPath) {
+  EXPECT_EQ(mdio::zarr::NormalizePath(""), "");
+  EXPECT_EQ(mdio::zarr::NormalizePath("/"), "");
+}
+
+TEST(ZarrDriver, NormalizePathWithSlash_AddsTrailingSlash) {
+  EXPECT_EQ(mdio::zarr::NormalizePathWithSlash("/path/to/data"),
+            "/path/to/data/");
+}
+
+TEST(ZarrDriver, NormalizePathWithSlash_AlreadyHasSlash) {
+  EXPECT_EQ(mdio::zarr::NormalizePathWithSlash("/path/to/data/"),
+            "/path/to/data/");
+}
+
+TEST(ZarrDriver, NormalizePathWithSlash_EmptyPath) {
+  EXPECT_EQ(mdio::zarr::NormalizePathWithSlash(""), "");
+}
+
+TEST(ZarrDriver, ExtractCloudPath_GCS) {
+  auto [bucket, path] = mdio::zarr::ExtractCloudPath("gs://my-bucket/path/to/data");
+  EXPECT_EQ(bucket, "my-bucket");
+  EXPECT_EQ(path, "path/to/data");
+}
+
+TEST(ZarrDriver, ExtractCloudPath_S3) {
+  auto [bucket, path] = mdio::zarr::ExtractCloudPath("s3://my-bucket/nested/path");
+  EXPECT_EQ(bucket, "my-bucket");
+  EXPECT_EQ(path, "nested/path");
+}
+
+TEST(ZarrDriver, ExtractCloudPath_BucketOnly) {
+  auto [bucket, path] = mdio::zarr::ExtractCloudPath("gs://my-bucket");
+  EXPECT_EQ(bucket, "my-bucket");
+  EXPECT_EQ(path, "");
+}
+
+TEST(ZarrDriver, ExtractCloudPath_ShortUrl) {
+  auto [bucket, path] = mdio::zarr::ExtractCloudPath("gs:/");
+  EXPECT_EQ(bucket, "");
+  EXPECT_EQ(path, "");
+}
+
+// =============================================================================
+// JSON Utility Tests
+// =============================================================================
+
+TEST(ZarrDriver, GetJsonString_ExistingKey) {
+  nlohmann::json json = {{"name", "test"}, {"version", "1.0"}};
+  EXPECT_EQ(mdio::zarr::GetJsonString(json, "name"), "test");
+  EXPECT_EQ(mdio::zarr::GetJsonString(json, "version"), "1.0");
+}
+
+TEST(ZarrDriver, GetJsonString_MissingKey) {
+  nlohmann::json json = {{"name", "test"}};
+  EXPECT_EQ(mdio::zarr::GetJsonString(json, "missing"), "");
+  EXPECT_EQ(mdio::zarr::GetJsonString(json, "missing", "default"), "default");
+}
+
+TEST(ZarrDriver, GetJsonString_NonStringValue) {
+  nlohmann::json json = {{"number", 42}, {"array", {1, 2, 3}}};
+  EXPECT_EQ(mdio::zarr::GetJsonString(json, "number"), "");
+  EXPECT_EQ(mdio::zarr::GetJsonString(json, "array", "fallback"), "fallback");
+}
+
+TEST(ZarrDriver, GetJsonObject_ExistingKey) {
+  nlohmann::json json = {{"metadata", {{"key", "value"}}}};
+  auto obj = mdio::zarr::GetJsonObject(json, "metadata");
+  EXPECT_TRUE(obj.is_object());
+  EXPECT_EQ(obj["key"], "value");
+}
+
+TEST(ZarrDriver, GetJsonObject_MissingKey) {
+  nlohmann::json json = {{"name", "test"}};
+  auto obj = mdio::zarr::GetJsonObject(json, "missing");
+  EXPECT_TRUE(obj.is_object());
+  EXPECT_TRUE(obj.empty());
+}
+
+TEST(ZarrDriver, GetJsonObject_NonObjectValue) {
+  nlohmann::json json = {{"name", "test"}, {"array", {1, 2, 3}}};
+  auto obj = mdio::zarr::GetJsonObject(json, "name");
+  EXPECT_TRUE(obj.is_object());
+  EXPECT_TRUE(obj.empty());
+}
+
+TEST(ZarrDriver, ExtractVariableName_WithSlash) {
+  EXPECT_EQ(mdio::zarr::ExtractVariableName("myvar/.zarray"), "myvar");
+  EXPECT_EQ(mdio::zarr::ExtractVariableName("data/zarr.json"), "data");
+  EXPECT_EQ(mdio::zarr::ExtractVariableName("nested/path/file"), "nested");
+}
+
+TEST(ZarrDriver, ExtractVariableName_NoSlash) {
+  EXPECT_EQ(mdio::zarr::ExtractVariableName("myvar"), "myvar");
+  EXPECT_EQ(mdio::zarr::ExtractVariableName(".zarray"), ".zarray");
+}
+
+TEST(ZarrDriver, ParseJsonFromReadResult_Valid) {
+  // Create a mock read result with valid JSON
+  tensorstore::kvstore::ReadResult result;
+  result.state = tensorstore::kvstore::ReadResult::kValue;
+  result.value = absl::Cord(R"({"key": "value", "number": 42})");
+
+  auto parsed = mdio::zarr::ParseJsonFromReadResult(result);
+  ASSERT_TRUE(parsed.ok()) << parsed.status();
+  EXPECT_EQ(parsed.value()["key"], "value");
+  EXPECT_EQ(parsed.value()["number"], 42);
+}
+
+TEST(ZarrDriver, ParseJsonFromReadResult_InvalidJson) {
+  tensorstore::kvstore::ReadResult result;
+  result.state = tensorstore::kvstore::ReadResult::kValue;
+  result.value = absl::Cord("not valid json {{{");
+
+  auto parsed = mdio::zarr::ParseJsonFromReadResult(result);
+  EXPECT_FALSE(parsed.ok());
+  EXPECT_THAT(parsed.status().message(),
+              testing::HasSubstr("JSON parse error"));
+}
+
+TEST(ZarrDriver, ParseJsonFromReadResult_NoValue) {
+  tensorstore::kvstore::ReadResult result;
+  result.state = tensorstore::kvstore::ReadResult::kMissing;
+  // value is not set
+
+  auto parsed = mdio::zarr::ParseJsonFromReadResult(result);
+  EXPECT_FALSE(parsed.ok());
+  EXPECT_THAT(parsed.status().message(),
+              testing::HasSubstr("no value"));
+}
+
 }  // namespace ZarrDriverTests
 
 // =============================================================================
@@ -656,6 +824,77 @@ TEST(ZarrV3, ReadVariableAttributes_NoAttributesInFile) {
   EXPECT_TRUE(attrs_result.value().empty());
 
   std::filesystem::remove_all(tmpDir);
+}
+
+// =============================================================================
+// V3 Utility Function Tests
+// =============================================================================
+
+TEST(ZarrV3, IsArrayMetadata_True) {
+  nlohmann::json array_json = {{"node_type", "array"}, {"zarr_format", 3}};
+  EXPECT_TRUE(mdio::zarr::v3::IsArrayMetadata(array_json));
+}
+
+TEST(ZarrV3, IsArrayMetadata_False_Group) {
+  nlohmann::json group_json = {{"node_type", "group"}, {"zarr_format", 3}};
+  EXPECT_FALSE(mdio::zarr::v3::IsArrayMetadata(group_json));
+}
+
+TEST(ZarrV3, IsArrayMetadata_False_NoNodeType) {
+  nlohmann::json json = {{"zarr_format", 3}};
+  EXPECT_FALSE(mdio::zarr::v3::IsArrayMetadata(json));
+}
+
+TEST(ZarrV3, ExtractChildArrayCandidates_ValidEntries) {
+  std::vector<tensorstore::kvstore::ListEntry> entries;
+  entries.push_back({"var1/zarr.json", {}});
+  entries.push_back({"var2/zarr.json", {}});
+  entries.push_back({"var3/data/chunk", {}});  // Not a zarr.json
+  entries.push_back({"zarr.json", {}});        // Root, no slash
+
+  auto candidates = mdio::zarr::v3::ExtractChildArrayCandidates(entries);
+
+  EXPECT_EQ(candidates.size(), 2);
+  EXPECT_THAT(candidates, testing::Contains("var1"));
+  EXPECT_THAT(candidates, testing::Contains("var2"));
+  EXPECT_THAT(candidates, testing::Not(testing::Contains("var3")));
+}
+
+TEST(ZarrV3, ExtractChildArrayCandidates_NoDuplicates) {
+  std::vector<tensorstore::kvstore::ListEntry> entries;
+  entries.push_back({"var1/zarr.json", {}});
+  entries.push_back({"var1/zarr.json", {}});  // Duplicate
+  entries.push_back({"var1/data", {}});
+
+  auto candidates = mdio::zarr::v3::ExtractChildArrayCandidates(entries);
+
+  EXPECT_EQ(candidates.size(), 1);
+  EXPECT_EQ(candidates[0], "var1");
+}
+
+TEST(ZarrV3, ExtractChildArrayCandidates_Empty) {
+  std::vector<tensorstore::kvstore::ListEntry> entries;
+
+  auto candidates = mdio::zarr::v3::ExtractChildArrayCandidates(entries);
+
+  EXPECT_TRUE(candidates.empty());
+}
+
+TEST(ZarrV3, BuildVariableSpec_LocalFile) {
+  auto spec = mdio::zarr::v3::BuildVariableSpec("file", "/path/to/dataset",
+                                                "myvar");
+
+  EXPECT_EQ(spec["driver"], "zarr3");
+  EXPECT_EQ(spec["kvstore"]["driver"], "file");
+  EXPECT_EQ(spec["kvstore"]["path"], "/path/to/dataset/myvar");
+}
+
+TEST(ZarrV3, BuildVariableSpec_GCS) {
+  auto spec = mdio::zarr::v3::BuildVariableSpec("gcs", "bucket/path", "myvar");
+
+  EXPECT_EQ(spec["driver"], "zarr3");
+  EXPECT_EQ(spec["kvstore"]["driver"], "gcs");
+  EXPECT_EQ(spec["kvstore"]["path"], "bucket/path/myvar");
 }
 
 }  // namespace ZarrV3Tests

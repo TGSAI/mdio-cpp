@@ -15,7 +15,7 @@
 #ifndef MDIO_ZARR_ZARR_V2_H_
 #define MDIO_ZARR_ZARR_V2_H_
 
-#include <filesystem>
+#include <memory>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -193,61 +193,62 @@ inline Future<void> WriteConsolidatedMetadata(
   zmetadata["metadata"][".zattrs"] = zattrs;
   zmetadata["metadata"][".zgroup"] = zgroup;
 
-  std::string zarray_key;
-  std::string zattrs_key;
   std::string driver =
       json_variables[0]["kvstore"]["driver"].get<std::string>();
 
   for (const auto& json : json_variables) {
-    zarray_key =
-        std::filesystem::path(json["kvstore"]["path"]).stem() / ".zarray";
-    zattrs_key =
-        std::filesystem::path(json["kvstore"]["path"]).stem() / ".zattrs";
+    // Extract variable name from path (last component)
+    std::string path = json["kvstore"]["path"].get<std::string>();
+    std::vector<std::string> path_parts = absl::StrSplit(path, '/');
+    std::string var_name = path_parts.back();
+
+    std::string zarray_key = var_name + "/.zarray";
+    std::string zattrs_key = var_name + "/.zattrs";
 
     MDIO_ASSIGN_OR_RETURN(zmetadata["metadata"][zarray_key], GetZarray(json))
     zmetadata["metadata"][zattrs_key] = PrepareVariableAttributes(json);
   }
 
-  nlohmann::json kvstore = nlohmann::json::object();
-  kvstore["driver"] = driver;
+  // Extract base path by removing the last component (variable name)
   std::vector<std::string> file_parts = absl::StrSplit(
       json_variables[0]["kvstore"]["path"].get<std::string>(), '/');
   size_t toRemove = file_parts.back().size();
-  std::string strippedPath =
+  std::string basePath =
       json_variables[0]["kvstore"]["path"].get<std::string>().substr(
           0, json_variables[0]["kvstore"]["path"].get<std::string>().size() -
                  toRemove - 1);
-  kvstore["path"] = strippedPath;
+
+  nlohmann::json kvstore = nlohmann::json::object();
+  kvstore["driver"] = driver;
+  kvstore["path"] = basePath;
 
   if (driver == "gcs" || driver == "s3") {
     kvstore["bucket"] =
         json_variables[0]["kvstore"]["bucket"].get<std::string>();
-    std::string cloudPath = kvstore["path"].get<std::string>();
-    kvstore["path"] = cloudPath;
   }
 
   auto kvs_future = tensorstore::kvstore::Open(kvstore, context);
 
   auto zattrs_future = tensorstore::MapFutureValue(
       tensorstore::InlineExecutor{},
-      [zattrs = std::move(zattrs)](const tensorstore::KvStore& kvstore) {
-        return tensorstore::kvstore::Write(kvstore, "/.zattrs",
+      [zattrs = std::move(zattrs)](const tensorstore::KvStore& kvs) {
+        return tensorstore::kvstore::Write(kvs, "/.zattrs",
                                            absl::Cord(zattrs.dump(4)));
       },
       kvs_future);
 
   auto zmetadata_future = tensorstore::MapFutureValue(
       tensorstore::InlineExecutor{},
-      [zmetadata = std::move(zmetadata)](const tensorstore::KvStore& kvstore) {
-        return tensorstore::kvstore::Write(kvstore, "/.zmetadata",
+      [zmetadata = std::move(zmetadata)](const tensorstore::KvStore& kvs) {
+        return tensorstore::kvstore::Write(kvs, "/.zmetadata",
                                            absl::Cord(zmetadata.dump(4)));
       },
       kvs_future);
 
   auto zgroup_future = tensorstore::MapFutureValue(
       tensorstore::InlineExecutor{},
-      [zgroup = std::move(zgroup)](const tensorstore::KvStore& kvstore) {
-        return tensorstore::kvstore::Write(kvstore, "/.zgroup",
+      [zgroup = std::move(zgroup)](const tensorstore::KvStore& kvs) {
+        return tensorstore::kvstore::Write(kvs, "/.zgroup",
                                            absl::Cord(zgroup.dump(4)));
       },
       kvs_future);
@@ -255,6 +256,140 @@ inline Future<void> WriteConsolidatedMetadata(
   return tensorstore::WaitAllFuture(zattrs_future, zmetadata_future,
                                     zgroup_future);
 }
+
+// ============================================================================
+// Async Metadata Discovery for V2
+// ============================================================================
+
+namespace internal {
+
+/**
+ * @brief State for V2 consolidated metadata reading operations.
+ *
+ * This struct holds all state needed across the async callback chain.
+ */
+struct V2MetadataState {
+  using ResultType = std::tuple<nlohmann::json, std::vector<nlohmann::json>>;
+  using PromiseType = tensorstore::Promise<ResultType>;
+
+  PromiseType promise;
+  tensorstore::KvStore kvs;
+  std::string dataset_path;
+  std::string normalized_path;
+  std::string driver;
+  std::string bucket;
+  std::string cloud_path;
+
+  explicit V2MetadataState(PromiseType p, const std::string& path)
+      : promise(std::move(p)),
+        dataset_path(path),
+        normalized_path(NormalizePathWithSlash(path)),
+        driver(InferDriverFromPath(path)) {
+    if (driver != "file") {
+      auto cloud_parts = ExtractCloudPath(path);
+      bucket = cloud_parts.first;
+      cloud_path = NormalizePathWithSlash(cloud_parts.second);
+    }
+  }
+
+  /// Completes with an error status.
+  void Fail(absl::Status status) { promise.SetResult(std::move(status)); }
+
+  /// Completes successfully.
+  void Complete(nlohmann::json metadata, std::vector<nlohmann::json> vars) {
+    promise.SetResult(std::make_tuple(std::move(metadata), std::move(vars)));
+  }
+
+  /// Builds a variable spec for the given variable name.
+  nlohmann::json BuildVariableSpec(const std::string& var_name) const {
+    nlohmann::json spec = {{"driver", std::string(kDriverName)},
+                           {"kvstore", {{"driver", driver}}}};
+    if (driver != "file") {
+      spec["kvstore"]["bucket"] = bucket;
+      spec["kvstore"]["path"] = cloud_path + var_name;
+    } else {
+      spec["kvstore"]["path"] = normalized_path + var_name;
+    }
+    return spec;
+  }
+};
+
+/// Step 2: Parse .zmetadata and build variable specs.
+inline void OnZmetadataRead(
+    std::shared_ptr<V2MetadataState> state,
+    tensorstore::ReadyFuture<tensorstore::kvstore::ReadResult> read_ready) {
+  if (!read_ready.result().ok()) {
+    state->Fail(read_ready.result().status());
+    return;
+  }
+
+  auto parsed = ParseJsonFromReadResult(read_ready.value());
+  if (!parsed.ok()) {
+    if (!state->dataset_path.empty() && state->dataset_path.back() != '/') {
+      state->Fail(absl::InvalidArgumentError(
+          "Failed to parse .zmetadata. Try adding a trailing slash to the "
+          "path."));
+    } else {
+      state->Fail(parsed.status());
+    }
+    return;
+  }
+
+  const auto& zmetadata = parsed.value();
+
+  if (!zmetadata.contains("metadata")) {
+    state->Fail(
+        absl::InvalidArgumentError("zmetadata does not contain metadata."));
+    return;
+  }
+
+  if (!zmetadata["metadata"].contains(".zattrs")) {
+    state->Fail(absl::InvalidArgumentError(
+        "zmetadata does not contain dataset metadata."));
+    return;
+  }
+
+  auto dataset_metadata = zmetadata["metadata"][".zattrs"];
+  std::vector<nlohmann::json> json_vars;
+
+  for (const auto& element : zmetadata["metadata"].items()) {
+    const std::string& key = element.key();
+    // Skip if not a .zarray entry
+    size_t dot_pos = key.find_last_of('.');
+    if (dot_pos == std::string::npos ||
+        key.substr(dot_pos + 1) != "zarray") {
+      continue;
+    }
+    std::string var_name = ExtractVariableName(key);
+    json_vars.push_back(state->BuildVariableSpec(var_name));
+  }
+
+  if (json_vars.empty()) {
+    state->Fail(absl::InvalidArgumentError("No variables found in zmetadata."));
+    return;
+  }
+
+  state->Complete(std::move(dataset_metadata), std::move(json_vars));
+}
+
+/// Step 1: Start reading .zmetadata.
+inline void OnV2KvStoreReady(
+    std::shared_ptr<V2MetadataState> state,
+    tensorstore::ReadyFuture<tensorstore::KvStore> kvs_ready) {
+  if (!kvs_ready.result().ok()) {
+    state->Fail(kvs_ready.result().status());
+    return;
+  }
+
+  state->kvs = kvs_ready.value();
+  auto read_future = tensorstore::kvstore::Read(state->kvs, ".zmetadata");
+  read_future.ExecuteWhenReady(
+      [state](tensorstore::ReadyFuture<tensorstore::kvstore::ReadResult> ready) {
+        OnZmetadataRead(state, std::move(ready));
+      });
+}
+
+}  // namespace internal
 
 /**
  * @brief Reads and parses the consolidated metadata from a dataset path.
@@ -266,117 +401,15 @@ inline Future<void> WriteConsolidatedMetadata(
 inline Future<std::tuple<::nlohmann::json, std::vector<::nlohmann::json>>>
 ReadConsolidatedMetadata(const std::string& dataset_path,
                          tensorstore::Future<tensorstore::KvStore> kvs_future) {
-  // Normalize the dataset path once so we can safely append variable names.
-  std::string normalized_path = dataset_path;
-  if (!normalized_path.empty() && normalized_path.back() != '/') {
-    normalized_path.push_back('/');
-  }
-
   auto pair = tensorstore::PromiseFuturePair<
       std::tuple<::nlohmann::json, std::vector<::nlohmann::json>>>::Make();
 
+  auto state = std::make_shared<internal::V2MetadataState>(
+      std::move(pair.promise), dataset_path);
+
   kvs_future.ExecuteWhenReady(
-      [promise = std::move(pair.promise), dataset_path, normalized_path](
-          tensorstore::ReadyFuture<tensorstore::KvStore> ready_kvs) {
-        if (!ready_kvs.result().ok()) {
-          promise.SetResult(ready_kvs.result().status());
-          return;
-        }
-
-        auto kvs = ready_kvs.value();
-        // Infer the driver before issuing the read so we can reuse it later.
-        std::string driver = "file";
-        if (dataset_path.length() > 5) {
-          if (dataset_path.substr(0, 5) == "gs://") {
-            driver = "gcs";
-          } else if (dataset_path.substr(0, 5) == "s3://") {
-            driver = "s3";
-          }
-        }
-        std::string bucket;
-        std::string cloudPath;
-        if (driver != "file") {
-          std::string providedPath = dataset_path.substr(5);
-          size_t bucketLen = providedPath.find_first_of('/');
-          bucket = providedPath.substr(0, bucketLen);
-          cloudPath = providedPath.substr(bucketLen + 1);
-          if (!cloudPath.empty() && cloudPath.back() != '/') {
-            cloudPath.push_back('/');
-          }
-        }
-
-        auto read_future = tensorstore::kvstore::Read(kvs, ".zmetadata");
-        read_future.ExecuteWhenReady(
-            [promise = std::move(promise), dataset_path, normalized_path,
-             driver, bucket, cloudPath](
-                tensorstore::ReadyFuture<tensorstore::kvstore::ReadResult>
-                    ready_read) {
-              if (!ready_read.result().ok()) {
-                promise.SetResult(ready_read.result().status());
-                return;
-              }
-              auto read_result = ready_read.result().value();
-
-              ::nlohmann::json zmetadata;
-              try {
-                zmetadata =
-                    ::nlohmann::json::parse(std::string(read_result.value));
-              } catch (const nlohmann::json::parse_error& e) {
-                if (!dataset_path.empty() && dataset_path.back() != '/') {
-                  promise.SetResult(absl::InvalidArgumentError(
-                      "Failed to parse .zmetadata. Try adding a trailing slash "
-                      "to the path."));
-                  return;
-                }
-                promise.SetResult(absl::InvalidArgumentError(
-                    std::string("JSON parse error: ") + e.what()));
-                return;
-              }
-
-              if (!zmetadata.contains("metadata")) {
-                promise.SetResult(absl::InvalidArgumentError(
-                    "zmetadata does not contain metadata."));
-                return;
-              }
-
-              if (!zmetadata["metadata"].contains(".zattrs")) {
-                promise.SetResult(absl::InvalidArgumentError(
-                    "zmetadata does not contain dataset metadata."));
-                return;
-              }
-
-              auto dataset_metadata = zmetadata["metadata"][".zattrs"];
-
-              zmetadata["metadata"].erase(".zattrs");
-              std::vector<nlohmann::json> json_vars_from_zmeta;
-
-              for (auto& element : zmetadata["metadata"].items()) {
-                if (element.key().substr(element.key().find_last_of(".") + 1) ==
-                    "zarray") {
-                  std::string variable_name =
-                      element.key().substr(0, element.key().find("/"));
-                  nlohmann::json new_dict = {
-                      {"driver", std::string(kDriverName)},
-                      {"kvstore",
-                       {{"driver", driver},
-                        {"path", normalized_path + variable_name}}}};
-                  if (driver != "file") {
-                    new_dict["kvstore"]["bucket"] = bucket;
-                    new_dict["kvstore"]["path"] = cloudPath + variable_name;
-                  }
-                  json_vars_from_zmeta.push_back(new_dict);
-                }
-              }
-
-              if (json_vars_from_zmeta.empty()) {
-                promise.SetResult(absl::InvalidArgumentError(
-                    "No variables found in zmetadata."));
-                return;
-              }
-
-              promise.SetResult(
-                  std::make_tuple(dataset_metadata, json_vars_from_zmeta));
-            });
+      [state](tensorstore::ReadyFuture<tensorstore::KvStore> ready) {
+        internal::OnV2KvStoreReady(state, std::move(ready));
       });
 
   return pair.future;

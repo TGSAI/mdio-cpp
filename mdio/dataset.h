@@ -100,44 +100,27 @@ inline Future<void> write_zmetadata(
 inline Future<tensorstore::KvStore> dataset_kvs_store(
     const std::string& dataset_path,
     tensorstore::Context context = tensorstore::Context::Default()) {
-  // the tensorstore driver needs a bucket field
   ::nlohmann::json kvstore;
 
-  absl::string_view output_file = dataset_path;
+  // Use shared utility to infer driver from path prefix
+  std::string driver = zarr::InferDriverFromPath(dataset_path);
+  kvstore["driver"] = driver;
 
-  if (absl::StartsWith(output_file, "gs://")) {
-    absl::ConsumePrefix(&output_file, "gs://");
-    kvstore["driver"] = "gcs";
-  } else if (absl::StartsWith(output_file, "s3://")) {
-    absl::ConsumePrefix(&output_file, "s3://");
-    kvstore["driver"] = "s3";
-  } else {
-    kvstore["driver"] = "file";
-    std::string path = std::string(output_file);
-    if (!path.empty() && path.back() != '/') {
-      path.push_back('/');
-    }
-    kvstore["path"] = path;
+  if (driver == "file") {
+    // Local file system - just normalize with trailing slash
+    kvstore["path"] = zarr::NormalizePathWithSlash(dataset_path);
     return tensorstore::kvstore::Open(kvstore, context);
-  }  // FIXME - we need azure support ...
+  }
 
-  std::vector<std::string> file_parts = absl::StrSplit(output_file, '/');
-  if (file_parts.size() < 2) {
+  // Cloud storage (GCS or S3) - extract bucket and path
+  auto [bucket, path] = zarr::ExtractCloudPath(dataset_path);
+  if (bucket.empty()) {
     return absl::InvalidArgumentError(
         "gcs/s3 drivers requires [s3/gs]://[bucket]/[path_to_file]");
   }
 
-  std::string bucket = file_parts[0];
-  std::string filepath(file_parts[1]);
-  for (std::size_t i = 2; i < file_parts.size(); ++i) {
-    filepath += "/" + file_parts[i];
-  }
-  if (!filepath.empty() && filepath.back() != '/') {
-    filepath.push_back('/');
-  }
-  // update the bucket and path ...
   kvstore["bucket"] = bucket;
-  kvstore["path"] = filepath;
+  kvstore["path"] = zarr::NormalizePathWithSlash(path);
 
   return tensorstore::kvstore::Open(kvstore, context);
 }
