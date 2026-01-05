@@ -111,8 +111,9 @@ inline std::vector<std::string> ExtractChildArrayCandidates(
 inline nlohmann::json BuildVariableSpec(const std::string& driver,
                                         const std::string& base_path,
                                         const std::string& var_name) {
-  return {{"driver", std::string(kDriverName)},
-          {"kvstore", {{"driver", driver}, {"path", base_path + "/" + var_name}}}};
+  return {
+      {"driver", std::string(kDriverName)},
+      {"kvstore", {{"driver", driver}, {"path", base_path + "/" + var_name}}}};
 }
 
 // ============================================================================
@@ -461,10 +462,9 @@ inline void OnV3RootReadComplete(
 
   auto list_future = tensorstore::kvstore::ListFuture(state->kvs);
   list_future.ExecuteWhenReady(
-      [state](tensorstore::ReadyFuture<
-              std::vector<tensorstore::kvstore::ListEntry>> ready) {
-        OnV3ListComplete(state, std::move(ready));
-      });
+      [state](
+          tensorstore::ReadyFuture<std::vector<tensorstore::kvstore::ListEntry>>
+              ready) { OnV3ListComplete(state, std::move(ready)); });
 }
 
 /// Step 1: Start reading root zarr.json.

@@ -459,8 +459,8 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
     // For V3, structured dtypes are represented as an array of [name, type]
     // pairs e.g., [["cdp-x", "int32"], ["cdp-y", "int32"], ...]
     const auto& data_type = json_spec["metadata"]["data_type"];
-    if (data_type.is_array() && !data_type.empty() &&
-        data_type[0].is_array() && !json_spec.contains("field")) {
+    if (data_type.is_array() && !data_type.empty() && data_type[0].is_array() &&
+        !json_spec.contains("field")) {
       do_handle_structarray = true;
       // Extract the first field name from the structured dtype
       first_field_name = data_type[0][0].get<std::string>();

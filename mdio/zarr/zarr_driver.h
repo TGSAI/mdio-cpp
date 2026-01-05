@@ -291,7 +291,7 @@ inline Result<nlohmann::json> ParseJsonFromReadResult(
     return nlohmann::json::parse(std::string(read_result.value));
   } catch (const nlohmann::json::parse_error& e) {
     return absl::InvalidArgumentError(std::string("JSON parse error: ") +
-                                     e.what());
+                                      e.what());
   }
 }
 
@@ -303,8 +303,8 @@ inline Result<nlohmann::json> ParseJsonFromReadResult(
  * @return The string value or default.
  */
 inline std::string GetJsonString(const nlohmann::json& json,
-                                const std::string& key,
-                                const std::string& default_value = "") {
+                                 const std::string& key,
+                                 const std::string& default_value = "") {
   if (json.contains(key) && json[key].is_string()) {
     return json[key].get<std::string>();
   }
@@ -318,7 +318,7 @@ inline std::string GetJsonString(const nlohmann::json& json,
  * @return The object value or empty object.
  */
 inline nlohmann::json GetJsonObject(const nlohmann::json& json,
-                                   const std::string& key) {
+                                    const std::string& key) {
   if (json.contains(key) && json[key].is_object()) {
     return json[key];
   }

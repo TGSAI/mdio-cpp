@@ -273,13 +273,15 @@ TEST(ZarrDriver, NormalizePathWithSlash_EmptyPath) {
 }
 
 TEST(ZarrDriver, ExtractCloudPath_GCS) {
-  auto [bucket, path] = mdio::zarr::ExtractCloudPath("gs://my-bucket/path/to/data");
+  auto [bucket, path] =
+      mdio::zarr::ExtractCloudPath("gs://my-bucket/path/to/data");
   EXPECT_EQ(bucket, "my-bucket");
   EXPECT_EQ(path, "path/to/data");
 }
 
 TEST(ZarrDriver, ExtractCloudPath_S3) {
-  auto [bucket, path] = mdio::zarr::ExtractCloudPath("s3://my-bucket/nested/path");
+  auto [bucket, path] =
+      mdio::zarr::ExtractCloudPath("s3://my-bucket/nested/path");
   EXPECT_EQ(bucket, "my-bucket");
   EXPECT_EQ(path, "nested/path");
 }
@@ -380,8 +382,7 @@ TEST(ZarrDriver, ParseJsonFromReadResult_NoValue) {
 
   auto parsed = mdio::zarr::ParseJsonFromReadResult(result);
   EXPECT_FALSE(parsed.ok());
-  EXPECT_THAT(parsed.status().message(),
-              testing::HasSubstr("no value"));
+  EXPECT_THAT(parsed.status().message(), testing::HasSubstr("no value"));
 }
 
 }  // namespace ZarrDriverTests
@@ -881,8 +882,8 @@ TEST(ZarrV3, ExtractChildArrayCandidates_Empty) {
 }
 
 TEST(ZarrV3, BuildVariableSpec_LocalFile) {
-  auto spec = mdio::zarr::v3::BuildVariableSpec("file", "/path/to/dataset",
-                                                "myvar");
+  auto spec =
+      mdio::zarr::v3::BuildVariableSpec("file", "/path/to/dataset", "myvar");
 
   EXPECT_EQ(spec["driver"], "zarr3");
   EXPECT_EQ(spec["kvstore"]["driver"], "file");

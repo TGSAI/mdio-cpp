@@ -356,8 +356,7 @@ inline void OnZmetadataRead(
     const std::string& key = element.key();
     // Skip if not a .zarray entry
     size_t dot_pos = key.find_last_of('.');
-    if (dot_pos == std::string::npos ||
-        key.substr(dot_pos + 1) != "zarray") {
+    if (dot_pos == std::string::npos || key.substr(dot_pos + 1) != "zarray") {
       continue;
     }
     std::string var_name = ExtractVariableName(key);
@@ -384,7 +383,8 @@ inline void OnV2KvStoreReady(
   state->kvs = kvs_ready.value();
   auto read_future = tensorstore::kvstore::Read(state->kvs, ".zmetadata");
   read_future.ExecuteWhenReady(
-      [state](tensorstore::ReadyFuture<tensorstore::kvstore::ReadResult> ready) {
+      [state](
+          tensorstore::ReadyFuture<tensorstore::kvstore::ReadResult> ready) {
         OnZmetadataRead(state, std::move(ready));
       });
 }

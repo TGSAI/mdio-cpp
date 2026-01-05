@@ -165,22 +165,22 @@ void CreateTestVariable(const TestVariableDef& def,
   mdio::TransactionalOpenOptions options;
   auto opt = options.Set(std::move(mdio::constants::kCreateClean));
 
-  auto spec = CreateTypedVariableSpec(version, def.name, base_path, def.dtype_v2,
-                                      def.dtype_v3, def.long_name);
+  auto spec = CreateTypedVariableSpec(
+      version, def.name, base_path, def.dtype_v2, def.dtype_v3, def.long_name);
   auto schema = mdio::internal::ValidateAndProcessJson(spec).value();
   auto [store, metadata] = schema;
   auto var =
       mdio::internal::CreateVariable(store, metadata, std::move(options));
-  ASSERT_TRUE(var.status().ok()) << "Failed to create " << def.name << ": "
-                                 << var.status();
+  ASSERT_TRUE(var.status().ok())
+      << "Failed to create " << def.name << ": " << var.status();
 }
 
 /**
  * @brief Opens a variable by name and returns its Future.
  */
-mdio::Future<mdio::Variable<>> OpenTestVariable(
-    const std::string& name, mdio::zarr::ZarrVersion version,
-    const std::string& base_path) {
+mdio::Future<mdio::Variable<>> OpenTestVariable(const std::string& name,
+                                                mdio::zarr::ZarrVersion version,
+                                                const std::string& base_path) {
   return mdio::Variable<>::Open(CreateBaseSpec(version, name, base_path),
                                 mdio::constants::kOpen);
 }
@@ -447,8 +447,8 @@ TEST_P(VariableTest, SETUP) {
 TEST_P(VariableTest, open) {
   for (const auto& def : kTestVariables) {
     auto var = OpenTestVariable(def.name, version_, base_path_);
-    EXPECT_TRUE(var.status().ok()) << "Failed to open " << def.name << ": "
-                                   << var.status();
+    EXPECT_TRUE(var.status().ok())
+        << "Failed to open " << def.name << ": " << var.status();
   }
 }
 
@@ -1266,8 +1266,8 @@ TEST_P(XarrayCompatibilityTest, datasetCompatible) {
   }
 
   std::string version_name = ZarrVersionToString(version_);
-  EXPECT_TRUE(RunPythonScripts(srcPath, arg_sets,
-                               "Xarray compatibility skipped due to import error"))
+  EXPECT_TRUE(RunPythonScripts(
+      srcPath, arg_sets, "Xarray compatibility skipped due to import error"))
       << "xarray " << version_name << " compatibility test failed";
 
   // std::filesystem::remove_all(test_path);
