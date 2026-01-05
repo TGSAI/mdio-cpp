@@ -15,7 +15,6 @@
 #ifndef MDIO_VARIABLE_H_
 #define MDIO_VARIABLE_H_
 
-#include <filesystem>
 #include <limits>
 #include <map>
 #include <memory>
@@ -282,9 +281,13 @@ Result<std::tuple<nlohmann::json, nlohmann::json>> ValidateAndProcessJson(
 
   // Create a new JSON and add the kvstore
   nlohmann::json new_json = json_spec["attributes"];
-  // update the variable name
-  new_json["variable_name"] =
-      std::filesystem::path(json_spec["kvstore"]["path"]).stem().string();
+  // update the variable name - extract last path component
+  std::string path = json_spec["kvstore"]["path"].get<std::string>();
+  // Remove trailing slashes
+  path = zarr::NormalizePath(path);
+  // Extract last component (variable name)
+  std::vector<std::string> path_parts = absl::StrSplit(path, '/');
+  new_json["variable_name"] = path_parts.empty() ? path : path_parts.back();
 
   return std::make_tuple(json_for_store, new_json);
 }
@@ -437,10 +440,10 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
         "Variable metadata requires dtype (V2) or data_type (V3)");
   }
 
-  // For V3, we don't use ParseDType (which is V2-specific)
-  // Instead, we handle structured arrays differently
+  // Handle structured arrays for both V2 and V3
   bool do_handle_structarray = false;
   tensorstore::internal_zarr::ZarrDType zarr_dtype;
+  std::string first_field_name;
 
   if (zarr_version == zarr::ZarrVersion::kV2 && has_dtype) {
     MDIO_ASSIGN_OR_RETURN(zarr_dtype, tensorstore::internal_zarr::ParseDType(
@@ -449,12 +452,25 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
     // void.
     do_handle_structarray =
         zarr_dtype.has_fields && !json_spec.contains("field");
+    if (do_handle_structarray) {
+      first_field_name = zarr_dtype.fields[0].name;
+    }
+  } else if (zarr_version == zarr::ZarrVersion::kV3 && has_data_type) {
+    // For V3, structured dtypes are represented as an array of [name, type]
+    // pairs e.g., [["cdp-x", "int32"], ["cdp-y", "int32"], ...]
+    const auto& data_type = json_spec["metadata"]["data_type"];
+    if (data_type.is_array() && !data_type.empty() && data_type[0].is_array() &&
+        !json_spec.contains("field")) {
+      do_handle_structarray = true;
+      // Extract the first field name from the structured dtype
+      first_field_name = data_type[0][0].get<std::string>();
+    }
   }
 
   auto json_spec_with_open_flag = json_spec;
   if (do_handle_structarray) {
-    // pick the first name, it won't effect the .zarray json:
-    json_spec_with_open_flag["field"] = zarr_dtype.fields[0].name;
+    // pick the first field name, it won't affect the zarr.json/zarray:
+    json_spec_with_open_flag["field"] = first_field_name;
   }
 
   auto json_spec_without_metadata = json_spec_with_open_flag;
@@ -646,10 +662,17 @@ Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
         nlohmann::json::parse(std::string(kvs_read.value), nullptr, false);
     if (zarr_version == zarr::ZarrVersion::kV3) {
       // For V3, extract attributes from zarr.json
+      nlohmann::json result;
       if (parsed.contains("attributes")) {
-        return parsed["attributes"];
+        result = parsed["attributes"];
+      } else {
+        result = nlohmann::json::object();
       }
-      return nlohmann::json::object();
+      // For V3, dimension_names is at the root level of zarr.json
+      if (parsed.contains("dimension_names")) {
+        result["dimension_names"] = parsed["dimension_names"];
+      }
+      return result;
     }
     // For V2, the entire file is attributes
     return parsed;

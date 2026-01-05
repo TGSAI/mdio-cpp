@@ -1,4 +1,4 @@
-// Copyright 2024 TGS
+// Copyright 2026 TGS
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,7 +15,8 @@
 #ifndef MDIO_ZARR_ZARR_V3_H_
 #define MDIO_ZARR_ZARR_V3_H_
 
-#include <filesystem>
+#include <algorithm>
+#include <memory>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -56,6 +57,68 @@ constexpr std::string_view kGroupNodeType = "group";
  * @brief The node type for an array in Zarr V3.
  */
 constexpr std::string_view kArrayNodeType = "array";
+
+// ============================================================================
+// V3-Specific JSON Utilities
+// ============================================================================
+
+/**
+ * @brief Checks if a JSON object represents a Zarr V3 array.
+ * @param json The zarr.json content.
+ * @return True if node_type is "array".
+ */
+inline bool IsArrayMetadata(const nlohmann::json& json) {
+  return GetJsonString(json, "node_type") == std::string(kArrayNodeType);
+}
+
+// ============================================================================
+// Variable Discovery Utilities
+// ============================================================================
+
+/**
+ * @brief Extracts child array names from kvstore list entries.
+ *
+ * Looks for entries matching pattern "NAME/zarr.json" and returns unique NAMEs.
+ *
+ * @param entries The list entries from kvstore.
+ * @return Vector of unique child directory names.
+ */
+inline std::vector<std::string> ExtractChildArrayCandidates(
+    const std::vector<tensorstore::kvstore::ListEntry>& entries) {
+  std::vector<std::string> candidates;
+  for (const auto& entry : entries) {
+    const std::string& key = entry.key;
+    size_t slash_pos = key.find('/');
+    if (slash_pos != std::string::npos &&
+        key.substr(slash_pos + 1) == "zarr.json") {
+      std::string name = key.substr(0, slash_pos);
+      if (std::find(candidates.begin(), candidates.end(), name) ==
+          candidates.end()) {
+        candidates.push_back(name);
+      }
+    }
+  }
+  return candidates;
+}
+
+/**
+ * @brief Builds a variable spec for a Zarr V3 array.
+ * @param driver The kvstore driver name.
+ * @param base_path The base dataset path.
+ * @param var_name The variable/array name.
+ * @return The JSON spec for opening this variable.
+ */
+inline nlohmann::json BuildVariableSpec(const std::string& driver,
+                                        const std::string& base_path,
+                                        const std::string& var_name) {
+  return {
+      {"driver", std::string(kDriverName)},
+      {"kvstore", {{"driver", driver}, {"path", base_path + "/" + var_name}}}};
+}
+
+// ============================================================================
+// Dtype Conversion
+// ============================================================================
 
 /**
  * @brief Converts a dtype string to Zarr V3 format.
@@ -158,6 +221,7 @@ inline nlohmann::json CreateArrayMetadata(
  * @brief Prepares MDIO attributes for Zarr V3 format.
  *
  * In Zarr V3, attributes are embedded directly in zarr.json.
+ * For xarray compatibility, dimension_names is converted to _ARRAY_DIMENSIONS.
  *
  * @param json The variable JSON specification.
  * @return nlohmann::json The prepared attributes for Zarr V3.
@@ -169,7 +233,7 @@ inline nlohmann::json PrepareVariableAttributes(const nlohmann::json& json) {
     attrs = json["attributes"];
   }
 
-  // MDIO-specific: Convert dimension_names to _ARRAY_DIMENSIONS
+  // Convert dimension_names to _ARRAY_DIMENSIONS for xarray compatibility
   if (attrs.contains("dimension_names")) {
     attrs["_ARRAY_DIMENSIONS"] = attrs["dimension_names"];
     attrs.erase("dimension_names");
@@ -251,18 +315,9 @@ inline Future<void> WriteMetadata(
 
   auto kvs_future = tensorstore::kvstore::Open(kvstore, context);
 
-  // Extract variable names from json_variables for discovery
-  nlohmann::json var_names = nlohmann::json::array();
-  for (const auto& var : json_variables) {
-    std::string path = var["kvstore"]["path"].get<std::string>();
-    std::vector<std::string> path_parts = absl::StrSplit(path, '/');
-    var_names.push_back(path_parts.back());
-  }
-
-  // Create root metadata with variables list for discovery
-  nlohmann::json root_attrs = dataset_metadata;
-  root_attrs["variables"] = var_names;
-  auto root_metadata = CreateGroupMetadata(root_attrs);
+  // Create root metadata (variables are discovered via directory listing,
+  // not stored in zarr.json)
+  auto root_metadata = CreateGroupMetadata(dataset_metadata);
 
   auto root_future = tensorstore::MapFutureValue(
       tensorstore::InlineExecutor{},
@@ -283,11 +338,161 @@ inline Future<void> WriteMetadata(
   return tensorstore::WaitAllFuture(write_futures);
 }
 
+// ============================================================================
+// Async Metadata Discovery
+// ============================================================================
+
+namespace internal {
+
+/**
+ * @brief State for V3 async metadata discovery operations.
+ *
+ * This struct holds all state needed across the async callback chain,
+ * avoiding deeply nested lambdas and making the flow clearer.
+ */
+struct V3MetadataState {
+  using ResultType = std::tuple<nlohmann::json, std::vector<nlohmann::json>>;
+  using PromiseType = tensorstore::Promise<ResultType>;
+  using ReadFuture = tensorstore::Future<tensorstore::kvstore::ReadResult>;
+
+  PromiseType promise;
+  tensorstore::KvStore kvs;
+  nlohmann::json dataset_metadata;
+  std::string dataset_path;
+  std::string driver;
+  std::string normalized_path;
+  std::vector<std::string> candidates;
+  std::shared_ptr<std::vector<ReadFuture>> read_futures;
+
+  explicit V3MetadataState(PromiseType p, const std::string& path)
+      : promise(std::move(p)),
+        dataset_path(path),
+        driver(InferDriverFromPath(path)),
+        normalized_path(NormalizePath(path)) {}
+
+  /// Completes with an error status.
+  void Fail(absl::Status status) { promise.SetResult(std::move(status)); }
+
+  /// Completes successfully with the discovered metadata and variables.
+  void Complete(std::vector<nlohmann::json> json_vars) {
+    promise.SetResult(std::make_tuple(dataset_metadata, std::move(json_vars)));
+  }
+
+  /// Builds a variable spec for the given variable name.
+  nlohmann::json MakeVariableSpec(const std::string& var_name) const {
+    return BuildVariableSpec(driver, normalized_path, var_name);
+  }
+
+  /// Filters read results to build variable specs for arrays only.
+  std::vector<nlohmann::json> BuildVariableSpecs() const {
+    std::vector<nlohmann::json> json_vars;
+    for (size_t i = 0; i < candidates.size(); ++i) {
+      const auto& result = (*read_futures)[i].result();
+      if (!result.ok() || !result->has_value()) continue;
+
+      auto parsed = ParseJsonFromReadResult(*result);
+      if (parsed.ok() && IsArrayMetadata(parsed.value())) {
+        json_vars.push_back(MakeVariableSpec(candidates[i]));
+      }
+    }
+    return json_vars;
+  }
+};
+
+/// Step 4: Process read results and complete.
+inline void OnV3ChildReadsComplete(std::shared_ptr<V3MetadataState> state,
+                                   tensorstore::ReadyFuture<void>) {
+  auto json_vars = state->BuildVariableSpecs();
+  if (json_vars.empty()) {
+    state->Fail(absl::InvalidArgumentError("No Zarr V3 arrays found."));
+    return;
+  }
+  state->Complete(std::move(json_vars));
+}
+
+/// Step 3: Read all child zarr.json files and filter by node_type.
+inline void OnV3ListComplete(
+    std::shared_ptr<V3MetadataState> state,
+    tensorstore::ReadyFuture<std::vector<tensorstore::kvstore::ListEntry>>
+        list_ready) {
+  if (!list_ready.result().ok()) {
+    state->Fail(list_ready.result().status());
+    return;
+  }
+
+  state->candidates = ExtractChildArrayCandidates(list_ready.value());
+  if (state->candidates.empty()) {
+    state->Fail(absl::InvalidArgumentError("No Zarr V3 arrays found."));
+    return;
+  }
+
+  // Read all child zarr.json files
+  state->read_futures =
+      std::make_shared<std::vector<V3MetadataState::ReadFuture>>();
+  std::vector<tensorstore::AnyFuture> any_futures;
+
+  for (const auto& name : state->candidates) {
+    auto f = tensorstore::kvstore::Read(state->kvs, name + "/zarr.json");
+    state->read_futures->push_back(f);
+    any_futures.push_back(std::move(f));
+  }
+
+  auto all_reads = tensorstore::WaitAllFuture(any_futures);
+  all_reads.ExecuteWhenReady([state](tensorstore::ReadyFuture<void> ready) {
+    OnV3ChildReadsComplete(state, std::move(ready));
+  });
+}
+
+/// Step 2: Parse root metadata and list kvstore contents.
+inline void OnV3RootReadComplete(
+    std::shared_ptr<V3MetadataState> state,
+    tensorstore::ReadyFuture<tensorstore::kvstore::ReadResult> root_ready) {
+  if (!root_ready.result().ok()) {
+    state->Fail(root_ready.result().status());
+    return;
+  }
+
+  auto root_json = ParseJsonFromReadResult(root_ready.value());
+  if (!root_json.ok()) {
+    state->Fail(root_json.status());
+    return;
+  }
+
+  state->dataset_metadata = GetJsonObject(root_json.value(), "attributes");
+
+  auto list_future = tensorstore::kvstore::ListFuture(state->kvs);
+  list_future.ExecuteWhenReady(
+      [state](
+          tensorstore::ReadyFuture<std::vector<tensorstore::kvstore::ListEntry>>
+              ready) { OnV3ListComplete(state, std::move(ready)); });
+}
+
+/// Step 1: Start reading root zarr.json.
+inline void OnV3KvStoreReady(
+    std::shared_ptr<V3MetadataState> state,
+    tensorstore::ReadyFuture<tensorstore::KvStore> kvs_ready) {
+  if (!kvs_ready.result().ok()) {
+    state->Fail(kvs_ready.result().status());
+    return;
+  }
+
+  state->kvs = kvs_ready.value();
+  auto root_read = tensorstore::kvstore::Read(state->kvs, "zarr.json");
+  root_read.ExecuteWhenReady(
+      [state](
+          tensorstore::ReadyFuture<tensorstore::kvstore::ReadResult> ready) {
+        OnV3RootReadComplete(state, std::move(ready));
+      });
+}
+
+}  // namespace internal
+
 /**
  * @brief Reads dataset metadata from Zarr V3 format (non-consolidated).
  *
  * For Zarr V3, we read the root zarr.json and then discover arrays
- * by listing the directory contents.
+ * by listing the kvstore contents and checking each zarr.json for
+ * node_type="array" (skipping groups).
  *
  * @param dataset_path The path to the dataset.
  * @param kvs_future A future to the KvStore.
@@ -299,101 +504,12 @@ ReadMetadata(const std::string& dataset_path,
   auto pair = tensorstore::PromiseFuturePair<
       std::tuple<::nlohmann::json, std::vector<::nlohmann::json>>>::Make();
 
+  auto state = std::make_shared<internal::V3MetadataState>(
+      std::move(pair.promise), dataset_path);
+
   kvs_future.ExecuteWhenReady(
-      [promise = std::move(pair.promise),
-       dataset_path](tensorstore::ReadyFuture<tensorstore::KvStore> ready_kvs) {
-        if (!ready_kvs.result().ok()) {
-          promise.SetResult(ready_kvs.result().status());
-          return;
-        }
-
-        auto kvs = ready_kvs.value();
-
-        // Read root zarr.json using async chaining to avoid deadlock
-        auto root_read_future = tensorstore::kvstore::Read(kvs, "zarr.json");
-
-        root_read_future.ExecuteWhenReady(
-            [promise = std::move(promise), dataset_path](
-                tensorstore::ReadyFuture<tensorstore::kvstore::ReadResult>
-                    root_read_ready) {
-              if (!root_read_ready.result().ok()) {
-                promise.SetResult(root_read_ready.result().status());
-                return;
-              }
-
-              ::nlohmann::json root_json;
-              try {
-                root_json = ::nlohmann::json::parse(
-                    std::string(root_read_ready.value().value));
-              } catch (const nlohmann::json::parse_error& e) {
-                promise.SetResult(absl::InvalidArgumentError(
-                    std::string("JSON parse error: ") + e.what()));
-                return;
-              }
-
-              // Extract attributes as dataset metadata
-              nlohmann::json dataset_metadata = nlohmann::json::object();
-              if (root_json.contains("attributes")) {
-                dataset_metadata = root_json["attributes"];
-              }
-
-              // Infer the driver
-              std::string driver = "file";
-              std::string bucket;
-              std::string cloudPath;
-              if (dataset_path.length() > 5) {
-                if (dataset_path.substr(0, 5) == "gs://") {
-                  driver = "gcs";
-                } else if (dataset_path.substr(0, 5) == "s3://") {
-                  driver = "s3";
-                }
-              }
-              if (driver != "file") {
-                std::string providedPath = dataset_path.substr(5);
-                size_t bucketLen = providedPath.find_first_of('/');
-                bucket = providedPath.substr(0, bucketLen);
-                cloudPath = providedPath.substr(bucketLen + 1,
-                                                providedPath.length() - 2);
-              }
-
-              std::vector<nlohmann::json> json_vars;
-
-              // Check if dataset_metadata contains variable information
-              if (dataset_metadata.contains("variables")) {
-                for (const auto& var_name : dataset_metadata["variables"]) {
-                  std::string name = var_name.get<std::string>();
-                  // Ensure proper path separator
-                  std::string sep =
-                      (!dataset_path.empty() && dataset_path.back() != '/')
-                          ? "/"
-                          : "";
-                  nlohmann::json var_spec = {
-                      {"driver", std::string(kDriverName)},
-                      {"kvstore",
-                       {{"driver", driver},
-                        {"path", dataset_path + sep + name}}}};
-                  if (driver != "file") {
-                    var_spec["kvstore"]["bucket"] = bucket;
-                    std::string cloud_sep =
-                        (!cloudPath.empty() && cloudPath.back() != '/') ? "/"
-                                                                        : "";
-                    var_spec["kvstore"]["path"] = cloudPath + cloud_sep + name;
-                  }
-                  json_vars.push_back(var_spec);
-                }
-              }
-
-              if (json_vars.empty()) {
-                // Return error - V3 discovery requires variable names
-                promise.SetResult(absl::InvalidArgumentError(
-                    "Zarr V3 store discovery requires 'variables' list in root "
-                    "zarr.json attributes. Please specify variable specs "
-                    "explicitly."));
-                return;
-              }
-
-              promise.SetResult(std::make_tuple(dataset_metadata, json_vars));
-            });
+      [state](tensorstore::ReadyFuture<tensorstore::KvStore> ready) {
+        internal::OnV3KvStoreReady(state, std::move(ready));
       });
 
   return pair.future;
@@ -455,10 +571,21 @@ Future<tensorstore::TimestampedStorageGeneration> WriteVariableAttributes(
       }
     }
 
+    // Extract dimension_names before preparing attributes (goes at root level)
+    nlohmann::json dimension_names;
+    if (json_var.contains("dimension_names")) {
+      dimension_names = json_var["dimension_names"];
+    }
+
     // Prepare and update attributes
     auto attrs =
         PrepareVariableAttributes(nlohmann::json{{"attributes", json_var}});
     zarr_json["attributes"] = attrs;
+
+    // Add dimension_names at root level (Zarr V3 spec)
+    if (!dimension_names.is_null()) {
+      zarr_json["dimension_names"] = dimension_names;
+    }
 
     // Write back
     auto write_result = tensorstore::kvstore::Write(
@@ -494,11 +621,17 @@ inline Future<nlohmann::json> ReadVariableAttributes(
         try {
           auto zarr_json =
               nlohmann::json::parse(std::string(ready_result.value().value));
+          nlohmann::json attrs;
           if (zarr_json.contains("attributes")) {
-            promise.SetResult(zarr_json["attributes"]);
+            attrs = zarr_json["attributes"];
           } else {
-            promise.SetResult(nlohmann::json::object());
+            attrs = nlohmann::json::object();
           }
+          // Read dimension_names from root level and add to attrs for MDIO
+          if (zarr_json.contains("dimension_names")) {
+            attrs["dimension_names"] = zarr_json["dimension_names"];
+          }
+          promise.SetResult(attrs);
         } catch (const nlohmann::json::parse_error& e) {
           promise.SetResult(absl::InvalidArgumentError(
               std::string("JSON parse error: ") + e.what()));
@@ -511,6 +644,8 @@ inline Future<nlohmann::json> ReadVariableAttributes(
 /**
  * @brief Helper to convert Zarr V3 metadata to MDIO-compatible format.
  *
+ * Converts _ARRAY_DIMENSIONS back to dimension_names for internal MDIO use.
+ *
  * @param zarr_json The Zarr V3 zarr.json content.
  * @return nlohmann::json The MDIO-compatible metadata.
  */
@@ -521,10 +656,15 @@ inline nlohmann::json ConvertToMdioMetadata(const nlohmann::json& zarr_json) {
     mdio_metadata = zarr_json["attributes"];
   }
 
-  // Convert _ARRAY_DIMENSIONS back to dimension_names
+  // Convert _ARRAY_DIMENSIONS back to dimension_names for MDIO
   if (mdio_metadata.contains("_ARRAY_DIMENSIONS")) {
     mdio_metadata["dimension_names"] = mdio_metadata["_ARRAY_DIMENSIONS"];
     mdio_metadata.erase("_ARRAY_DIMENSIONS");
+  }
+
+  // Also check root level dimension_names (V3 spec)
+  if (zarr_json.contains("dimension_names")) {
+    mdio_metadata["dimension_names"] = zarr_json["dimension_names"];
   }
 
   return mdio_metadata;

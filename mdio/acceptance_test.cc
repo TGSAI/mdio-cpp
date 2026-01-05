@@ -39,14 +39,40 @@ namespace {
 constexpr char PYTHON_EXECUTABLE[] = "python3";
 constexpr char PROJECT_BASE_PATH_ENV[] = "PROJECT_BASE_PATH";
 constexpr char DEFAULT_BASE_PATH[] = "../..";
-constexpr char ZARR_SCRIPT_RELATIVE_PATH[] =
-    "/mdio/regression_tests/zarr_compatibility.py";
 constexpr char XARRAY_SCRIPT_RELATIVE_PATH[] =
     "/mdio/regression_tests/xarray_compatibility_test.py";
 constexpr int ERROR_CODE = EXIT_FAILURE;
 constexpr int SUCCESS_CODE = EXIT_SUCCESS;
 
 using float16_t = mdio::dtypes::float_16_t;
+
+/**
+ * @brief Test variable definition with dtype info for V2 and V3.
+ */
+struct TestVariableDef {
+  std::string name;
+  std::string dtype_v2;
+  std::string dtype_v3;
+  std::string long_name;
+  mdio::DataType expected_dtype;
+};
+
+// Common test variable definitions used across multiple tests
+const std::vector<TestVariableDef> kTestVariables = {
+    {"i2", "<i2", "int16", "2-byte integer test", mdio::constants::kInt16},
+    {"i4", "<i4", "int32", "4-byte integer test", mdio::constants::kInt32},
+    {"i8", "<i8", "int64", "8-byte integer test", mdio::constants::kInt64},
+    {"f2", "<f2", "float16", "2-byte float test", mdio::constants::kFloat16},
+    {"f4", "<f4", "float32", "4-byte float test", mdio::constants::kFloat32},
+    {"f8", "<f8", "float64", "8-byte float test", mdio::constants::kFloat64},
+    {"u1", "<u1", "uint8", "1-byte unsigned integer test",
+     mdio::constants::kUint8},
+    {"u2", "<u2", "uint16", "2-byte unsigned integer test",
+     mdio::constants::kUint16},
+    {"u8", "<u8", "uint64", "8-byte unsigned integer test",
+     mdio::constants::kUint64},
+    {"b1", "|b1", "bool", "boolean test", mdio::constants::kBool},
+};
 
 /**
  * @brief Returns a string representation of the Zarr version for naming.
@@ -69,49 +95,6 @@ std::string GetBasePath(mdio::zarr::ZarrVersion version) {
  */
 std::string GetTestDriverName(mdio::zarr::ZarrVersion version) {
   return version == mdio::zarr::ZarrVersion::kV3 ? "zarr3" : "zarr";
-}
-
-/**
- * @brief Creates a variable spec for testing based on Zarr version.
- */
-nlohmann::json CreateVariableSpec(mdio::zarr::ZarrVersion version,
-                                  const std::string& name,
-                                  const std::string& base_path) {
-  nlohmann::json spec;
-  spec["driver"] = GetTestDriverName(version);
-  spec["kvstore"]["driver"] = "file";
-  spec["kvstore"]["path"] = base_path + "/" + name;
-
-  if (version == mdio::zarr::ZarrVersion::kV3) {
-    spec["metadata"]["data_type"] = "int16";
-    spec["metadata"]["shape"] = nlohmann::json::array({10, 10});
-    spec["metadata"]["chunk_grid"]["name"] = "regular";
-    spec["metadata"]["chunk_grid"]["configuration"]["chunk_shape"] =
-        nlohmann::json::array({5, 5});
-    spec["metadata"]["chunk_key_encoding"]["name"] = "default";
-    spec["metadata"]["chunk_key_encoding"]["configuration"]["separator"] = "/";
-    nlohmann::json bytes_codec;
-    bytes_codec["name"] = "bytes";
-    spec["metadata"]["codecs"] = nlohmann::json::array({bytes_codec});
-    spec["attributes"]["metadata"]["attributes"]["foo"] = "bar";
-    spec["attributes"]["long_name"] = "2-byte integer test";
-    spec["attributes"]["dimension_names"] =
-        nlohmann::json::array({"inline", "crossline"});
-    spec["attributes"]["dimension_units"] = nlohmann::json::array({"m", "m"});
-  } else {
-    spec["metadata"]["dtype"] = "<i2";
-    spec["metadata"]["shape"] = nlohmann::json::array({10, 10});
-    spec["metadata"]["chunks"] = nlohmann::json::array({5, 5});
-    spec["metadata"]["dimension_separator"] = "/";
-    spec["metadata"]["compressor"]["id"] = "blosc";
-    spec["attributes"]["metadata"]["attributes"]["foo"] = "bar";
-    spec["attributes"]["long_name"] = "2-byte integer test";
-    spec["attributes"]["dimension_names"] =
-        nlohmann::json::array({"inline", "crossline"});
-    spec["attributes"]["dimension_units"] = nlohmann::json::array({"m", "m"});
-  }
-
-  return spec;
 }
 
 /**
@@ -174,134 +157,61 @@ nlohmann::json CreateBaseSpec(mdio::zarr::ZarrVersion version,
 }
 
 /**
+ * @brief Creates and asserts a test variable from a definition.
+ */
+void CreateTestVariable(const TestVariableDef& def,
+                        mdio::zarr::ZarrVersion version,
+                        const std::string& base_path) {
+  mdio::TransactionalOpenOptions options;
+  auto opt = options.Set(std::move(mdio::constants::kCreateClean));
+
+  auto spec = CreateTypedVariableSpec(
+      version, def.name, base_path, def.dtype_v2, def.dtype_v3, def.long_name);
+  auto schema = mdio::internal::ValidateAndProcessJson(spec).value();
+  auto [store, metadata] = schema;
+  auto var =
+      mdio::internal::CreateVariable(store, metadata, std::move(options));
+  ASSERT_TRUE(var.status().ok())
+      << "Failed to create " << def.name << ": " << var.status();
+}
+
+/**
+ * @brief Opens a variable by name and returns its Future.
+ */
+mdio::Future<mdio::Variable<>> OpenTestVariable(const std::string& name,
+                                                mdio::zarr::ZarrVersion version,
+                                                const std::string& base_path) {
+  return mdio::Variable<>::Open(CreateBaseSpec(version, name, base_path),
+                                mdio::constants::kOpen);
+}
+
+/**
+ * @brief Gets the Python script base path from environment.
+ */
+const char* GetPythonBasePath() {
+  const char* basePath = std::getenv(PROJECT_BASE_PATH_ENV);
+  if (!basePath) {
+    std::cout << "PROJECT_BASE_PATH environment variable not set. Expecting to "
+                 "be in the 'build/mdio' directory."
+              << std::endl;
+    basePath = DEFAULT_BASE_PATH;
+  }
+  return basePath;
+}
+
+/**
  * @brief Returns the dataset manifest JSON for the given version.
+ * Both versions use the same manifest structure including struct arrays.
  */
 std::string GetDatasetManifest(mdio::zarr::ZarrVersion version) {
   std::string name =
       version == mdio::zarr::ZarrVersion::kV3 ? "campos_3d_v3" : "campos_3d";
 
-  // Note: V3 doesn't support struct arrays yet, so we use a slightly different
-  // manifest
-  if (version == mdio::zarr::ZarrVersion::kV3) {
-    return R"(
+  // clang-format off
+  std::string manifest = R"(
 {
   "metadata": {
-    "name": "campos_3d_v3",
-    "apiVersion": "1.0.0",
-    "createdOn": "2023-12-12T15:02:06.413469-06:00",
-    "attributes": {
-      "textHeader": [
-        "C01 .......................... ",
-        "C02 .......................... ",
-        "C03 .......................... "
-      ],
-      "foo": "bar"
-    }
-  },
-  "variables": [
-    {
-      "name": "image",
-      "dataType": "float32",
-      "dimensions": [
-        {"name": "inline", "size": 256},
-        {"name": "crossline", "size": 512},
-        {"name": "depth", "size": 384}
-      ],
-      "metadata": {
-        "chunkGrid": {
-          "name": "regular",
-          "configuration": { "chunkShape": [128, 128, 128] }
-        },
-        "statsV1": {
-          "count": 100,
-          "sum": 1215.1,
-          "sumSquares": 125.12,
-          "min": 5.61,
-          "max": 10.84,
-          "histogram": {"binCenters":  [1, 2], "counts":  [10, 15]}
-        },
-        "attributes": {
-          "fizz": "buzz"
-        }
-    },
-      "coordinates": ["inline", "crossline", "depth", "cdp-x", "cdp-y"],
-      "compressor": {"name": "blosc", "algorithm": "zstd"}
-    },
-    {
-      "name": "velocity",
-      "dataType": "float64",
-      "dimensions": ["inline", "crossline", "depth"],
-      "metadata": {
-        "chunkGrid": {
-          "name": "regular",
-          "configuration": { "chunkShape": [128, 128, 128] }
-        },
-        "unitsV1": {"speed": "m/s"}
-      },
-      "coordinates": ["inline", "crossline", "depth", "cdp-x", "cdp-y"]
-    },
-    {
-      "name": "image_inline",
-      "dataType": "int16",
-      "dimensions": ["inline", "crossline", "depth"],
-      "longName": "inline optimized version of 3d_stack",
-      "compressor": {"name": "blosc", "algorithm": "zstd"},
-      "metadata": {
-        "chunkGrid": {
-          "name": "regular",
-          "configuration": { "chunkShape": [4, 512, 512] }
-        }
-      },
-      "coordinates": ["inline", "crossline", "depth", "cdp-x", "cdp-y"]
-    },
-    {
-      "name": "inline",
-      "dataType": "uint32",
-      "dimensions": [{"name": "inline", "size": 256}]
-    },
-    {
-      "name": "crossline",
-      "dataType": "uint32",
-      "dimensions": [{"name": "crossline", "size": 512}]
-    },
-    {
-      "name": "depth",
-      "dataType": "uint32",
-      "dimensions": [{"name": "depth", "size": 384}],
-      "metadata": {
-        "unitsV1": { "length": "m" }
-      }
-    },
-    {
-      "name": "cdp-x",
-      "dataType": "float32",
-      "dimensions": [
-        {"name": "inline", "size": 256},
-        {"name": "crossline", "size": 512}
-      ],
-      "metadata": {
-        "unitsV1": { "length": "m" }
-      }
-    },
-    {
-      "name": "cdp-y",
-      "dataType": "float32",
-      "dimensions": [
-        {"name": "inline", "size": 256},
-        {"name": "crossline", "size": 512}
-      ],
-      "metadata": {
-        "unitsV1": { "length": "m" }
-      }
-    }
-  ]
-}
-    )";
-  } else {
-    return R"(
-{
-  "metadata": {
-    "name": "campos_3d",
+    "name": ")" + name + R"(",
     "apiVersion": "1.0.0",
     "createdOn": "2023-12-12T15:02:06.413469-06:00",
     "attributes": {
@@ -431,7 +341,8 @@ std::string GetDatasetManifest(mdio::zarr::ZarrVersion version) {
   ]
 }
     )";
-  }
+  // clang-format on
+  return manifest;
 }
 
 /**
@@ -465,6 +376,49 @@ int executePythonScript(const std::string& scriptPath,
   return SUCCESS_CODE;
 }
 
+/**
+ * @brief Runs Python scripts with fork/wait and checks results.
+ * @return true if all scripts passed, false otherwise.
+ */
+bool RunPythonScripts(const std::string& script_path,
+                      const std::vector<std::vector<std::string>>& arg_sets,
+                      const std::string& skip_message) {
+  std::vector<pid_t> pids;
+
+  for (const auto& args : arg_sets) {
+    pid_t pid = fork();
+    if (pid == 0) {
+      int result = executePythonScript(script_path, args);
+      if (result == 0xfd00) {
+        exit(SUCCESS_CODE);
+      }
+      exit(result);
+    } else if (pid > 0) {
+      pids.push_back(pid);
+    } else {
+      perror("fork failed");
+      return false;
+    }
+  }
+
+  bool all_passed = true;
+  for (pid_t pid : pids) {
+    int status;
+    if (waitpid(pid, &status, 0) == -1) {
+      perror("waitpid failed");
+      return false;
+    }
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+      if (WIFEXITED(status) && WEXITSTATUS(status) == 0xfd00) {
+        // Import error - will be handled by caller
+        continue;
+      }
+      all_passed = false;
+    }
+  }
+  return all_passed;
+}
+
 // ============================================================================
 // Parameterized Variable Tests
 // ============================================================================
@@ -483,205 +437,52 @@ class VariableTest : public ::testing::TestWithParam<mdio::zarr::ZarrVersion> {
 };
 
 TEST_P(VariableTest, SETUP) {
-  // Ensure directory exists
   std::filesystem::create_directories(base_path_);
 
-  mdio::TransactionalOpenOptions options;
-  auto opt = options.Set(std::move(mdio::constants::kCreateClean));
-
-  // Create i2 (int16)
-  auto i2Spec = CreateTypedVariableSpec(version_, "i2", base_path_, "<i2",
-                                        "int16", "2-byte integer test");
-  auto i2Schema = mdio::internal::ValidateAndProcessJson(i2Spec).value();
-  auto [i2Store, i2Metadata] = i2Schema;
-  auto i2 =
-      mdio::internal::CreateVariable(i2Store, i2Metadata, std::move(options));
-  ASSERT_TRUE(i2.status().ok()) << i2.status();
-
-  // Create i4 (int32)
-  auto i4Spec = CreateTypedVariableSpec(version_, "i4", base_path_, "<i4",
-                                        "int32", "4-byte integer test");
-  auto i4Schema = mdio::internal::ValidateAndProcessJson(i4Spec).value();
-  auto [i4Store, i4Metadata] = i4Schema;
-  auto i4 =
-      mdio::internal::CreateVariable(i4Store, i4Metadata, std::move(options));
-  ASSERT_TRUE(i4.status().ok()) << i4.status();
-
-  // Create i8 (int64)
-  auto i8Spec = CreateTypedVariableSpec(version_, "i8", base_path_, "<i8",
-                                        "int64", "8-byte integer test");
-  auto i8Schema = mdio::internal::ValidateAndProcessJson(i8Spec).value();
-  auto [i8Store, i8Metadata] = i8Schema;
-  auto i8 =
-      mdio::internal::CreateVariable(i8Store, i8Metadata, std::move(options));
-  ASSERT_TRUE(i8.status().ok()) << i8.status();
-
-  // Create f2 (float16)
-  auto f2Spec = CreateTypedVariableSpec(version_, "f2", base_path_, "<f2",
-                                        "float16", "2-byte float test");
-  auto f2Schema = mdio::internal::ValidateAndProcessJson(f2Spec).value();
-  auto [f2Store, f2Metadata] = f2Schema;
-  auto f2 =
-      mdio::internal::CreateVariable(f2Store, f2Metadata, std::move(options));
-  ASSERT_TRUE(f2.status().ok()) << f2.status();
-
-  // Create f4 (float32)
-  auto f4Spec = CreateTypedVariableSpec(version_, "f4", base_path_, "<f4",
-                                        "float32", "4-byte float test");
-  auto f4Schema = mdio::internal::ValidateAndProcessJson(f4Spec).value();
-  auto [f4Store, f4Metadata] = f4Schema;
-  auto f4 =
-      mdio::internal::CreateVariable(f4Store, f4Metadata, std::move(options));
-  ASSERT_TRUE(f4.status().ok()) << f4.status();
-
-  // Create f8 (float64)
-  auto f8Spec = CreateTypedVariableSpec(version_, "f8", base_path_, "<f8",
-                                        "float64", "8-byte float test");
-  auto f8Schema = mdio::internal::ValidateAndProcessJson(f8Spec).value();
-  auto [f8Store, f8Metadata] = f8Schema;
-  auto f8 =
-      mdio::internal::CreateVariable(f8Store, f8Metadata, std::move(options));
-  ASSERT_TRUE(f8.status().ok()) << f8.status();
-
-  // Create u1 (uint8)
-  auto u1Spec =
-      CreateTypedVariableSpec(version_, "u1", base_path_, "<u1", "uint8",
-                              "1-byte unsigned integer test");
-  auto u1Schema = mdio::internal::ValidateAndProcessJson(u1Spec).value();
-  auto [u1Store, u1Metadata] = u1Schema;
-  auto u1 =
-      mdio::internal::CreateVariable(u1Store, u1Metadata, std::move(options));
-  ASSERT_TRUE(u1.status().ok()) << u1.status();
-
-  // Create u2 (uint16)
-  auto u2Spec =
-      CreateTypedVariableSpec(version_, "u2", base_path_, "<u2", "uint16",
-                              "2-byte unsigned integer test");
-  auto u2Schema = mdio::internal::ValidateAndProcessJson(u2Spec).value();
-  auto [u2Store, u2Metadata] = u2Schema;
-  auto u2 =
-      mdio::internal::CreateVariable(u2Store, u2Metadata, std::move(options));
-  ASSERT_TRUE(u2.status().ok()) << u2.status();
-
-  // Create u8 (uint64)
-  auto u8Spec =
-      CreateTypedVariableSpec(version_, "u8", base_path_, "<u8", "uint64",
-                              "8-byte unsigned integer test");
-  auto u8Schema = mdio::internal::ValidateAndProcessJson(u8Spec).value();
-  auto [u8Store, u8Metadata] = u8Schema;
-  auto u8 =
-      mdio::internal::CreateVariable(u8Store, u8Metadata, std::move(options));
-  ASSERT_TRUE(u8.status().ok()) << u8.status();
-
-  // Create b1 (bool)
-  auto b1Spec = CreateTypedVariableSpec(version_, "b1", base_path_, "|b1",
-                                        "bool", "boolean test");
-  auto b1Schema = mdio::internal::ValidateAndProcessJson(b1Spec).value();
-  auto [b1Store, b1Metadata] = b1Schema;
-  auto b1 =
-      mdio::internal::CreateVariable(b1Store, b1Metadata, std::move(options));
-  ASSERT_TRUE(b1.status().ok()) << b1.status();
+  for (const auto& def : kTestVariables) {
+    CreateTestVariable(def, version_, base_path_);
+  }
 }
 
 TEST_P(VariableTest, open) {
-  auto i2Base = CreateBaseSpec(version_, "i2", base_path_);
-  auto i4Base = CreateBaseSpec(version_, "i4", base_path_);
-  auto i8Base = CreateBaseSpec(version_, "i8", base_path_);
-  auto f2Base = CreateBaseSpec(version_, "f2", base_path_);
-  auto f4Base = CreateBaseSpec(version_, "f4", base_path_);
-  auto f8Base = CreateBaseSpec(version_, "f8", base_path_);
-
-  EXPECT_TRUE(
-      mdio::Variable<>::Open(i2Base, mdio::constants::kOpen).status().ok());
-  EXPECT_TRUE(
-      mdio::Variable<>::Open(i4Base, mdio::constants::kOpen).status().ok());
-  EXPECT_TRUE(
-      mdio::Variable<>::Open(i8Base, mdio::constants::kOpen).status().ok());
-  EXPECT_TRUE(
-      mdio::Variable<>::Open(f2Base, mdio::constants::kOpen).status().ok());
-  EXPECT_TRUE(
-      mdio::Variable<>::Open(f4Base, mdio::constants::kOpen).status().ok());
-  EXPECT_TRUE(
-      mdio::Variable<>::Open(f8Base, mdio::constants::kOpen).status().ok());
+  for (const auto& def : kTestVariables) {
+    auto var = OpenTestVariable(def.name, version_, base_path_);
+    EXPECT_TRUE(var.status().ok())
+        << "Failed to open " << def.name << ": " << var.status();
+  }
 }
 
 TEST_P(VariableTest, name) {
-  auto i2 = mdio::Variable<>::Open(CreateBaseSpec(version_, "i2", base_path_),
-                                   mdio::constants::kOpen);
-  auto i4 = mdio::Variable<>::Open(CreateBaseSpec(version_, "i4", base_path_),
-                                   mdio::constants::kOpen);
-  auto i8 = mdio::Variable<>::Open(CreateBaseSpec(version_, "i8", base_path_),
-                                   mdio::constants::kOpen);
-  auto f2 = mdio::Variable<>::Open(CreateBaseSpec(version_, "f2", base_path_),
-                                   mdio::constants::kOpen);
-  auto f4 = mdio::Variable<>::Open(CreateBaseSpec(version_, "f4", base_path_),
-                                   mdio::constants::kOpen);
-  auto f8 = mdio::Variable<>::Open(CreateBaseSpec(version_, "f8", base_path_),
-                                   mdio::constants::kOpen);
-
-  ASSERT_TRUE(i2.status().ok()) << i2.status();
-  ASSERT_TRUE(i4.status().ok()) << i4.status();
-  ASSERT_TRUE(i8.status().ok()) << i8.status();
-  ASSERT_TRUE(f2.status().ok()) << f2.status();
-  ASSERT_TRUE(f4.status().ok()) << f4.status();
-  ASSERT_TRUE(f8.status().ok()) << f8.status();
-
-  EXPECT_EQ(i2.value().get_variable_name(), "i2");
-  EXPECT_EQ(i4.value().get_variable_name(), "i4");
-  EXPECT_EQ(i8.value().get_variable_name(), "i8");
-  EXPECT_EQ(f2.value().get_variable_name(), "f2");
-  EXPECT_EQ(f4.value().get_variable_name(), "f4");
-  EXPECT_EQ(f8.value().get_variable_name(), "f8");
+  for (const auto& def : kTestVariables) {
+    auto var = OpenTestVariable(def.name, version_, base_path_);
+    ASSERT_TRUE(var.status().ok()) << var.status();
+    EXPECT_EQ(var.value().get_variable_name(), def.name);
+  }
 }
 
 TEST_P(VariableTest, longName) {
-  auto i2 = mdio::Variable<>::Open(CreateBaseSpec(version_, "i2", base_path_),
-                                   mdio::constants::kOpen);
-  auto i4 = mdio::Variable<>::Open(CreateBaseSpec(version_, "i4", base_path_),
-                                   mdio::constants::kOpen);
-  auto i8 = mdio::Variable<>::Open(CreateBaseSpec(version_, "i8", base_path_),
-                                   mdio::constants::kOpen);
-  auto f2 = mdio::Variable<>::Open(CreateBaseSpec(version_, "f2", base_path_),
-                                   mdio::constants::kOpen);
-  auto f4 = mdio::Variable<>::Open(CreateBaseSpec(version_, "f4", base_path_),
-                                   mdio::constants::kOpen);
-  auto f8 = mdio::Variable<>::Open(CreateBaseSpec(version_, "f8", base_path_),
-                                   mdio::constants::kOpen);
-
-  ASSERT_TRUE(i2.status().ok()) << i2.status();
-  ASSERT_TRUE(i4.status().ok()) << i4.status();
-  ASSERT_TRUE(i8.status().ok()) << i8.status();
-  ASSERT_TRUE(f2.status().ok()) << f2.status();
-  ASSERT_TRUE(f4.status().ok()) << f4.status();
-  ASSERT_TRUE(f8.status().ok()) << f8.status();
-
-  EXPECT_EQ(i2.value().get_long_name(), "2-byte integer test");
-  EXPECT_EQ(i4.value().get_long_name(), "4-byte integer test");
-  EXPECT_EQ(i8.value().get_long_name(), "8-byte integer test");
-  EXPECT_EQ(f2.value().get_long_name(), "2-byte float test");
-  EXPECT_EQ(f4.value().get_long_name(), "4-byte float test");
-  EXPECT_EQ(f8.value().get_long_name(), "8-byte float test");
+  for (const auto& def : kTestVariables) {
+    auto var = OpenTestVariable(def.name, version_, base_path_);
+    ASSERT_TRUE(var.status().ok()) << var.status();
+    EXPECT_EQ(var.value().get_long_name(), def.long_name);
+  }
 }
 
 TEST_P(VariableTest, optionalAttrs) {
-  auto i2 = mdio::Variable<>::Open(CreateBaseSpec(version_, "i2", base_path_),
-                                   mdio::constants::kOpen);
+  auto i2 = OpenTestVariable("i2", version_, base_path_);
   ASSERT_TRUE(i2.status().ok()) << i2.status();
   EXPECT_EQ(i2.value().GetAttributes()["attributes"]["foo"], "bar");
 }
 
 TEST_P(VariableTest, namedDimensions) {
-  auto i2 = mdio::Variable<>::Open(CreateBaseSpec(version_, "i2", base_path_),
-                                   mdio::constants::kOpen);
+  auto i2 = OpenTestVariable("i2", version_, base_path_);
   ASSERT_TRUE(i2.status().ok()) << i2.status();
   EXPECT_EQ(i2.value().getMetadata()["dimension_names"].size(), 2);
 }
 
 TEST_P(VariableTest, sliceByDimIdx) {
-  auto i2 = mdio::Variable<>::Open(CreateBaseSpec(version_, "i2", base_path_),
-                                   mdio::constants::kOpen);
-  auto f4 = mdio::Variable<>::Open(CreateBaseSpec(version_, "f4", base_path_),
-                                   mdio::constants::kOpen);
+  auto i2 = OpenTestVariable("i2", version_, base_path_);
+  auto f4 = OpenTestVariable("f4", version_, base_path_);
   ASSERT_TRUE(i2.status().ok()) << i2.status();
   ASSERT_TRUE(f4.status().ok()) << f4.status();
 
@@ -700,8 +501,7 @@ TEST_P(VariableTest, sliceByDimIdx) {
 }
 
 TEST_P(VariableTest, sliceByDimName) {
-  auto i2 = mdio::Variable<>::Open(CreateBaseSpec(version_, "i2", base_path_),
-                                   mdio::constants::kOpen);
+  auto i2 = OpenTestVariable("i2", version_, base_path_);
   ASSERT_TRUE(i2.status().ok()) << i2.status();
 
   mdio::RangeDescriptor<mdio::Index> inlineSlice = {"inline", 0, 5, 1};
@@ -714,74 +514,34 @@ TEST_P(VariableTest, sliceByDimName) {
 }
 
 TEST_P(VariableTest, dimensionUnits) {
-  auto i2 = mdio::Variable<>::Open(CreateBaseSpec(version_, "i2", base_path_),
-                                   mdio::constants::kOpen);
+  auto i2 = OpenTestVariable("i2", version_, base_path_);
   ASSERT_TRUE(i2.status().ok()) << i2.status();
   EXPECT_TRUE(i2.value().getMetadata().contains("dimension_units"));
 }
 
 TEST_P(VariableTest, chunkSize) {
-  auto i2 = mdio::Variable<>::Open(CreateBaseSpec(version_, "i2", base_path_),
-                                   mdio::constants::kOpen);
+  auto i2 = OpenTestVariable("i2", version_, base_path_);
   ASSERT_TRUE(i2.status().ok()) << i2.status();
   EXPECT_TRUE(i2.value().get_chunk_shape().status().ok());
 }
 
 TEST_P(VariableTest, shape) {
-  auto i2 = mdio::Variable<>::Open(CreateBaseSpec(version_, "i2", base_path_),
-                                   mdio::constants::kOpen);
+  auto i2 = OpenTestVariable("i2", version_, base_path_);
   ASSERT_TRUE(i2.status().ok()) << i2.status();
   EXPECT_THAT(i2.value().dimensions().shape(), ::testing::ElementsAre(10, 10));
 }
 
 TEST_P(VariableTest, dtype) {
-  auto i2 = mdio::Variable<>::Open(CreateBaseSpec(version_, "i2", base_path_),
-                                   mdio::constants::kOpen);
-  auto i4 = mdio::Variable<>::Open(CreateBaseSpec(version_, "i4", base_path_),
-                                   mdio::constants::kOpen);
-  auto i8 = mdio::Variable<>::Open(CreateBaseSpec(version_, "i8", base_path_),
-                                   mdio::constants::kOpen);
-  auto f2 = mdio::Variable<>::Open(CreateBaseSpec(version_, "f2", base_path_),
-                                   mdio::constants::kOpen);
-  auto f4 = mdio::Variable<>::Open(CreateBaseSpec(version_, "f4", base_path_),
-                                   mdio::constants::kOpen);
-  auto f8 = mdio::Variable<>::Open(CreateBaseSpec(version_, "f8", base_path_),
-                                   mdio::constants::kOpen);
-  auto u1 = mdio::Variable<>::Open(CreateBaseSpec(version_, "u1", base_path_),
-                                   mdio::constants::kOpen);
-  auto u2 = mdio::Variable<>::Open(CreateBaseSpec(version_, "u2", base_path_),
-                                   mdio::constants::kOpen);
-  auto u8 = mdio::Variable<>::Open(CreateBaseSpec(version_, "u8", base_path_),
-                                   mdio::constants::kOpen);
-  auto b1 = mdio::Variable<>::Open(CreateBaseSpec(version_, "b1", base_path_),
-                                   mdio::constants::kOpen);
-
-  ASSERT_TRUE(i2.status().ok()) << i2.status();
-  ASSERT_TRUE(i4.status().ok()) << i4.status();
-  ASSERT_TRUE(i8.status().ok()) << i8.status();
-  ASSERT_TRUE(f2.status().ok()) << f2.status();
-  ASSERT_TRUE(f4.status().ok()) << f4.status();
-  ASSERT_TRUE(f8.status().ok()) << f8.status();
-  ASSERT_TRUE(u1.status().ok()) << u1.status();
-  ASSERT_TRUE(u2.status().ok()) << u2.status();
-  ASSERT_TRUE(u8.status().ok()) << u8.status();
-  ASSERT_TRUE(b1.status().ok()) << b1.status();
-
-  EXPECT_EQ(i2.value().dtype(), mdio::constants::kInt16);
-  EXPECT_EQ(i4.value().dtype(), mdio::constants::kInt32);
-  EXPECT_EQ(i8.value().dtype(), mdio::constants::kInt64);
-  EXPECT_EQ(f2.value().dtype(), mdio::constants::kFloat16);
-  EXPECT_EQ(f4.value().dtype(), mdio::constants::kFloat32);
-  EXPECT_EQ(f8.value().dtype(), mdio::constants::kFloat64);
-  EXPECT_EQ(u1.value().dtype(), mdio::constants::kUint8);
-  EXPECT_EQ(u2.value().dtype(), mdio::constants::kUint16);
-  EXPECT_EQ(u8.value().dtype(), mdio::constants::kUint64);
-  EXPECT_EQ(b1.value().dtype(), mdio::constants::kBool);
+  for (const auto& def : kTestVariables) {
+    auto var = OpenTestVariable(def.name, version_, base_path_);
+    ASSERT_TRUE(var.status().ok()) << var.status();
+    EXPECT_EQ(var.value().dtype(), def.expected_dtype)
+        << "dtype mismatch for " << def.name;
+  }
 }
 
 TEST_P(VariableTest, domain) {
-  auto i2 = mdio::Variable<>::Open(CreateBaseSpec(version_, "i2", base_path_),
-                                   mdio::constants::kOpen);
+  auto i2 = OpenTestVariable("i2", version_, base_path_);
   ASSERT_TRUE(i2.status().ok()) << i2.status();
 
   const mdio::Index EXPECTED_SHAPE = 10;
@@ -790,17 +550,9 @@ TEST_P(VariableTest, domain) {
 }
 
 TEST_P(VariableTest, TEARDOWN) {
-  std::filesystem::remove_all(base_path_ + "/i2");
-  std::filesystem::remove_all(base_path_ + "/i4");
-  std::filesystem::remove_all(base_path_ + "/i8");
-  std::filesystem::remove_all(base_path_ + "/f2");
-  std::filesystem::remove_all(base_path_ + "/f4");
-  std::filesystem::remove_all(base_path_ + "/f8");
-  std::filesystem::remove_all(base_path_ + "/u1");
-  std::filesystem::remove_all(base_path_ + "/u2");
-  std::filesystem::remove_all(base_path_ + "/u8");
-  std::filesystem::remove_all(base_path_ + "/b1");
-  ASSERT_TRUE(true);
+  for (const auto& def : kTestVariables) {
+    std::filesystem::remove_all(base_path_ + "/" + def.name);
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -824,8 +576,7 @@ class VariableDataTest
   }
 
   mdio::Variable<> getVariable() {
-    auto spec = CreateBaseSpec(version_, "i2", base_path_);
-    auto var = mdio::Variable<>::Open(spec, mdio::constants::kOpen);
+    auto var = OpenTestVariable("i2", version_, base_path_);
     if (!var.status().ok()) {
       std::cout << "Error opening i2: " << var.status() << std::endl;
       return mdio::Variable<>();
@@ -838,19 +589,9 @@ class VariableDataTest
 };
 
 TEST_P(VariableDataTest, SETUP) {
-  // Ensure directory exists
   std::filesystem::create_directories(base_path_);
-
-  mdio::TransactionalOpenOptions options;
-  auto opt = options.Set(std::move(mdio::constants::kCreateClean));
-
-  auto i2Spec = CreateTypedVariableSpec(version_, "i2", base_path_, "<i2",
-                                        "int16", "2-byte integer test");
-  auto i2Schema = mdio::internal::ValidateAndProcessJson(i2Spec).value();
-  auto [i2Store, i2Metadata] = i2Schema;
-  auto i2 =
-      mdio::internal::CreateVariable(i2Store, i2Metadata, std::move(options));
-  ASSERT_TRUE(i2.status().ok()) << i2.status();
+  // Only create i2 for this test class
+  CreateTestVariable(kTestVariables[0], version_, base_path_);
 }
 
 TEST_P(VariableDataTest, name) {
@@ -937,9 +678,7 @@ class DatasetTest : public ::testing::TestWithParam<mdio::zarr::ZarrVersion> {
     version_ = GetParam();
     base_path_ = GetBasePath(version_);
     dataset_manifest_ = GetDatasetManifest(version_);
-    expected_var_count_ = version_ == mdio::zarr::ZarrVersion::kV3
-                              ? 8
-                              : 9;  // V2 has struct array
+    expected_var_count_ = 9;  // Both versions support struct arrays
   }
 
   mdio::zarr::ZarrVersion version_;
@@ -1030,25 +769,29 @@ TEST_P(DatasetTest, write) {
   auto ds = dataset.value();
 
   std::vector<std::string> names = ds.variables.get_keys();
+
+  // Construct a vector of Variables to work with
   std::vector<mdio::Variable<>> openVariables;
   for (auto& key : names) {
     auto var = ds.get_variable(key);
     openVariables.emplace_back(var.value());
   }
 
+  // Now we can start opening all the Variables
   std::vector<mdio::Future<mdio::VariableData<>>> readVariablesFutures;
   for (auto& v : openVariables) {
-    readVariablesFutures.emplace_back(v.Read());
+    auto read = v.Read();
+    readVariablesFutures.emplace_back(read);
   }
 
+  // Now we make sure all the reads were successful
   std::vector<mdio::VariableData<>> readVariables;
   for (auto& v : readVariablesFutures) {
     ASSERT_TRUE(v.status().ok()) << v.status();
     readVariables.emplace_back(v.value());
   }
 
-  // Modify some data
-  for (auto& variable : readVariables) {
+  for (auto variable : readVariables) {
     std::string name = variable.variableName;
     mdio::DataType dtype = variable.dtype();
     if (dtype == mdio::constants::kFloat32 && name == "image") {
@@ -1062,6 +805,12 @@ TEST_P(DatasetTest, write) {
       auto data =
           reinterpret_cast<int16_t*>(variable.get_data_accessor().data());
       data[0] = 0xff;
+    } else if (dtype == mdio::constants::kByte && name == "image_headers") {
+      auto data = reinterpret_cast<mdio::dtypes::byte_t*>(
+          variable.get_data_accessor().data());
+      for (int i = 0; i < 12; i++) {
+        data[i] = std::byte(0xff);
+      }
     } else if (name == "inline") {
       auto data =
           reinterpret_cast<uint32_t*>(variable.get_data_accessor().data());
@@ -1083,7 +832,8 @@ TEST_P(DatasetTest, write) {
     }
   }
 
-  // Pair and write
+  // Pair the Variables to the VariableData objects via name matching so we can
+  // write them out correctly This makes an assumption that the vectors are 1-1
   std::map<std::size_t, std::size_t> variableIdxPair;
   for (std::size_t i = 0; i < openVariables.size(); i++) {
     for (std::size_t j = 0; j < readVariables.size(); j++) {
@@ -1095,31 +845,78 @@ TEST_P(DatasetTest, write) {
     }
   }
 
+  // Now we can write the Variables back to the store
   std::vector<mdio::WriteFutures> writeFutures;
   for (auto& idxPair : variableIdxPair) {
-    writeFutures.emplace_back(
-        openVariables[idxPair.second].Write(readVariables[idxPair.first]));
+    auto write =
+        openVariables[idxPair.second].Write(readVariables[idxPair.first]);
+    writeFutures.emplace_back(write);
   }
 
+  // Now we make sure all the writes were successful
   for (auto& w : writeFutures) {
     ASSERT_TRUE(w.status().ok()) << w.status();
   }
 
-  // Verify writes
+  // Test SelectField and negative case for struct arrays
+  std::string fielded = "image_headers";
+  ASSERT_TRUE(ds.SelectField(fielded, "cdp-x").status().ok());
+  auto wf = ds.get_variable(fielded).value().Write(readVariables[4]);
+  ASSERT_FALSE(wf.status().ok()) << wf.status();
+
   std::string driver = GetTestDriverName(version_);
   nlohmann::json imageJson;
   imageJson["driver"] = driver;
   imageJson["kvstore"]["driver"] = "file";
   imageJson["kvstore"]["path"] = base_path_ + "/image";
 
+  nlohmann::json velocityJson;
+  velocityJson["driver"] = driver;
+  velocityJson["kvstore"]["driver"] = "file";
+  velocityJson["kvstore"]["path"] = base_path_ + "/velocity";
+
+  nlohmann::json imageInlineJson;
+  imageInlineJson["driver"] = driver;
+  imageInlineJson["kvstore"]["driver"] = "file";
+  imageInlineJson["kvstore"]["path"] = base_path_ + "/image_inline";
+
+  nlohmann::json imageHeadersJson;
+  imageHeadersJson["driver"] = driver;
+  imageHeadersJson["kvstore"]["driver"] = "file";
+  imageHeadersJson["kvstore"]["path"] = base_path_ + "/image_headers";
+
   auto image = mdio::Variable<>::Open(imageJson, mdio::constants::kOpen);
+  auto velocity = mdio::Variable<>::Open(velocityJson, mdio::constants::kOpen);
+  auto imageInline =
+      mdio::Variable<>::Open(imageInlineJson, mdio::constants::kOpen);
+  auto imageHeaders =
+      mdio::Variable<>::Open(imageHeadersJson, mdio::constants::kOpen);
+
   ASSERT_TRUE(image.status().ok()) << image.status();
+  ASSERT_TRUE(velocity.status().ok()) << velocity.status();
+  ASSERT_TRUE(imageInline.status().ok()) << imageInline.status();
+  ASSERT_TRUE(imageHeaders.status().ok()) << imageHeaders.status();
 
   auto imageData = image.result()->Read();
+  auto velocityData = velocity.result()->Read();
+  auto imageInlineData = imageInline.result()->Read();
+  auto imageHeadersData = imageHeaders.result()->Read();
+
   ASSERT_TRUE(imageData.status().ok()) << imageData.status();
+  ASSERT_TRUE(velocityData.status().ok()) << velocityData.status();
+  ASSERT_TRUE(imageInlineData.status().ok()) << imageInlineData.status();
+  ASSERT_TRUE(imageHeadersData.status().ok()) << imageHeadersData.status();
+
   auto castedImage =
       reinterpret_cast<float*>(imageData.value().get_data_accessor().data());
-  EXPECT_EQ(castedImage[0], 3.14f);
+  auto castedVelociy = reinterpret_cast<double*>(
+      velocityData.value().get_data_accessor().data());
+  auto castedImageInline = reinterpret_cast<int16_t*>(
+      imageInlineData.value().get_data_accessor().data());
+
+  EXPECT_EQ(castedImage[0], 3.14f) << castedImage[0];
+  EXPECT_EQ(castedVelociy[0], 2.71828) << castedVelociy[0];
+  EXPECT_EQ(castedImageInline[0], 0xff) << castedImageInline[0];
 }
 
 TEST_P(DatasetTest, name) {
@@ -1210,161 +1007,7 @@ TEST_P(DatasetTest, fromJson) {
   std::filesystem::remove_all(base_path_ + "/from_json_test");
 }
 
-TEST_P(DatasetTest, TEARDOWN) {
-  std::filesystem::remove_all(base_path_);
-  ASSERT_TRUE(true);
-}
-
-INSTANTIATE_TEST_SUITE_P(
-    ZarrVersions, DatasetTest,
-    ::testing::Values(mdio::zarr::ZarrVersion::kV2,
-                      mdio::zarr::ZarrVersion::kV3),
-    [](const ::testing::TestParamInfo<mdio::zarr::ZarrVersion>& info) {
-      return ZarrVersionToString(info.param);
-    });
-
-// ============================================================================
-// V2-Only Tests (Struct Arrays)
-// ============================================================================
-
-namespace V2OnlyTests {
-
-TEST(VariableV2Only, structArraySetup) {
-  mdio::TransactionalOpenOptions options;
-  auto opt = options.Set(std::move(mdio::constants::kCreateClean));
-
-  nlohmann::json voidedSpec = R"(
-        {
-            "driver": "zarr",
-            "kvstore": {
-                "driver": "file",
-                "path": "zarrs/acceptance/voided"
-            },
-            "field": "integer16",
-            "metadata": {
-                "dtype": [["integer16", "<i2"], ["float32", "<f4"], ["double", "<f8"]],
-                "shape": [10, 10],
-                "chunks": [5, 5],
-                "dimension_separator": "/",
-                "compressor": {
-                    "id": "blosc"
-                }
-            },
-            "attributes": {
-                "metadata": {
-                    "attributes": {
-                        "foo": "bar"
-                    }
-                },
-                "long_name": "struct array test",
-                "dimension_names": ["inline", "crossline"],
-                "dimension_units": ["m", "m"]
-            }
-        }
-    )"_json;
-  auto voidedSchema =
-      mdio::internal::ValidateAndProcessJson(voidedSpec).value();
-  auto [voidedStore, voidedMetadata] = voidedSchema;
-  auto voided = mdio::internal::CreateVariable(voidedStore, voidedMetadata,
-                                               std::move(options));
-  ASSERT_TRUE(voided.status().ok()) << voided.status();
-}
-
-TEST(VariableV2Only, structArrayOpen) {
-  nlohmann::json voidedBase = R"(
-    {
-        "driver": "zarr",
-        "kvstore": {
-            "driver": "file",
-            "path": "zarrs/acceptance/voided"
-        }
-    }
-)"_json;
-
-  EXPECT_TRUE(
-      mdio::Variable<>::Open(voidedBase, mdio::constants::kOpen).status().ok());
-}
-
-TEST(VariableV2Only, structArrayName) {
-  nlohmann::json voidedBase = R"(
-    {
-        "driver": "zarr",
-        "kvstore": {
-            "driver": "file",
-            "path": "zarrs/acceptance/voided"
-        }
-    }
-)"_json;
-
-  auto voided = mdio::Variable<>::Open(voidedBase, mdio::constants::kOpen);
-  ASSERT_TRUE(voided.status().ok()) << voided.status();
-  EXPECT_EQ(voided.value().get_variable_name(), "voided");
-  EXPECT_EQ(voided.value().get_long_name(), "struct array test");
-}
-
-TEST(VariableV2Only, structArrayDtype) {
-  nlohmann::json voidedBase = R"(
-    {
-        "driver": "zarr",
-        "kvstore": {
-            "driver": "file",
-            "path": "zarrs/acceptance/voided"
-        }
-    }
-)"_json;
-
-  auto voided = mdio::Variable<>::Open(voidedBase, mdio::constants::kOpen);
-  ASSERT_TRUE(voided.status().ok()) << voided.status();
-  EXPECT_EQ(voided.value().dtype(), mdio::constants::kByte);
-}
-
-TEST(VariableV2Only, structArrayShape) {
-  nlohmann::json voidedBase = R"(
-    {
-        "driver": "zarr",
-        "kvstore": {
-            "driver": "file",
-            "path": "zarrs/acceptance/voided"
-        }
-    }
-)"_json;
-
-  auto voided = mdio::Variable<>::Open(voidedBase, mdio::constants::kOpen);
-  ASSERT_TRUE(voided.status().ok()) << voided.status();
-  EXPECT_THAT(voided.value().dimensions().shape(),
-              ::testing::ElementsAre(10, 10, 14));
-  EXPECT_EQ(voided.value().dimensions().rank(), 3);
-}
-
-TEST(VariableV2Only, structArraySlice) {
-  nlohmann::json voidedBase = R"(
-    {
-        "driver": "zarr",
-        "kvstore": {
-            "driver": "file",
-            "path": "zarrs/acceptance/voided"
-        }
-    }
-)"_json;
-
-  auto voided = mdio::Variable<>::Open(voidedBase, mdio::constants::kOpen);
-  ASSERT_TRUE(voided.status().ok()) << voided.status();
-
-  mdio::RangeDescriptor<mdio::Index> zeroIdxSlice = {0, 0, 5, 1};
-  mdio::RangeDescriptor<mdio::Index> oneIdxSlice = {1, 0, 5, 1};
-  auto voidedSlice = voided.value().slice(zeroIdxSlice, oneIdxSlice);
-  EXPECT_TRUE(voidedSlice.status().ok()) << voidedSlice.status();
-  EXPECT_THAT(voidedSlice.value().dimensions().shape(),
-              ::testing::ElementsAre(5, 5, 14));
-}
-
-TEST(VariableV2Only, structArrayTeardown) {
-  std::filesystem::remove_all("zarrs/acceptance/voided");
-  ASSERT_TRUE(true);
-}
-
-TEST(DatasetV2Only, selectField) {
-  // Create dataset first
+TEST_P(DatasetTest, selectField) {
   std::string manifest = R"(
 {
   "metadata": {
@@ -1409,38 +1052,56 @@ TEST(DatasetV2Only, selectField) {
 }
   )";
 
-  std::filesystem::remove_all("zarrs/select_field_test");
+  std::string test_path = base_path_ + "/select_field_test";
+  std::filesystem::remove_all(test_path);
   nlohmann::json j = nlohmann::json::parse(manifest);
-  auto dataset = mdio::Dataset::from_json(j, "zarrs/select_field_test",
+  auto dataset = mdio::Dataset::from_json(j, test_path, version_,
                                           mdio::constants::kCreateClean);
   ASSERT_TRUE(dataset.status().ok()) << dataset.status();
 
   auto ds = dataset.value();
   std::string name = "image_headers";
 
-  EXPECT_TRUE(ds.get_variable(name).value().dtype() == mdio::constants::kByte);
-  EXPECT_EQ(ds.get_variable(name).value().get_store().rank(), 3);
+  EXPECT_TRUE(ds.get_variable(name).value().dtype() == mdio::constants::kByte)
+      << "Failed to pull byte array from image_headers";
+  EXPECT_EQ(ds.get_variable(name).value().get_store().rank(), 3)
+      << "Expected structarray to be of rank 3";
 
-  EXPECT_TRUE(ds.SelectField("image_headers", "cdp-x").status().ok());
-  EXPECT_TRUE(ds.get_variable(name).value().dtype() == mdio::constants::kInt32);
-  EXPECT_EQ(ds.get_variable(name).value().get_store().rank(), 2);
+  EXPECT_TRUE(ds.SelectField("image_headers", "cdp-x").status().ok())
+      << "Failed to pull cdp-x from image_headers";
+  EXPECT_TRUE(ds.get_variable(name).value().dtype() == mdio::constants::kInt32)
+      << "Failed to pull int32 from image_headers";
+  EXPECT_EQ(ds.get_variable(name).value().get_store().rank(), 2)
+      << "Expected cdp-x to be of rank 2";
 
-  EXPECT_TRUE(ds.SelectField("image_headers", "elevation").status().ok());
+  EXPECT_TRUE(ds.SelectField("image_headers", "elevation").status().ok())
+      << "Failed to pull elevation from image_headers";
   EXPECT_TRUE(ds.get_variable(name).value().dtype() ==
-              mdio::constants::kFloat16);
-  EXPECT_EQ(ds.get_variable(name).value().get_store().rank(), 2);
+              mdio::constants::kFloat16)
+      << "Failed to pull float16 from image_headers";
+  EXPECT_EQ(ds.get_variable(name).value().get_store().rank(), 2)
+      << "Expected elevation to be of rank 2";
 
-  EXPECT_TRUE(ds.SelectField("image_headers", "").status().ok());
-  EXPECT_TRUE(ds.get_variable(name).value().dtype() == mdio::constants::kByte);
-  EXPECT_EQ(ds.get_variable(name).value().get_store().rank(), 3);
+  EXPECT_TRUE(ds.SelectField("image_headers", "").status().ok())
+      << "Failed to set to byte array";
+  EXPECT_TRUE(ds.get_variable(name).value().dtype() == mdio::constants::kByte)
+      << "Failed to pull byte array from image_headers";
+  EXPECT_EQ(ds.get_variable(name).value().get_store().rank(), 3)
+      << "Expected structarray to be of rank 3";
 
-  EXPECT_FALSE(ds.SelectField("image_headers", "NotAField").status().ok());
-  EXPECT_FALSE(ds.SelectField("NotAVariable", "NotAField").status().ok());
+  EXPECT_FALSE(ds.SelectField("image", "NotAField").status().ok())
+      << "Somehow pulled NotAField from image";
 
-  std::filesystem::remove_all("zarrs/select_field_test");
+  EXPECT_FALSE(ds.SelectField("NotAVariable", "NotAField").status().ok())
+      << "Somehow pulled NotAField from NotAVariable";
+
+  EXPECT_FALSE(ds.SelectField("image_headers", "NotAField").status().ok())
+      << "Somehow pulled NotAField from image_headers";
+
+  std::filesystem::remove_all(test_path);
 }
 
-TEST(DatasetV2Only, fillValue) {
+TEST_P(DatasetTest, fillValue) {
   std::string manifest = R"(
 {
   "metadata": {
@@ -1484,9 +1145,10 @@ TEST(DatasetV2Only, fillValue) {
 }
   )";
 
-  std::filesystem::remove_all("zarrs/fill_value_test");
+  std::string test_path = base_path_ + "/fill_value_test";
+  std::filesystem::remove_all(test_path);
   nlohmann::json j = nlohmann::json::parse(manifest);
-  auto ds = mdio::Dataset::from_json(j, "zarrs/fill_value_test",
+  auto ds = mdio::Dataset::from_json(j, test_path, version_,
                                      mdio::constants::kCreateClean);
   ASSERT_TRUE(ds.status().ok()) << ds.status();
 
@@ -1501,110 +1163,45 @@ TEST(DatasetV2Only, fillValue) {
       reinterpret_cast<mdio::dtypes::byte_t*>(vd.get_data_accessor().data());
   std::byte zero = std::byte(0);
   for (int i = 0; i < 1000; i++) {
-    ASSERT_EQ(data[i], zero) << "Expected 0 at byte " << i;
+    ASSERT_EQ(data[i], zero) << "Expected 0 at byte " << i << " but got "
+                             << static_cast<int>(data[i]);
   }
 
-  std::filesystem::remove_all("zarrs/fill_value_test");
+  std::filesystem::remove_all(test_path);
 }
 
-}  // namespace V2OnlyTests
-
-// ============================================================================
-// V2 Compatibility Tests (Python)
-// ============================================================================
-
-namespace V2CompatibilityTests {
-
-TEST(VariableV2Compat, zarrCompatibility) {
-  // First setup variables for testing
-  std::filesystem::remove_all("zarrs/compat_test");
-  std::filesystem::create_directories("zarrs/compat_test");
-
-  mdio::TransactionalOpenOptions options;
-  auto opt = options.Set(std::move(mdio::constants::kCreateClean));
-
-  std::vector<std::tuple<std::string, std::string, std::string>> vars = {
-      {"i2", "<i2", "2-byte integer"}, {"i4", "<i4", "4-byte integer"},
-      {"i8", "<i8", "8-byte integer"}, {"f2", "<f2", "2-byte float"},
-      {"f4", "<f4", "4-byte float"},   {"f8", "<f8", "8-byte float"},
-  };
-
-  for (const auto& [name, dtype, long_name] : vars) {
-    nlohmann::json spec;
-    spec["driver"] = "zarr";
-    spec["kvstore"]["driver"] = "file";
-    spec["kvstore"]["path"] = "zarrs/compat_test/" + name;
-    spec["metadata"]["dtype"] = dtype;
-    spec["metadata"]["shape"] = nlohmann::json::array({10, 10});
-    spec["metadata"]["chunks"] = nlohmann::json::array({5, 5});
-    spec["metadata"]["dimension_separator"] = "/";
-    spec["metadata"]["compressor"]["id"] = "blosc";
-    spec["attributes"]["metadata"]["attributes"]["foo"] = "bar";
-    spec["attributes"]["long_name"] = long_name;
-    spec["attributes"]["dimension_names"] =
-        nlohmann::json::array({"inline", "crossline"});
-    spec["attributes"]["dimension_units"] = nlohmann::json::array({"m", "m"});
-
-    auto schema = mdio::internal::ValidateAndProcessJson(spec).value();
-    auto [store, metadata] = schema;
-    auto var =
-        mdio::internal::CreateVariable(store, metadata, std::move(options));
-    ASSERT_TRUE(var.status().ok()) << var.status();
-  }
-
-  const char* basePath = std::getenv(PROJECT_BASE_PATH_ENV);
-  if (!basePath) {
-    std::cout << "PROJECT_BASE_PATH environment variable not set. Expecting to "
-                 "be in the 'build/mdio' directory."
-              << std::endl;
-    basePath = DEFAULT_BASE_PATH;
-  }
-
-  std::string srcPath = std::string(basePath) + ZARR_SCRIPT_RELATIVE_PATH;
-
-  if (access(srcPath.c_str(), F_OK) == -1) {
-    std::cerr << "Error: Python script not found at " << srcPath << std::endl;
-    FAIL() << "Script not found: " << srcPath;
-  }
-
-  std::vector<std::string> args = {"i2", "i4", "i8", "f2", "f4", "f8"};
-  std::vector<pid_t> pids;
-
-  for (const auto& arg : args) {
-    pid_t pid = fork();
-    if (pid == 0) {
-      int result = executePythonScript(srcPath, {"zarrs/compat_test/" + arg});
-      if (result == 0xfd00) {
-        GTEST_SKIP() << "Zarr compatibility skipped due to import error";
-        exit(SUCCESS_CODE);
-      }
-      exit(result);
-    } else if (pid > 0) {
-      pids.push_back(pid);
-    } else {
-      perror("fork failed");
-      FAIL() << "fork failed";
-    }
-  }
-
-  for (pid_t pid : pids) {
-    int status;
-    if (waitpid(pid, &status, 0) == -1) {
-      perror("waitpid failed");
-      FAIL() << "waitpid failed";
-    }
-    if (WIFEXITED(status) && WEXITSTATUS(status) == 0xfd00) {
-      GTEST_SKIP() << "Zarr compatibility skipped due to import error";
-    }
-    EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
-        << "Failed to read one of the arguments";
-  }
-
-  std::filesystem::remove_all("zarrs/compat_test");
+TEST_P(DatasetTest, TEARDOWN) {
+  std::filesystem::remove_all(base_path_);
+  ASSERT_TRUE(true);
 }
 
-TEST(DatasetV2Compat, xarrayCompatible) {
-  // First create a dataset
+INSTANTIATE_TEST_SUITE_P(
+    ZarrVersions, DatasetTest,
+    ::testing::Values(mdio::zarr::ZarrVersion::kV2,
+                      mdio::zarr::ZarrVersion::kV3),
+    [](const ::testing::TestParamInfo<mdio::zarr::ZarrVersion>& info) {
+      return ZarrVersionToString(info.param);
+    });
+
+// ============================================================================
+// Parameterized Python/Xarray Dataset Compatibility Tests
+// ============================================================================
+
+class XarrayCompatibilityTest
+    : public ::testing::TestWithParam<mdio::zarr::ZarrVersion> {
+ protected:
+  void SetUp() override {
+    version_ = GetParam();
+    base_path_ = GetBasePath(version_);
+  }
+
+  mdio::zarr::ZarrVersion version_;
+  std::string base_path_;
+};
+
+TEST_P(XarrayCompatibilityTest, datasetCompatible) {
+  // This test verifies that a Dataset created by MDIO can be opened by xarray.
+  // The dataset is created fresh for this test to ensure isolation.
   std::string manifest = R"(
 {
   "metadata": {
@@ -1641,68 +1238,48 @@ TEST(DatasetV2Compat, xarrayCompatible) {
 }
   )";
 
-  std::filesystem::remove_all("zarrs/xarray_compat");
+  std::string test_path = base_path_ + "/xarray_compat";
+  std::filesystem::remove_all(test_path);
+
   nlohmann::json j = nlohmann::json::parse(manifest);
-  auto ds = mdio::Dataset::from_json(j, "zarrs/xarray_compat",
+  auto ds = mdio::Dataset::from_json(j, test_path, version_,
                                      mdio::constants::kCreateClean);
   ASSERT_TRUE(ds.status().ok()) << ds.status();
 
-  const char* basePath = std::getenv(PROJECT_BASE_PATH_ENV);
-  if (!basePath) {
-    std::cout << "PROJECT_BASE_PATH environment variable not set. Expecting to "
-                 "be in the 'build/mdio' directory."
-              << std::endl;
-    basePath = DEFAULT_BASE_PATH;
-  }
-
-  std::string srcPath = std::string(basePath) + XARRAY_SCRIPT_RELATIVE_PATH;
+  std::string srcPath =
+      std::string(GetPythonBasePath()) + XARRAY_SCRIPT_RELATIVE_PATH;
 
   if (access(srcPath.c_str(), F_OK) == -1) {
     std::cerr << "Error: Python script not found at " << srcPath << std::endl;
-    std::filesystem::remove_all("zarrs/xarray_compat");
+    std::filesystem::remove_all(test_path);
     FAIL() << "Script not found: " << srcPath;
   }
 
-  std::vector<std::string> metadataOptions = {"False", "True"};
-  std::vector<pid_t> pids;
-
-  for (const auto& option : metadataOptions) {
-    pid_t pid = fork();
-    if (pid == 0) {
-      int result =
-          executePythonScript(srcPath, {"zarrs/xarray_compat/", option});
-      if (result == 0xfd00) {
-        GTEST_SKIP()
-            << "Xarray compatibility skipped due to import error for xarray";
-        exit(SUCCESS_CODE);
-      }
-      exit(result);
-    } else if (pid > 0) {
-      pids.push_back(pid);
-    } else {
-      perror("fork failed");
-      FAIL() << "fork failed";
-    }
+  // Test without consolidated metadata (both versions)
+  // Note: Consolidated metadata is only supported for V2
+  std::vector<std::vector<std::string>> arg_sets = {
+      {test_path + "/", "False"},
+  };
+  if (version_ == mdio::zarr::ZarrVersion::kV2) {
+    // Also test with consolidated metadata for V2
+    arg_sets.push_back({test_path + "/", "True"});
   }
 
-  for (pid_t pid : pids) {
-    int status;
-    if (waitpid(pid, &status, 0) == -1) {
-      perror("waitpid failed");
-      FAIL() << "waitpid failed";
-    }
-    if (WIFEXITED(status) && WEXITSTATUS(status) == 0xfd00) {
-      GTEST_SKIP()
-          << "Xarray compatibility skipped due to import error for xarray";
-    }
-    EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
-        << "xarray compatibility test failed";
-  }
+  std::string version_name = ZarrVersionToString(version_);
+  EXPECT_TRUE(RunPythonScripts(
+      srcPath, arg_sets, "Xarray compatibility skipped due to import error"))
+      << "xarray " << version_name << " compatibility test failed";
 
-  std::filesystem::remove_all("zarrs/xarray_compat");
+  // std::filesystem::remove_all(test_path);
 }
 
-}  // namespace V2CompatibilityTests
+INSTANTIATE_TEST_SUITE_P(
+    ZarrVersions, XarrayCompatibilityTest,
+    ::testing::Values(mdio::zarr::ZarrVersion::kV2,
+                      mdio::zarr::ZarrVersion::kV3),
+    [](const ::testing::TestParamInfo<mdio::zarr::ZarrVersion>& info) {
+      return ZarrVersionToString(info.param);
+    });
 
 // ============================================================================
 // Dataset::from_json with Version Parameter Tests

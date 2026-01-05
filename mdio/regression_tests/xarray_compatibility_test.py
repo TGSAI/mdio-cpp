@@ -13,6 +13,7 @@ def test_xarray_dataset(file_path, consolidated_metadata):
   else:
     consolidated_metadata = False
   try:
+    print(f"Opening dataset: {file_path} with consolidated metadata: {consolidated_metadata}")
     ds = xr.open_zarr(
         file_path,
         consolidated=consolidated_metadata,

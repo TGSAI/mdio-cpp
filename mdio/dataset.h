@@ -100,44 +100,27 @@ inline Future<void> write_zmetadata(
 inline Future<tensorstore::KvStore> dataset_kvs_store(
     const std::string& dataset_path,
     tensorstore::Context context = tensorstore::Context::Default()) {
-  // the tensorstore driver needs a bucket field
   ::nlohmann::json kvstore;
 
-  absl::string_view output_file = dataset_path;
+  // Use shared utility to infer driver from path prefix
+  std::string driver = zarr::InferDriverFromPath(dataset_path);
+  kvstore["driver"] = driver;
 
-  if (absl::StartsWith(output_file, "gs://")) {
-    absl::ConsumePrefix(&output_file, "gs://");
-    kvstore["driver"] = "gcs";
-  } else if (absl::StartsWith(output_file, "s3://")) {
-    absl::ConsumePrefix(&output_file, "s3://");
-    kvstore["driver"] = "s3";
-  } else {
-    kvstore["driver"] = "file";
-    std::string path = std::string(output_file);
-    if (!path.empty() && path.back() != '/') {
-      path.push_back('/');
-    }
-    kvstore["path"] = path;
+  if (driver == "file") {
+    // Local file system - just normalize with trailing slash
+    kvstore["path"] = zarr::NormalizePathWithSlash(dataset_path);
     return tensorstore::kvstore::Open(kvstore, context);
-  }  // FIXME - we need azure support ...
+  }
 
-  std::vector<std::string> file_parts = absl::StrSplit(output_file, '/');
-  if (file_parts.size() < 2) {
+  // Cloud storage (GCS or S3) - extract bucket and path
+  auto [bucket, path] = zarr::ExtractCloudPath(dataset_path);
+  if (bucket.empty()) {
     return absl::InvalidArgumentError(
         "gcs/s3 drivers requires [s3/gs]://[bucket]/[path_to_file]");
   }
 
-  std::string bucket = file_parts[0];
-  std::string filepath(file_parts[1]);
-  for (std::size_t i = 2; i < file_parts.size(); ++i) {
-    filepath += "/" + file_parts[i];
-  }
-  if (!filepath.empty() && filepath.back() != '/') {
-    filepath.push_back('/');
-  }
-  // update the bucket and path ...
   kvstore["bucket"] = bucket;
-  kvstore["path"] = filepath;
+  kvstore["path"] = zarr::NormalizePathWithSlash(path);
 
   return tensorstore::kvstore::Open(kvstore, context);
 }
@@ -1135,19 +1118,31 @@ class Dataset {
       return specJsonResult.status();
     }
     nlohmann::json specJson = specJsonResult.value();
-    if (!specJson["metadata"]["dtype"].is_array()) {
+
+    // Detect Zarr version from the spec and get the dtype key
+    std::string driverName = specJson.contains("driver")
+                                 ? specJson["driver"].get<std::string>()
+                                 : "zarr";
+    bool isV3 = (driverName == "zarr3");
+    std::string dtype_key = isV3 ? "data_type" : "dtype";
+
+    // Ensure that the Variable is of dtype structarray
+    if (!specJson["metadata"].contains(dtype_key) ||
+        !specJson["metadata"][dtype_key].is_array()) {
       return absl::Status(
           absl::StatusCode::kInvalidArgument,
           "Variable '" + variableName + "' is not a structured dtype.");
     }
+
+    const auto& dtype_array = specJson["metadata"][dtype_key];
 
     // Ensure the field exists in the Variable
     int found = -1;
     if (fieldName == "") {
       found = -2;
     } else {
-      for (std::size_t i = 0; i < specJson["metadata"]["dtype"].size(); i++) {
-        if (specJson["metadata"]["dtype"][i][0] == fieldName) {
+      for (std::size_t i = 0; i < dtype_array.size(); i++) {
+        if (dtype_array[i][0] == fieldName) {
           found = i;
           break;
         }
@@ -1158,11 +1153,6 @@ class Dataset {
                           "Field: '" + fieldName + "' not found in Variable '" +
                               variableName + "'.");
     }
-
-    // Detect Zarr version from the spec
-    std::string driverName = specJson.contains("driver")
-                                 ? specJson["driver"].get<std::string>()
-                                 : "zarr";
 
     // Create a new Variable with the selected field
     std::string baseStr = R"(
@@ -1182,7 +1172,7 @@ class Dataset {
                           "Failed to parse base JSON.");
     }
     if (found >= 0) {
-      base["field"] = specJson["metadata"]["dtype"][found][0];
+      base["field"] = dtype_array[found][0];
     } else {
       base.erase("field");
     }
