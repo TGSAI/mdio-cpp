@@ -161,6 +161,46 @@ inline nlohmann::json CreateVariableSpec(ZarrVersion version,
 }
 
 /**
+ * @brief Extracts the struct field names from a variable's metadata.
+ *
+ * Structured (record) dtypes are laid out differently between Zarr V2 and V3,
+ * so this dispatches to the version-specific parser. The metadata is expected
+ * to contain a "dtype" key (V2) or a "data_type" key (V3).
+ *
+ * @param version The Zarr version of the metadata.
+ * @param metadata The variable "metadata" object.
+ * @return Field names in declaration order, or empty if not a structured dtype.
+ */
+inline std::vector<std::string> GetStructFieldNames(
+    ZarrVersion version, const nlohmann::json& metadata) {
+  switch (version) {
+    case ZarrVersion::kV3:
+      if (metadata.contains("data_type")) {
+        return v3::GetStructFieldNames(metadata["data_type"]);
+      }
+      return {};
+    case ZarrVersion::kV2:
+    default:
+      if (metadata.contains("dtype")) {
+        return v2::GetStructFieldNames(metadata["dtype"]);
+      }
+      return {};
+  }
+}
+
+/**
+ * @brief Checks whether a variable's metadata describes a structured dtype.
+ *
+ * @param version The Zarr version of the metadata.
+ * @param metadata The variable "metadata" object.
+ * @return bool True if the dtype is a structured (record) dtype.
+ */
+inline bool IsStructuredDType(ZarrVersion version,
+                              const nlohmann::json& metadata) {
+  return !GetStructFieldNames(version, metadata).empty();
+}
+
+/**
  * @brief Checks if a JSON spec is for a Zarr V3 store.
  *
  * @param json_spec The JSON specification.
@@ -197,6 +237,32 @@ inline ZarrVersion GetVersionFromSpec(const nlohmann::json& json_spec) {
 inline nlohmann::json UpdateSpecVersion(nlohmann::json json_spec,
                                         ZarrVersion version) {
   json_spec["driver"] = GetDriverNameForVersion(version);
+  return json_spec;
+}
+
+/**
+ * @brief Enables `open_as_void` on a spec describing a structured dtype.
+ *
+ * Structured (record) dtypes must be opened as void in both the zarr and zarr3
+ * drivers. This centralizes that decision so callers do not have to repeat the
+ * version detection and struct check: when the spec carries a "metadata" object
+ * describing a structured dtype, and the caller has neither selected a "field"
+ * nor already set "open_as_void", the flag is enabled.
+ *
+ * Specs that are not structured, that already pick a field, that already set the
+ * flag, or that carry no "metadata" are returned unchanged.
+ *
+ * @param json_spec The variable/store spec.
+ * @return nlohmann::json The (possibly) updated spec.
+ */
+inline nlohmann::json PrepareStructuredOpenSpec(nlohmann::json json_spec) {
+  if (!json_spec.contains("metadata") || json_spec.contains("field") ||
+      json_spec.contains("open_as_void")) {
+    return json_spec;
+  }
+  if (IsStructuredDType(GetVersionFromSpec(json_spec), json_spec["metadata"])) {
+    json_spec["open_as_void"] = true;
+  }
   return json_spec;
 }
 

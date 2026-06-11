@@ -225,7 +225,7 @@ mdio::Result<::nlohmann::json> PopulateStore(const nlohmann::json& json_good) {
       mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean)
           .result());
 
-  MDIO_ASSIGN_OR_RETURN(auto variableDataFuture, result.Read().result())
+  MDIO_ASSIGN_OR_RETURN(auto variableDataFuture, result.Read().result());
 
   // Create a 500x500 array with the data to write
   auto data = tensorstore::AllocateArray<int16_t>({500, 500});

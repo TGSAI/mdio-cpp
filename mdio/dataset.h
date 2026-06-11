@@ -300,7 +300,7 @@ class Dataset {
                                    Option&&... options) {
     // json describing the vars ...
     MDIO_ASSIGN_OR_RETURN(auto validated_schema,
-                          Construct(json_schema, path, zarr_version))
+                          Construct(json_schema, path, zarr_version));
     auto [dataset_metadata, json_vars] = validated_schema;
 
     return mdio::Dataset::Open(dataset_metadata, json_vars,
@@ -347,7 +347,7 @@ class Dataset {
       std::optional<zarr::ZarrVersion> zarr_version, Option&&... options) {
     // json describing the vars ...
     MDIO_ASSIGN_OR_RETURN(auto validated_schema,
-                          Construct(json_schema, path, zarr_version))
+                          Construct(json_schema, path, zarr_version));
     auto [dataset_metadata, json_vars] = validated_schema;
 
     return mdio::Dataset::Open(dataset_metadata, json_vars,
@@ -379,7 +379,7 @@ class Dataset {
                                    const std::string& path,
                                    Option&&... options) {
     // json describing the vars ...
-    MDIO_ASSIGN_OR_RETURN(auto validated_schema, Construct(json_schema, path))
+    MDIO_ASSIGN_OR_RETURN(auto validated_schema, Construct(json_schema, path));
     auto [dataset_metadata, json_vars] = validated_schema;
 
     return mdio::Dataset::Open(dataset_metadata, json_vars,
@@ -415,7 +415,7 @@ class Dataset {
     for (const auto& name : keys) {
       MDIO_ASSIGN_OR_RETURN(auto variable,
                             variables.at(name).value().slice(
-                                std::forward<Descriptors>(descriptors)...))
+                                std::forward<Descriptors>(descriptors)...));
       // add to variable
       vars.add(name, variable);
 
@@ -448,7 +448,7 @@ class Dataset {
                               .origin(origin)
                               .shape(shape)
                               .labels(labels)
-                              .Finalize())
+                              .Finalize());
     return Dataset{metadata, vars, coordinates, new_domain, context_};
   }
 
@@ -880,7 +880,7 @@ class Dataset {
     // extract the variable (+ coordinates)
     VariableCollection vars;
 
-    MDIO_ASSIGN_OR_RETURN(auto var, variables.get(label))
+    MDIO_ASSIGN_OR_RETURN(auto var, variables.get(label));
     vars.add(label, var);
 
     auto domain = var.dimensions();
@@ -888,7 +888,7 @@ class Dataset {
     // collect and dimension variables.
     for (const auto& dim_label : domain.labels()) {
       if (!vars.contains_key(dim_label)) {
-        MDIO_ASSIGN_OR_RETURN(auto var, variables.get(dim_label))
+        MDIO_ASSIGN_OR_RETURN(auto var, variables.get(dim_label));
         vars.add(dim_label, var);
       }
     }
@@ -897,7 +897,7 @@ class Dataset {
     coordinate_map coords;
     if (coordinates.count(label) > 0) {
       for (const auto& coord_name : coordinates.at(label)) {
-        MDIO_ASSIGN_OR_RETURN(auto coord, variables.get(coord_name))
+        MDIO_ASSIGN_OR_RETURN(auto coord, variables.get(coord_name));
         vars.add(coord_name, coord);
       }
 
@@ -1119,31 +1119,29 @@ class Dataset {
     }
     nlohmann::json specJson = specJsonResult.value();
 
-    // Detect Zarr version from the spec and get the dtype key
+    // Detect Zarr version from the spec. The struct dtype layout differs
+    // between zarr formats, so delegate field extraction to the zarr layer.
     std::string driverName = specJson.contains("driver")
                                  ? specJson["driver"].get<std::string>()
                                  : "zarr";
-    bool isV3 = (driverName == "zarr3");
-    std::string dtype_key = isV3 ? "data_type" : "dtype";
+    zarr::ZarrVersion zarrVersion = zarr::GetVersionFromSpec(specJson);
 
-    // Ensure that the Variable is of dtype structarray
-    if (!specJson["metadata"].contains(dtype_key) ||
-        !specJson["metadata"][dtype_key].is_array()) {
+    auto fieldNames =
+        zarr::GetStructFieldNames(zarrVersion, specJson["metadata"]);
+    if (fieldNames.empty()) {
       return absl::Status(
           absl::StatusCode::kInvalidArgument,
           "Variable '" + variableName + "' is not a structured dtype.");
     }
-
-    const auto& dtype_array = specJson["metadata"][dtype_key];
 
     // Ensure the field exists in the Variable
     int found = -1;
     if (fieldName == "") {
       found = -2;
     } else {
-      for (std::size_t i = 0; i < dtype_array.size(); i++) {
-        if (dtype_array[i][0] == fieldName) {
-          found = i;
+      for (std::size_t i = 0; i < fieldNames.size(); i++) {
+        if (fieldNames[i] == fieldName) {
+          found = static_cast<int>(i);
           break;
         }
       }
@@ -1172,7 +1170,7 @@ class Dataset {
                           "Failed to parse base JSON.");
     }
     if (found >= 0) {
-      base["field"] = dtype_array[found][0];
+      base["field"] = fieldNames[found];
     } else {
       base.erase("field");
     }

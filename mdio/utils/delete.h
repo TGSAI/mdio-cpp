@@ -51,8 +51,8 @@ inline Result<void> DeleteDataset(
   // Pick the arbitrarially first Variable in the dataset as the base KVStore
   // template
   MDIO_ASSIGN_OR_RETURN(auto var,
-                        ds.variables.at(ds.variables.get_keys().front()))
-  MDIO_ASSIGN_OR_RETURN(auto spec, var.get_spec())
+                        ds.variables.at(ds.variables.get_keys().front()));
+  MDIO_ASSIGN_OR_RETURN(auto spec, var.get_spec());
   nlohmann::json kvs = spec["kvstore"];
 
   // Drop the Variable path from the KVStore path. This is will leave us with

@@ -71,6 +71,63 @@ inline bool IsArrayMetadata(const nlohmann::json& json) {
   return GetJsonString(json, "node_type") == std::string(kArrayNodeType);
 }
 
+/**
+ * @brief The Zarr V3 data_type name used for structured (record) dtypes.
+ */
+constexpr std::string_view kStructDataTypeName = "struct";
+
+/**
+ * @brief Extracts the field names of a Zarr V3 structured data_type.
+ *
+ * Zarr V3 represents structured dtypes as an object:
+ * @code
+ * {
+ *   "name": "struct",
+ *   "configuration": {
+ *     "fields": [
+ *       {"name": "cdp-x", "data_type": "int32"},
+ *       {"name": "cdp-y", "data_type": "int32"}
+ *     ]
+ *   }
+ * }
+ * @endcode
+ *
+ * For backwards compatibility this also accepts the legacy array-of-pairs
+ * layout (e.g. [["cdp-x", "int32"], ["cdp-y", "int32"]]).
+ *
+ * @param data_type The Zarr V3 "data_type" metadata value.
+ * @return Field names in declaration order, or empty if not structured.
+ */
+inline std::vector<std::string> GetStructFieldNames(
+    const nlohmann::json& data_type) {
+  std::vector<std::string> names;
+
+  // Current V3 layout: object with name == "struct".
+  if (data_type.is_object() &&
+      GetJsonString(data_type, "name") == std::string(kStructDataTypeName) &&
+      data_type.contains("configuration") &&
+      data_type["configuration"].contains("fields") &&
+      data_type["configuration"]["fields"].is_array()) {
+    for (const auto& field : data_type["configuration"]["fields"]) {
+      if (field.is_object() && field.contains("name")) {
+        names.push_back(field["name"].get<std::string>());
+      }
+    }
+    return names;
+  }
+
+  // Legacy layout: array of [name, type] pairs.
+  if (data_type.is_array() && !data_type.empty() && data_type[0].is_array()) {
+    for (const auto& field : data_type) {
+      if (field.is_array() && !field.empty()) {
+        names.push_back(field[0].get<std::string>());
+      }
+    }
+  }
+
+  return names;
+}
+
 // ============================================================================
 // Variable Discovery Utilities
 // ============================================================================

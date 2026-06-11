@@ -54,6 +54,15 @@ endif()
 if (TARGET nlohmann_json_json)
   install(TARGETS nlohmann_json_json EXPORT mdioTargets)
 endif()
+# Tensorstore's bazel_to_cmake (post-bzlmod rename) exposes nlohmann_json as
+# `nlohmann_json_nlohmann_json` plus a companion `.alwayslink` static lib that
+# the INTERFACE target links against. Both must be in the export set.
+if (TARGET nlohmann_json_nlohmann_json)
+  install(TARGETS nlohmann_json_nlohmann_json EXPORT mdioTargets)
+endif()
+if (TARGET nlohmann_json_nlohmann_json.alwayslink)
+  install(TARGETS nlohmann_json_nlohmann_json.alwayslink EXPORT mdioTargets)
+endif()
 
 # Export the targets to be used with FetchContent
 export(EXPORT mdioTargets FILE "${CMAKE_CURRENT_BINARY_DIR}/mdioTargets.cmake" NAMESPACE mdio::)

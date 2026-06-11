@@ -49,7 +49,7 @@ using SharedArray = mdio::SharedArray<T, R, OriginKind>;
 template <typename T = void>
 mdio::Result<mdio::VariableData<T>> from_dataset(
     const mdio::Dataset& dataset, const std::string& variable_name) {
-  MDIO_ASSIGN_OR_RETURN(auto variable, dataset.variables.get<T>(variable_name))
+  MDIO_ASSIGN_OR_RETURN(auto variable, dataset.variables.get<T>(variable_name));
 
   return mdio::from_variable<T>(variable);
 }

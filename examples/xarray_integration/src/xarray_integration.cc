@@ -42,7 +42,7 @@ absl::Status Run(std::string dataset_path) {
   MDIO_ASSIGN_OR_RETURN(auto dataset,
                         mdio::Dataset::from_json(json_spec, dataset_path,
                                                  mdio::constants::kCreateClean)
-                            .result())
+                            .result());
 
   auto populate_inline = [](SharedArray<uint32_t>& data) {
     for (auto i = data.domain()[0].inclusive_min();

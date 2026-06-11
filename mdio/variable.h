@@ -32,7 +32,6 @@
 #include "tensorstore/array.h"
 #include "tensorstore/driver/driver.h"
 #include "tensorstore/driver/registry.h"
-#include "tensorstore/driver/zarr/dtype.h"
 #include "tensorstore/index_space/dim_expression.h"
 #include "tensorstore/index_space/index_domain_builder.h"
 #include "tensorstore/kvstore/kvstore.h"
@@ -440,43 +439,25 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
         "Variable metadata requires dtype (V2) or data_type (V3)");
   }
 
-  // Handle structured arrays for both V2 and V3
+  // Detect a structured (record) dtype so we can route create through the
+  // create-with-field-then-reopen-as-void flow (see the reopen step below).
   bool do_handle_structarray = false;
-  tensorstore::internal_zarr::ZarrDType zarr_dtype;
   std::string first_field_name;
-
-  if (zarr_version == zarr::ZarrVersion::kV2 && has_dtype) {
-    MDIO_ASSIGN_OR_RETURN(zarr_dtype, tensorstore::internal_zarr::ParseDType(
-                                          json_spec["metadata"]["dtype"]))
-    // Handles the use case of creating a struct array, but intending to open as
-    // void.
-    do_handle_structarray =
-        zarr_dtype.has_fields && !json_spec.contains("field");
-    if (do_handle_structarray) {
-      first_field_name = zarr_dtype.fields[0].name;
-    }
-  } else if (zarr_version == zarr::ZarrVersion::kV3 && has_data_type) {
-    // For V3, structured dtypes are represented as an array of [name, type]
-    // pairs e.g., [["cdp-x", "int32"], ["cdp-y", "int32"], ...]
-    const auto& data_type = json_spec["metadata"]["data_type"];
-    if (data_type.is_array() && !data_type.empty() && data_type[0].is_array() &&
-        !json_spec.contains("field")) {
+  if ((has_dtype || has_data_type) && !json_spec.contains("field")) {
+    auto field_names =
+        zarr::GetStructFieldNames(zarr_version, json_spec["metadata"]);
+    if (!field_names.empty()) {
       do_handle_structarray = true;
-      // Extract the first field name from the structured dtype
-      first_field_name = data_type[0][0].get<std::string>();
+      first_field_name = field_names.front();
     }
   }
 
   auto json_spec_with_open_flag = json_spec;
   if (do_handle_structarray) {
-    // pick the first field name, it won't affect the zarr.json/zarray:
+    // Create with a concrete field at the native rank; this still writes the
+    // full struct .zarray/zarr.json and does not alter it.
     json_spec_with_open_flag["field"] = first_field_name;
   }
-
-  auto json_spec_without_metadata = json_spec_with_open_flag;
-  json_spec_without_metadata.erase("metadata");
-  auto future_json_store = tensorstore::MakeReadyFuture<::nlohmann::json>(
-      json_spec_without_metadata);
 
   // Extract context from the TransactionalOpenOptions directly
   tensorstore::Context context = options.context;
@@ -492,21 +473,6 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
     } else {
       return zarr::v2::WriteVariableAttributes(store, json_var, isCloudStore);
     }
-  };
-
-  // this is intended to handle the struct array where we "reopen" the store
-  // but this time as struct ... but we loose the capactity for forward options.
-  // FIXME - strip "create/delete existing" and foward other options.
-  auto apply_reopen = [context](const tensorstore::TensorStore<T, R, M>& store,
-                                const ::nlohmann::json& attributes,
-                                const ::nlohmann::json& json_spec) {
-    // try {
-    auto json_spec_cpy = json_spec;
-    json_spec_cpy.erase("field");
-    json_spec_cpy["open_as_void"] = true;
-    // } catch (ex)
-    return tensorstore::Open<T, R, M>(json_spec_cpy, context,
-                                      tensorstore::OpenMode::open);
   };
 
   auto build = [](const ::nlohmann::json& metadata,
@@ -532,9 +498,22 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
 
   auto handled_store = future_store;
   if (do_handle_structarray) {
-    handled_store =
-        tensorstore::MapFutureValue(tensorstore::InlineExecutor{}, apply_reopen,
-                                    future_store, spec, future_json_store);
+    // A structured array cannot be created through the open_as_void view: the
+    // void view is rank N+1 (it adds the trailing byte axis) while the on-disk
+    // struct is rank N, which trips a rank conflict on create. So we create
+    // with a concrete field (above) and then reopen the store as void to hand
+    // back the byte view.
+    auto reopen_spec = json_spec_with_open_flag;
+    reopen_spec.erase("metadata");
+    reopen_spec.erase("field");
+    reopen_spec["open_as_void"] = true;
+    auto reopen = [context, reopen_spec](
+                      const tensorstore::TensorStore<T, R, M>& /*created*/) {
+      return tensorstore::Open<T, R, M>(reopen_spec, context,
+                                        tensorstore::OpenMode::open);
+    };
+    handled_store = tensorstore::MapFutureValue(
+        tensorstore::InlineExecutor{}, std::move(reopen), future_store);
   } else {
     handled_store = std::move(future_store);
   }
@@ -615,13 +594,17 @@ Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
     suppliedAttributes["attributes"] = store_spec["attributes"];
     store_spec.erase("attributes");
   }
-  // attributes is not a valid key for the tensorstore open ...
-  // FIXME - resolve opening struct array with field and no metadata
-  //         updates to Tensorstore required ...
+  // Detect a structured dtype up front (while metadata is still present) so we
+  // can open directly as void. The version detection + flag logic lives in the
+  // zarr abstraction layer. This is the fast path; specs that arrive without
+  // "metadata" are still handled by the open/fail/retry fallback below.
+  store_spec = zarr::PrepareStructuredOpenSpec(store_spec);
+  // tensorstore cannot open a struct array given both "metadata" and no
+  // "field", so drop metadata here (PrepareStructuredOpenSpec already consumed
+  // it above).
   if (!store_spec.contains("field") && store_spec.contains("metadata")) {
     store_spec.erase("metadata");
   }
-  // the negative of this is valid for tensorstore ...
 
   // TODO(BrianMichell): Look into making the recheck_cached_data an open
   // option. store_spec["recheck_cached_data"] = false;  // This could become
@@ -782,14 +765,15 @@ Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
   auto metadata = tensorstore::MapFutureValue(tensorstore::InlineExecutor{},
                                               parse, kvs_read_future, spec);
 
+  // Fallback for structured Variables whose spec arrives without "metadata"
+  // (e.g. path-based Dataset::Open or Dataset::SelectField, which build a spec
+  // of just driver + kvstore). In that case PrepareStructuredOpenSpec above
+  // cannot detect the struct, so the driver fails asking for a "field"; retry
+  // once with open_as_void set.
   if (!future_store.status().ok()) {
     std::string status_message = future_store.status().ToString();
     if (status_message.find("Must specify a \"field\"") != std::string::npos &&
         !store_spec.contains("open_as_void")) {
-      std::cout << "Detected a structured Variable without a field or void "
-                   "flag. Retrying with void flag..."
-                << std::endl;
-      // store_spec["open_as_void"] = true;
       auto cpy = json_store;
       cpy["open_as_void"] = true;
       // Reconstruct options for the recursive call
@@ -837,7 +821,7 @@ Future<Variable<T, R, M>> Open(const nlohmann::json& json_spec,
   // situations where we would create new metadata
   if (options.open_mode == constants::kCreateClean ||
       options.open_mode == constants::kCreate) {
-    MDIO_ASSIGN_OR_RETURN(auto json_schema, ValidateAndProcessJson(json_spec))
+    MDIO_ASSIGN_OR_RETURN(auto json_schema, ValidateAndProcessJson(json_spec));
     // extract the json for the store and our metadata
     auto [json_store, metadata] = json_schema;
     // this will write metadata
@@ -1992,7 +1976,7 @@ Result<VariableData<T, R, OriginKind>> from_variable(
   // templated. this can fail if the types are inconsistent, at which point it
   // will return with a status.
   MDIO_ASSIGN_OR_RETURN(auto array,
-                        tensorstore::StaticDataTypeCast<T>(std::move(_array)))
+                        tensorstore::StaticDataTypeCast<T>(std::move(_array)));
 
   auto labeled_array = LabeledArray<T, R, OriginKind>{domain, std::move(array)};
 

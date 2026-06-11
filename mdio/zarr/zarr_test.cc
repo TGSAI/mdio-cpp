@@ -983,6 +983,136 @@ TEST(ZarrUnified, UpdateSpecVersion_ToV2) {
   EXPECT_EQ(updated["path"], "test");
 }
 
+// =============================================================================
+// Structured dtype detection + open_as_void preparation
+// =============================================================================
+
+TEST(ZarrUnified, GetStructFieldNames_V2_Structured) {
+  auto metadata = nlohmann::json::parse(
+      R"({"dtype": [["cdp-x", "<i4"], ["cdp-y", "<i4"]]})");
+  auto names =
+      mdio::zarr::GetStructFieldNames(mdio::zarr::ZarrVersion::kV2, metadata);
+  EXPECT_THAT(names, testing::ElementsAre("cdp-x", "cdp-y"));
+}
+
+TEST(ZarrUnified, GetStructFieldNames_V2_NotStructured) {
+  nlohmann::json metadata = {{"dtype", "<f4"}};
+  auto names =
+      mdio::zarr::GetStructFieldNames(mdio::zarr::ZarrVersion::kV2, metadata);
+  EXPECT_TRUE(names.empty());
+}
+
+TEST(ZarrUnified, GetStructFieldNames_V3_Structured) {
+  auto metadata = nlohmann::json::parse(R"({
+      "data_type": {
+        "name": "struct",
+        "configuration": {"fields": [{"name": "cdp-x"}, {"name": "cdp-y"}]}
+      }
+    })");
+  auto names =
+      mdio::zarr::GetStructFieldNames(mdio::zarr::ZarrVersion::kV3, metadata);
+  EXPECT_THAT(names, testing::ElementsAre("cdp-x", "cdp-y"));
+}
+
+TEST(ZarrUnified, GetStructFieldNames_V3_NotStructured) {
+  nlohmann::json metadata = {{"data_type", "float32"}};
+  auto names =
+      mdio::zarr::GetStructFieldNames(mdio::zarr::ZarrVersion::kV3, metadata);
+  EXPECT_TRUE(names.empty());
+}
+
+TEST(ZarrUnified, IsStructuredDType_V2) {
+  auto structured = nlohmann::json::parse(
+      R"({"dtype": [["cdp-x", "<i4"], ["cdp-y", "<i4"]]})");
+  EXPECT_TRUE(
+      mdio::zarr::IsStructuredDType(mdio::zarr::ZarrVersion::kV2, structured));
+
+  nlohmann::json scalar = {{"dtype", "<f4"}};
+  EXPECT_FALSE(
+      mdio::zarr::IsStructuredDType(mdio::zarr::ZarrVersion::kV2, scalar));
+}
+
+TEST(ZarrUnified, IsStructuredDType_V3) {
+  auto structured = nlohmann::json::parse(R"({
+      "data_type": {
+        "name": "struct",
+        "configuration": {"fields": [{"name": "cdp-x"}]}
+      }
+    })");
+  EXPECT_TRUE(
+      mdio::zarr::IsStructuredDType(mdio::zarr::ZarrVersion::kV3, structured));
+
+  nlohmann::json scalar = {{"data_type", "float32"}};
+  EXPECT_FALSE(
+      mdio::zarr::IsStructuredDType(mdio::zarr::ZarrVersion::kV3, scalar));
+}
+
+TEST(ZarrUnified, PrepareStructuredOpenSpec_V2_Structured_SetsFlag) {
+  auto spec = nlohmann::json::parse(R"({
+      "driver": "zarr",
+      "metadata": {"dtype": [["cdp-x", "<i4"], ["cdp-y", "<i4"]]}
+    })");
+  auto prepared = mdio::zarr::PrepareStructuredOpenSpec(spec);
+  ASSERT_TRUE(prepared.contains("open_as_void"));
+  EXPECT_EQ(prepared["open_as_void"], true);
+}
+
+TEST(ZarrUnified, PrepareStructuredOpenSpec_V3_Structured_SetsFlag) {
+  auto spec = nlohmann::json::parse(R"({
+      "driver": "zarr3",
+      "metadata": {
+        "data_type": {
+          "name": "struct",
+          "configuration": {"fields": [{"name": "cdp-x"}, {"name": "cdp-y"}]}
+        }
+      }
+    })");
+  auto prepared = mdio::zarr::PrepareStructuredOpenSpec(spec);
+  ASSERT_TRUE(prepared.contains("open_as_void"));
+  EXPECT_EQ(prepared["open_as_void"], true);
+}
+
+TEST(ZarrUnified, PrepareStructuredOpenSpec_NotStructured_Unchanged) {
+  auto spec = nlohmann::json::parse(R"({
+      "driver": "zarr",
+      "metadata": {"dtype": "<f4"}
+    })");
+  auto prepared = mdio::zarr::PrepareStructuredOpenSpec(spec);
+  EXPECT_FALSE(prepared.contains("open_as_void"));
+}
+
+TEST(ZarrUnified, PrepareStructuredOpenSpec_WithField_Unchanged) {
+  // A caller-selected field means the struct is opened as a single field, so
+  // the void flag must not be added.
+  auto spec = nlohmann::json::parse(R"({
+      "driver": "zarr",
+      "field": "cdp-x",
+      "metadata": {"dtype": [["cdp-x", "<i4"], ["cdp-y", "<i4"]]}
+    })");
+  auto prepared = mdio::zarr::PrepareStructuredOpenSpec(spec);
+  EXPECT_FALSE(prepared.contains("open_as_void"));
+}
+
+TEST(ZarrUnified, PrepareStructuredOpenSpec_AlreadyVoid_Unchanged) {
+  auto spec = nlohmann::json::parse(R"({
+      "driver": "zarr",
+      "open_as_void": true,
+      "metadata": {"dtype": [["cdp-x", "<i4"], ["cdp-y", "<i4"]]}
+    })");
+  auto prepared = mdio::zarr::PrepareStructuredOpenSpec(spec);
+  EXPECT_EQ(prepared["open_as_void"], true);
+}
+
+TEST(ZarrUnified, PrepareStructuredOpenSpec_NoMetadata_Unchanged) {
+  auto spec = nlohmann::json::parse(R"({
+      "driver": "zarr",
+      "kvstore": {"driver": "file", "path": "/tmp/x"}
+    })");
+  auto prepared = mdio::zarr::PrepareStructuredOpenSpec(spec);
+  EXPECT_FALSE(prepared.contains("open_as_void"));
+  EXPECT_EQ(prepared, spec);
+}
+
 }  // namespace ZarrUnifiedTests
 
 }  // namespace

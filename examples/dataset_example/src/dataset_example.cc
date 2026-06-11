@@ -79,7 +79,7 @@ absl::Status Run() {
   /// handled by returning a "Result" object; the result can be tested for
   /// "ok()", there is also a convenient Tensorstore macro for doing assigment
   /// while handling errors.
-  MDIO_ASSIGN_OR_RETURN(auto dataset, dataset_result)
+  MDIO_ASSIGN_OR_RETURN(auto dataset, dataset_result);
 
   /// The dataset represent data on disk, the object holds only minimal state.
   /// Its memory footprint is small.
@@ -113,7 +113,7 @@ absl::Status Run() {
   mdio::SliceDescriptor desc1 = {"inline", 20, 120, 1};
   mdio::SliceDescriptor desc2 = {"crossline", 100, 200, 1};
 
-  MDIO_ASSIGN_OR_RETURN(auto slice, dataset.isel(desc1, desc2))
+  MDIO_ASSIGN_OR_RETURN(auto slice, dataset.isel(desc1, desc2));
   /// The slice represents a subset of the MDIO data on disk, I/O operations can
   /// be made using the variables contained in this slice.
   std::cout << slice << "\n\n" << std::endl;
@@ -123,7 +123,7 @@ absl::Status Run() {
   /// describing data, this means that the datatype is discovered at runtime.
   /// Here we request a Variable given we know its dtype of unit32:
   MDIO_ASSIGN_OR_RETURN(auto variableObject,
-                        slice.variables.get<uint32_t>("inline"))
+                        slice.variables.get<uint32_t>("inline"));
   /// The Variable object contains a collection of metadata associated with the
   /// seismic, including names, and units.
   std::cout << variableObject << std::endl;
@@ -143,7 +143,7 @@ absl::Status Run() {
   // MDIO_ASSIGN_OR_RETURN(
   //   auto data, tensorstore::Read(variableObject.get_store()).result()
   // )
-  MDIO_ASSIGN_OR_RETURN(auto data, variableObject.Read().result())
+  MDIO_ASSIGN_OR_RETURN(auto data, variableObject.Read().result());
   auto d1 = data.get_data_accessor();
   /// The read returns a SharedArray, which we can addrss like and array, in 3-d
   /// we might do something like this data({0, 0, 0}), here the inline label is
@@ -163,7 +163,7 @@ absl::Status Run() {
   /// Optionally, the variable can handle the I/O. In this scenario data can be
   /// read into a VariableData object that retains it's dimension names and
   /// other metadata.
-  MDIO_ASSIGN_OR_RETURN(auto variableData, variableObject.Read().result())
+  MDIO_ASSIGN_OR_RETURN(auto variableData, variableObject.Read().result());
 
   /// The accessor method provides access to an underlying tensorstore
   /// SharedArray.
@@ -185,7 +185,7 @@ absl::Status Run() {
   auto existing_dataset =
       mdio::Dataset::Open(dataset_path, mdio::constants::kOpen).result();
 
-  MDIO_ASSIGN_OR_RETURN(dataset, existing_dataset)
+  MDIO_ASSIGN_OR_RETURN(dataset, existing_dataset);
 
   /// In the previous scenario used a slice to operate over the range of data
   /// [20, 120), this dataset is defined over the entire range, so we should see
@@ -196,14 +196,14 @@ absl::Status Run() {
   /// to uint32_t (in this case), then the get method will return a result that
   /// is not OK.
   MDIO_ASSIGN_OR_RETURN(variableObject,
-                        dataset.variables.get<uint32_t>("inline"))
+                        dataset.variables.get<uint32_t>("inline"));
   inclusive_min =
       variableObject.get_store().domain()[0].interval().inclusive_min();
   exclusive_max =
       variableObject.get_store().domain()[0].interval().exclusive_max();
 
   /// Here we read all of the variable from disk into memory
-  MDIO_ASSIGN_OR_RETURN(variableData, variableObject.Read().result())
+  MDIO_ASSIGN_OR_RETURN(variableData, variableObject.Read().result());
   tick_labels = variableData.get_data_accessor();
   for (Index i = inclusive_min; i < exclusive_max; i += 20) {
     std::cout << "dataset domain, " << variableData.variableName
@@ -219,10 +219,10 @@ absl::Status Run() {
     }
     MDIO_ASSIGN_OR_RETURN(
         /// in this example, all the dims labels are unint32
-        variableObject, dataset.variables.get<uint32_t>(label))
+        variableObject, dataset.variables.get<uint32_t>(label));
 
     /// Suppose we want to read existing values ...
-    MDIO_ASSIGN_OR_RETURN(variableData, variableObject.Read().result())
+    MDIO_ASSIGN_OR_RETURN(variableData, variableObject.Read().result());
 
     inclusive_min =
         variableObject.get_store().domain()[0].interval().inclusive_min();
@@ -242,7 +242,7 @@ absl::Status Run() {
   /// For the purposes of information hiding, you can also extract a single
   /// variable and its coordinates, with the other metadata. This acts like a
   /// regular Dataset, but has only a single variable.
-  MDIO_ASSIGN_OR_RETURN(auto inline_labels, dataset["cdp-x"])
+  MDIO_ASSIGN_OR_RETURN(auto inline_labels, dataset["cdp-x"]);
 
   return absl::OkStatus();
 }

@@ -67,7 +67,7 @@ Future<void> TrimDataset(std::string dataset_path,
   }
 
   for (auto& varIdentifier : ds.variables.get_iterable_accessor()) {
-    MDIO_ASSIGN_OR_RETURN(auto var, ds.variables.at(varIdentifier))
+    MDIO_ASSIGN_OR_RETURN(auto var, ds.variables.at(varIdentifier));
     var.set_metadata_publish_flag(true);
 
     bool wasStruct = var.dimensions().labels().back() == "";

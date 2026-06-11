@@ -24,6 +24,7 @@
 #include "absl/strings/str_split.h"
 #include "mdio/impl.h"
 #include "mdio/zarr/zarr_driver.h"
+#include "tensorstore/driver/zarr/dtype.h"
 #include "tensorstore/driver/zarr/metadata.h"
 #include "tensorstore/kvstore/kvstore.h"
 #include "tensorstore/kvstore/operations.h"
@@ -118,9 +119,31 @@ inline Result<nlohmann::json> GetZarray(const ::nlohmann::json& metadata) {
 
   MDIO_ASSIGN_OR_RETURN(
       auto zarr_metadata,
-      tensorstore::internal_zarr::ZarrMetadata::FromJson(zarray))
+      tensorstore::internal_zarr::ZarrMetadata::FromJson(zarray));
 
   return ::nlohmann::json(zarr_metadata);
+}
+
+/**
+ * @brief Extracts the field names of a Zarr V2 structured dtype.
+ *
+ * Zarr V2 represents structured dtypes as a numpy-style list of fields
+ * (e.g. [["cdp-x", "<i4"], ["cdp-y", "<i4"]]). Parsing is delegated to
+ * TensorStore so all numpy dtype variants are handled consistently.
+ *
+ * @param dtype The Zarr V2 "dtype" metadata value.
+ * @return Field names in declaration order, or empty if not structured.
+ */
+inline std::vector<std::string> GetStructFieldNames(
+    const nlohmann::json& dtype) {
+  std::vector<std::string> names;
+  auto parsed = tensorstore::internal_zarr::ParseDType(dtype);
+  if (parsed.ok() && parsed.value().has_fields) {
+    for (const auto& field : parsed.value().fields) {
+      names.push_back(field.name);
+    }
+  }
+  return names;
 }
 
 /**
@@ -205,7 +228,7 @@ inline Future<void> WriteConsolidatedMetadata(
     std::string zarray_key = var_name + "/.zarray";
     std::string zattrs_key = var_name + "/.zattrs";
 
-    MDIO_ASSIGN_OR_RETURN(zmetadata["metadata"][zarray_key], GetZarray(json))
+    MDIO_ASSIGN_OR_RETURN(zmetadata["metadata"][zarray_key], GetZarray(json));
     zmetadata["metadata"][zattrs_key] = PrepareVariableAttributes(json);
   }
 
