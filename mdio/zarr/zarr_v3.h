@@ -19,6 +19,7 @@
 #include <memory>
 #include <string>
 #include <tuple>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -126,6 +127,48 @@ inline std::vector<std::string> GetStructFieldNames(
   }
 
   return names;
+}
+
+/**
+ * @brief Extracts the name of a Zarr V3 data_type value.
+ *
+ * A V3 data_type is either a bare string (e.g. "int32") or an object carrying a
+ * "name" field (e.g. {"name": "fixed_length_utf32", "configuration": {...}}).
+ *
+ * @param data_type The Zarr V3 "data_type" metadata value.
+ * @return The data_type name, or an empty string if it cannot be determined.
+ */
+inline std::string GetDataTypeName(const nlohmann::json& data_type) {
+  if (data_type.is_string()) {
+    return data_type.get<std::string>();
+  }
+  if (data_type.is_object() && data_type.contains("name") &&
+      data_type["name"].is_string()) {
+    return data_type["name"].get<std::string>();
+  }
+  return "";
+}
+
+/**
+ * @brief Reports whether a Zarr V3 data_type is a metadata-only dtype.
+ *
+ * Python `mdio` stores some variables using zarr v3 string/bytes/datetime
+ * extension dtypes. The canonical example is the SEG-Y file header
+ * (`segy_file_header`): a scalar `fixed_length_utf32` array whose real content
+ * (`textHeader`, `binaryHeader`) lives entirely in the array `attributes`.
+ * TensorStore's zarr3 driver only supports numeric dtypes (and the `struct`
+ * record dtype), so from C++'s perspective these arrays carry no openable data
+ * and are treated as metadata-only.
+ *
+ * @param data_type The Zarr V3 "data_type" metadata value.
+ * @return True if the dtype cannot be opened as a tensorstore array.
+ */
+inline bool IsMetadataOnlyDataType(const nlohmann::json& data_type) {
+  static const std::unordered_set<std::string> kMetadataOnlyNames = {
+      "fixed_length_utf32", "fixed_length_ascii", "string",
+      "variable_length_utf8", "raw_bytes", "null_terminated_bytes",
+      "variable_length_bytes", "numpy.datetime64", "numpy.timedelta64"};
+  return kMetadataOnlyNames.count(GetDataTypeName(data_type)) > 0;
 }
 
 // ============================================================================
@@ -449,6 +492,14 @@ struct V3MetadataState {
 
       auto parsed = ParseJsonFromReadResult(*result);
       if (parsed.ok() && IsArrayMetadata(parsed.value())) {
+        // Skip metadata-only variables (e.g. the SEG-Y file header): their
+        // dtype is a string/bytes/datetime extension that tensorstore cannot
+        // open, and their content lives in the array attributes rather than in
+        // chunk data. Including them would fail the entire dataset open.
+        if (parsed.value().contains("data_type") &&
+            IsMetadataOnlyDataType(parsed.value()["data_type"])) {
+          continue;
+        }
         json_vars.push_back(MakeVariableSpec(candidates[i]));
       }
     }

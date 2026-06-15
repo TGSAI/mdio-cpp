@@ -1287,18 +1287,24 @@ INSTANTIATE_TEST_SUITE_P(
 // Parameterized Python/Multidimio Dataset Compatibility Tests
 // ============================================================================
 
-class MultidimioCompatibilityTest : public ::testing::Test {
+class MultidimioCompatibilityTest
+    : public ::testing::TestWithParam<mdio::zarr::ZarrVersion> {
  protected:
   void SetUp() override {
-    base_path_ = GetBasePath(mdio::zarr::ZarrVersion::kV2);
+    version_ = GetParam();
+    base_path_ = GetBasePath(version_);
   }
 
+  mdio::zarr::ZarrVersion version_;
   std::string base_path_;
 };
 
-TEST_F(MultidimioCompatibilityTest, datasetCompatible) {
-  // This test verifies that a Dataset created by multidimio can be opened by C++ (or vice versa).
-  // It runs the python script to ingest a real SEG-Y dataset to an MDIO dataset.
+TEST_P(MultidimioCompatibilityTest, datasetCompatible) {
+  // This test verifies that a Dataset created by multidimio can be opened by
+  // C++, for both Zarr V2 and V3. It runs the python script to ingest a real
+  // SEG-Y dataset to an MDIO dataset. The python ingestion honors the requested
+  // Zarr format via the ZARR_DEFAULT_ZARR_FORMAT environment variable, which
+  // the forked interpreter inherits.
   std::string test_path = base_path_ + "/multidimio_compat";
   std::filesystem::remove_all(test_path);
 
@@ -1311,28 +1317,41 @@ TEST_F(MultidimioCompatibilityTest, datasetCompatible) {
     FAIL() << "Script not found: " << srcPath;
   }
 
+  const std::string zarr_format =
+      version_ == mdio::zarr::ZarrVersion::kV3 ? "3" : "2";
+  setenv("ZARR_DEFAULT_ZARR_FORMAT", zarr_format.c_str(), /*overwrite=*/1);
+
   std::vector<std::vector<std::string>> arg_sets = {
       {test_path + "/"},
   };
 
-  EXPECT_TRUE(RunPythonScripts(
-      srcPath, arg_sets, "Multidimio compatibility skipped due to import error"))
-      << "multidimio compatibility test failed";
+  bool scripts_passed = RunPythonScripts(
+      srcPath, arg_sets,
+      "Multidimio compatibility skipped due to import error");
+  unsetenv("ZARR_DEFAULT_ZARR_FORMAT");
+
+  EXPECT_TRUE(scripts_passed) << "multidimio compatibility test failed";
 
   // Now try to open the ingested dataset with C++
-  std::cout << "Attempting to open the ingested dataset with C++..." << std::endl;
+  std::cout << "Attempting to open the ingested dataset with C++..."
+            << std::endl;
   auto ds = mdio::Dataset::Open(test_path, mdio::constants::kOpen);
-  // if (!ds.status().ok()) {
-  //   std::cout << "Expected failure or issue opening the dataset in C++: " << ds.status() << std::endl;
-  // } else {
-  //   std::cout << "Successfully opened the ingested dataset in C++!" << std::endl;
-  // }
 
   EXPECT_TRUE(ds.status().ok()) << ds.status();
+
+  std::cout << ds.value() << std::endl;
 
   // Clean up
   std::filesystem::remove_all(test_path);
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    ZarrVersions, MultidimioCompatibilityTest,
+    ::testing::Values(mdio::zarr::ZarrVersion::kV2,
+                      mdio::zarr::ZarrVersion::kV3),
+    [](const ::testing::TestParamInfo<mdio::zarr::ZarrVersion>& info) {
+      return ZarrVersionToString(info.param);
+    });
 
 // ============================================================================
 // Dataset::from_json with Version Parameter Tests

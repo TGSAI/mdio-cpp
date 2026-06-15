@@ -15,6 +15,7 @@
 #ifndef MDIO_ZARR_ZARR_V2_H_
 #define MDIO_ZARR_ZARR_V2_H_
 
+#include <cctype>
 #include <memory>
 #include <string>
 #include <tuple>
@@ -144,6 +145,49 @@ inline std::vector<std::string> GetStructFieldNames(
     }
   }
   return names;
+}
+
+/**
+ * @brief Reports whether a Zarr V2 dtype is a metadata-only dtype.
+ *
+ * Mirrors the Zarr V3 behavior: Python `mdio` stores some variables (e.g. the
+ * SEG-Y file header) using string/bytes/datetime dtypes whose content lives in
+ * the variable attributes rather than in chunk data. TensorStore's zarr driver
+ * cannot open these, so they are treated as metadata-only and skipped during
+ * discovery instead of failing the whole dataset open.
+ *
+ * Zarr V2 dtypes are numpy typestrings such as "<f4", "|b1", "<U40", "|S8",
+ * "|O" or "<M8[ns]". The numpy "kind" character identifies the metadata-only
+ * families: U (unicode), S (byte string), O (object/variable-length),
+ * M (datetime64) and m (timedelta64). Numeric kinds (b/i/u/f/c) and structured
+ * (record) dtypes are openable and never metadata-only.
+ *
+ * @param dtype The Zarr V2 "dtype" metadata value.
+ * @return True if the dtype cannot be opened as a tensorstore array.
+ */
+inline bool IsMetadataOnlyDataType(const nlohmann::json& dtype) {
+  // Structured/record dtypes are represented as arrays of fields and are
+  // openable (handled via open_as_void elsewhere).
+  if (!dtype.is_string()) {
+    return false;
+  }
+  const std::string typestr = dtype.get<std::string>();
+  for (char c : typestr) {
+    if (std::isalpha(static_cast<unsigned char>(c))) {
+      // First alphabetic character is the numpy kind character.
+      switch (c) {
+        case 'U':  // unicode string (UTF-32)
+        case 'S':  // byte string
+        case 'O':  // python object / variable-length
+        case 'M':  // datetime64
+        case 'm':  // timedelta64
+          return true;
+        default:
+          return false;
+      }
+    }
+  }
+  return false;
 }
 
 /**
@@ -380,6 +424,14 @@ inline void OnZmetadataRead(
     // Skip if not a .zarray entry
     size_t dot_pos = key.find_last_of('.');
     if (dot_pos == std::string::npos || key.substr(dot_pos + 1) != "zarray") {
+      continue;
+    }
+    // Skip metadata-only variables (e.g. the SEG-Y file header): their dtype is
+    // a string/bytes/datetime type that tensorstore cannot open, and their
+    // content lives in the variable attributes rather than in chunk data.
+    // Including them would fail the entire dataset open.
+    if (element.value().contains("dtype") &&
+        IsMetadataOnlyDataType(element.value()["dtype"])) {
       continue;
     }
     std::string var_name = ExtractVariableName(key);

@@ -1113,6 +1113,74 @@ TEST(ZarrUnified, PrepareStructuredOpenSpec_NoMetadata_Unchanged) {
   EXPECT_EQ(prepared, spec);
 }
 
+// =============================================================================
+// Metadata-only (string/bytes/datetime) dtype detection (V3)
+// =============================================================================
+
+TEST(ZarrUnified, GetDataTypeName_StringAndObject) {
+  EXPECT_EQ(mdio::zarr::v3::GetDataTypeName(nlohmann::json("float32")),
+            "float32");
+
+  auto fixed = nlohmann::json::parse(R"({
+      "name": "fixed_length_utf32",
+      "configuration": {"length_bytes": 4}
+    })");
+  EXPECT_EQ(mdio::zarr::v3::GetDataTypeName(fixed), "fixed_length_utf32");
+
+  // Unrecognizable shapes resolve to an empty name.
+  EXPECT_EQ(mdio::zarr::v3::GetDataTypeName(nlohmann::json::array()), "");
+}
+
+TEST(ZarrUnified, IsMetadataOnlyDataType_StringLike) {
+  // The SEG-Y file header dtype written by Python mdio.
+  auto fixed = nlohmann::json::parse(R"({
+      "name": "fixed_length_utf32",
+      "configuration": {"length_bytes": 4}
+    })");
+  EXPECT_TRUE(mdio::zarr::v3::IsMetadataOnlyDataType(fixed));
+
+  for (const auto* name :
+       {"string", "variable_length_utf8", "raw_bytes", "null_terminated_bytes",
+        "variable_length_bytes", "numpy.datetime64", "numpy.timedelta64"}) {
+    EXPECT_TRUE(mdio::zarr::v3::IsMetadataOnlyDataType(nlohmann::json(name)))
+        << name;
+  }
+}
+
+TEST(ZarrUnified, IsMetadataOnlyDataType_NumericAndStructAreOpenable) {
+  for (const auto* name : {"int32", "float32", "float64", "complex64", "bool"}) {
+    EXPECT_FALSE(mdio::zarr::v3::IsMetadataOnlyDataType(nlohmann::json(name)))
+        << name;
+  }
+
+  auto structured = nlohmann::json::parse(R"({
+      "name": "struct",
+      "configuration": {"fields": [{"name": "cdp-x", "data_type": "int32"}]}
+    })");
+  EXPECT_FALSE(mdio::zarr::v3::IsMetadataOnlyDataType(structured));
+}
+
+TEST(ZarrUnified, V2_IsMetadataOnlyDataType_StringLike) {
+  // U: unicode (UTF-32), S: bytes, O: object, M: datetime64, m: timedelta64.
+  for (const auto* typestr :
+       {"<U40", ">U10", "|S8", "|O", "<M8[ns]", "<m8[ns]"}) {
+    EXPECT_TRUE(mdio::zarr::v2::IsMetadataOnlyDataType(nlohmann::json(typestr)))
+        << typestr;
+  }
+}
+
+TEST(ZarrUnified, V2_IsMetadataOnlyDataType_NumericAndStructAreOpenable) {
+  for (const auto* typestr :
+       {"<i4", "<i8", "<u2", "<f4", "<f8", "|b1", "<c8"}) {
+    EXPECT_FALSE(mdio::zarr::v2::IsMetadataOnlyDataType(nlohmann::json(typestr)))
+        << typestr;
+  }
+
+  // Structured (record) dtype is an array of fields, not a string.
+  auto structured = nlohmann::json::parse(R"([["cdp-x", "<i4"], ["cdp-y", "<i4"]])");
+  EXPECT_FALSE(mdio::zarr::v2::IsMetadataOnlyDataType(structured));
+}
+
 }  // namespace ZarrUnifiedTests
 
 }  // namespace

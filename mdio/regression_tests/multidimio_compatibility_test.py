@@ -15,8 +15,10 @@
 import argparse
 import os
 import sys
+import time
 
 try:
+    import zarr
     from segy.schema import HeaderField
     from segy.standards import get_segy_standard
 
@@ -29,9 +31,24 @@ except ImportError as e:
     sys.exit(0xfd)
 
 
+def _apply_requested_zarr_format():
+    """Honor the Zarr format requested via ZARR_DEFAULT_ZARR_FORMAT.
+
+    Zarr reads this environment variable at import time, but `import mdio`
+    above already imports zarr, so we re-apply it explicitly here to make sure
+    the requested format wins regardless of import ordering.
+    """
+    zarr_format = os.environ.get("ZARR_DEFAULT_ZARR_FORMAT")
+    if zarr_format is not None:
+        zarr.config.set({"default_zarr_format": int(zarr_format)})
+
+
 def test_multidimio_ingestion(output_path):
     os.environ["MDIO__IMPORT__CLOUD_NATIVE"] = "true"
     os.environ["MDIO__IMPORT__SAVE_SEGY_FILE_HEADER"] = "true"
+
+    _apply_requested_zarr_format()
+    print(f"Using Zarr format: {zarr.config.get('default_zarr_format')}")
 
     input_url = "http://s3.amazonaws.com/teapot/filt_mig.sgy"
 
@@ -52,14 +69,27 @@ def test_multidimio_ingestion(output_path):
     mdio_template.add_units({"time": unit_ms})
 
     try:
-        # Ingest
-        segy_to_mdio(
-            input_path=input_url,
-            output_path=output_path,
-            segy_spec=teapot_segy_spec,
-            mdio_template=mdio_template,
-            overwrite=True,
-        )
+        # Ingest. The remote SEG-Y fetch can hit transient HTTP errors, so retry
+        # a few times before giving up.
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                segy_to_mdio(
+                    input_path=input_url,
+                    output_path=output_path,
+                    segy_spec=teapot_segy_spec,
+                    mdio_template=mdio_template,
+                    overwrite=True,
+                )
+                break
+            except Exception as ingest_error:  # noqa: BLE001
+                if attempt == max_attempts:
+                    raise
+                print(
+                    f"Ingestion attempt {attempt}/{max_attempts} failed "
+                    f"({type(ingest_error).__name__}: {ingest_error}); retrying..."
+                )
+                time.sleep(2 * attempt)
         print("Ingestion successful.")
 
         # Open and read
