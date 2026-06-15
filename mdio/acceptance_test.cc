@@ -41,6 +41,8 @@ constexpr char PROJECT_BASE_PATH_ENV[] = "PROJECT_BASE_PATH";
 constexpr char DEFAULT_BASE_PATH[] = "../..";
 constexpr char XARRAY_SCRIPT_RELATIVE_PATH[] =
     "/mdio/regression_tests/xarray_compatibility_test.py";
+constexpr char MULTIDIMIO_SCRIPT_RELATIVE_PATH[] =
+    "/mdio/regression_tests/multidimio_compatibility_test.py";
 constexpr int ERROR_CODE = EXIT_FAILURE;
 constexpr int SUCCESS_CODE = EXIT_SUCCESS;
 
@@ -1280,6 +1282,57 @@ INSTANTIATE_TEST_SUITE_P(
     [](const ::testing::TestParamInfo<mdio::zarr::ZarrVersion>& info) {
       return ZarrVersionToString(info.param);
     });
+
+// ============================================================================
+// Parameterized Python/Multidimio Dataset Compatibility Tests
+// ============================================================================
+
+class MultidimioCompatibilityTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    base_path_ = GetBasePath(mdio::zarr::ZarrVersion::kV2);
+  }
+
+  std::string base_path_;
+};
+
+TEST_F(MultidimioCompatibilityTest, datasetCompatible) {
+  // This test verifies that a Dataset created by multidimio can be opened by C++ (or vice versa).
+  // It runs the python script to ingest a real SEG-Y dataset to an MDIO dataset.
+  std::string test_path = base_path_ + "/multidimio_compat";
+  std::filesystem::remove_all(test_path);
+
+  std::string srcPath =
+      std::string(GetPythonBasePath()) + MULTIDIMIO_SCRIPT_RELATIVE_PATH;
+
+  if (access(srcPath.c_str(), F_OK) == -1) {
+    std::cerr << "Error: Python script not found at " << srcPath << std::endl;
+    std::filesystem::remove_all(test_path);
+    FAIL() << "Script not found: " << srcPath;
+  }
+
+  std::vector<std::vector<std::string>> arg_sets = {
+      {test_path + "/"},
+  };
+
+  EXPECT_TRUE(RunPythonScripts(
+      srcPath, arg_sets, "Multidimio compatibility skipped due to import error"))
+      << "multidimio compatibility test failed";
+
+  // Now try to open the ingested dataset with C++
+  std::cout << "Attempting to open the ingested dataset with C++..." << std::endl;
+  auto ds = mdio::Dataset::Open(test_path, mdio::constants::kOpen);
+  // if (!ds.status().ok()) {
+  //   std::cout << "Expected failure or issue opening the dataset in C++: " << ds.status() << std::endl;
+  // } else {
+  //   std::cout << "Successfully opened the ingested dataset in C++!" << std::endl;
+  // }
+
+  EXPECT_TRUE(ds.status().ok()) << ds.status();
+
+  // Clean up
+  std::filesystem::remove_all(test_path);
+}
 
 // ============================================================================
 // Dataset::from_json with Version Parameter Tests
