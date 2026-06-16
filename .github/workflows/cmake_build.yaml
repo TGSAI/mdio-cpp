@@ -37,10 +37,10 @@ jobs:
       - name: Install test dependencies
         run: |
           uv sync --project .devcontainer --frozen
-        env:
-          UV_PROJECT_ENVIRONMENT: /usr
+        # No system python environment bypass! uv will automatically handle creating a local .venv in .devcontainer folder.
       - name: Run tests
         run: |
+          source .devcontainer/.venv/bin/activate
           cd build/mdio/ \
           && ./mdio_acceptance_test \
           && ./mdio_variable_test \
