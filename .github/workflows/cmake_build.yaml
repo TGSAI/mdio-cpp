@@ -52,4 +52,8 @@ jobs:
           && ./mdio_utils_trim_test \
           && ./mdio_utils_delete_test \
           && ./mdio_variable_collection_test \
-          && ./mdio_coordinate_selector_test
+          && ./mdio_coordinate_selector_test \
+          && ./mdio_header_variable_test \
+          && ./mdio_zarr_test \
+          && ./mdio_gcs_test \
+          && ./mdio_s3_test
