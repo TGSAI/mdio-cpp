@@ -814,7 +814,7 @@ requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=24.3" },
     { name = "cpplint", marker = "extra == 'dev'", specifier = "==1.6.1" },
     { name = "isort", marker = "extra == 'dev'", specifier = ">=5.0" },
-    { name = "multidimio", extras = ["cloud"], directory = "../../mdio-python" },
+    { name = "multidimio", extras = ["cloud"], specifier = "==1.1.4.dev1781540584", index = "https://test.pypi.org/simple/" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.5" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8" },
@@ -897,8 +897,8 @@ wheels = [
 
 [[package]]
 name = "multidimio"
-version = "1.1.3"
-source = { directory = "../../mdio-python" }
+version = "1.1.4.dev1781540584"
+source = { registry = "https://test.pypi.org/simple/" }
 dependencies = [
     { name = "click" },
     { name = "click-params" },
@@ -915,65 +915,16 @@ dependencies = [
     { name = "xarray" },
     { name = "zarr" },
 ]
+sdist = { url = "https://test-files.pythonhosted.org/packages/d1/00/ab6949b581b2f1198872e9afbba56e8e43c48b3c1e8519dc3447fd24ef21/multidimio-1.1.4.dev1781540584.tar.gz", hash = "sha256:0649c10c3e2b8252df5138f347e339122623272f116363fba92fc89b08c29c0c", size = 93962, upload-time = "2026-06-15T16:23:14.889Z" }
+wheels = [
+    { url = "https://test-files.pythonhosted.org/packages/21/08/7ef145b21cbf41d85391dd612cc13a9eae0b16d69ff75c7a7a5227a0f2e8/multidimio-1.1.4.dev1781540584-py3-none-any.whl", hash = "sha256:e6668ebfc4df97b85a47102897d048d5d33380d851adbfbad431e47fe4183e5f", size = 135750, upload-time = "2026-06-15T16:23:12.867Z" },
+]
 
 [package.optional-dependencies]
 cloud = [
     { name = "adlfs" },
     { name = "gcsfs" },
     { name = "s3fs" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "adlfs", marker = "extra == 'cloud'", specifier = ">=2025.8.0" },
-    { name = "bokeh", marker = "extra == 'distributed'", specifier = ">=3.8.0" },
-    { name = "click", specifier = ">=8.3.0" },
-    { name = "click-params", specifier = ">=0.5.0" },
-    { name = "dask", specifier = ">=2025.9.1" },
-    { name = "distributed", marker = "extra == 'distributed'", specifier = ">=2025.9.1" },
-    { name = "fsspec", specifier = ">=2025.9.0,<2026.2.0" },
-    { name = "gcsfs", marker = "extra == 'cloud'", specifier = ">=2025.9.0" },
-    { name = "pint", specifier = ">=0.25.0" },
-    { name = "psutil", specifier = ">=7.1.0" },
-    { name = "pydantic", specifier = ">=2.12.0" },
-    { name = "pydantic-settings", specifier = ">=2.6.1" },
-    { name = "rich", specifier = ">=14.1.0" },
-    { name = "s3fs", marker = "extra == 'cloud'", specifier = ">=2025.9.0" },
-    { name = "segy", specifier = ">=0.5.4" },
-    { name = "tqdm", specifier = ">=4.67.1" },
-    { name = "universal-pathlib", specifier = ">=0.3.3" },
-    { name = "xarray", specifier = ">=2025.10.1" },
-    { name = "zarr", specifier = ">=3.2.1" },
-    { name = "zfpy", marker = "extra == 'lossy'", specifier = ">=1.0.1" },
-]
-provides-extras = ["cloud", "distributed", "lossy"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "coverage", extras = ["toml"], specifier = ">=7.10.7" },
-    { name = "mypy", specifier = ">=1.18.2" },
-    { name = "pre-commit", specifier = ">=4.3.0" },
-    { name = "pre-commit-hooks", specifier = ">=6.0.0" },
-    { name = "pygments", specifier = ">=2.19.2" },
-    { name = "pytest", specifier = ">=8.4.2" },
-    { name = "pytest-dependency", specifier = ">=0.6.0" },
-    { name = "ruff", specifier = ">=0.14.0" },
-    { name = "typeguard", specifier = ">=4.4.4" },
-    { name = "xdoctest", extras = ["colors"], specifier = ">=1.3.0" },
-]
-docs = [
-    { name = "aiohttp", specifier = ">=3.13.3" },
-    { name = "autodoc-pydantic", specifier = ">=2.2.0" },
-    { name = "furo", specifier = ">=2025.12.19" },
-    { name = "ipywidgets", specifier = ">=8.1.8" },
-    { name = "linkify-it-py", specifier = ">=2.0.3" },
-    { name = "matplotlib", specifier = ">=3.10.8" },
-    { name = "myst-nb", specifier = ">=1.3.0" },
-    { name = "sphinx", specifier = ">=8.2.3" },
-    { name = "sphinx-autobuild", specifier = ">=2025.8.25" },
-    { name = "sphinx-click", specifier = ">=6.2.0" },
-    { name = "sphinx-copybutton", specifier = ">=0.5.2" },
-    { name = "sphinx-design", specifier = ">=0.6.1" },
 ]
 
 [[package]]

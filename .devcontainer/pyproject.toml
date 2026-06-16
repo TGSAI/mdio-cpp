@@ -20,7 +20,7 @@ requires-python = ">=3.12,<3.13"
 
 # multidimio[cloud] pulls in zarr, xarray, numpy, and cloud storage backends
 dependencies = [
-    "multidimio[cloud]",
+    "multidimio[cloud]==1.1.4.dev1781540584",
 ]
 
 [project.optional-dependencies]
@@ -53,8 +53,13 @@ dev = [
 package = false
 prerelease = "allow"
 
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+explicit = true
+
 [tool.uv.sources]
-multidimio = { path = "../../mdio-python" }
+multidimio = { index = "testpypi" }
 
 [tool.isort]
 profile = "black"
