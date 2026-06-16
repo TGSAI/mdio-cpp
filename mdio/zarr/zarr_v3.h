@@ -492,12 +492,12 @@ struct V3MetadataState {
 
       auto parsed = ParseJsonFromReadResult(*result);
       if (parsed.ok() && IsArrayMetadata(parsed.value())) {
-        // Skip metadata-only variables (e.g. the SEG-Y file header): their
-        // dtype is a string/bytes/datetime extension that tensorstore cannot
-        // open, and their content lives in the array attributes rather than in
-        // chunk data. Including them would fail the entire dataset open.
         if (parsed.value().contains("data_type") &&
             IsMetadataOnlyDataType(parsed.value()["data_type"])) {
+          auto spec = MakeVariableSpec(candidates[i]);
+          spec["_mdio_header_only"] = true;
+          spec["_mdio_array_metadata"] = parsed.value();
+          json_vars.push_back(std::move(spec));
           continue;
         }
         json_vars.push_back(MakeVariableSpec(candidates[i]));

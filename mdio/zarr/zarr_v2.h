@@ -272,6 +272,19 @@ inline Future<void> WriteConsolidatedMetadata(
     std::string zarray_key = var_name + "/.zarray";
     std::string zattrs_key = var_name + "/.zattrs";
 
+    if (json.contains("_mdio_header_only") &&
+        json["_mdio_header_only"].get<bool>()) {
+      zmetadata["metadata"][zarray_key] = json["_mdio_zarray"];
+      if (json.contains("attributes")) {
+        zmetadata["metadata"][zattrs_key] = json["attributes"];
+      } else if (json.contains("_mdio_zattrs")) {
+        zmetadata["metadata"][zattrs_key] = json["_mdio_zattrs"];
+      } else {
+        zmetadata["metadata"][zattrs_key] = nlohmann::json::object();
+      }
+      continue;
+    }
+
     MDIO_ASSIGN_OR_RETURN(zmetadata["metadata"][zarray_key], GetZarray(json));
     zmetadata["metadata"][zattrs_key] = PrepareVariableAttributes(json);
   }
@@ -426,12 +439,19 @@ inline void OnZmetadataRead(
     if (dot_pos == std::string::npos || key.substr(dot_pos + 1) != "zarray") {
       continue;
     }
-    // Skip metadata-only variables (e.g. the SEG-Y file header): their dtype is
-    // a string/bytes/datetime type that tensorstore cannot open, and their
-    // content lives in the variable attributes rather than in chunk data.
-    // Including them would fail the entire dataset open.
     if (element.value().contains("dtype") &&
         IsMetadataOnlyDataType(element.value()["dtype"])) {
+      std::string var_name = ExtractVariableName(key);
+      auto spec = state->BuildVariableSpec(var_name);
+      spec["_mdio_header_only"] = true;
+      spec["_mdio_zarray"] = element.value();
+      const std::string zattrs_key = var_name + "/.zattrs";
+      if (zmetadata["metadata"].contains(zattrs_key)) {
+        spec["_mdio_zattrs"] = zmetadata["metadata"][zattrs_key];
+      } else {
+        spec["_mdio_zattrs"] = nlohmann::json::object();
+      }
+      json_vars.push_back(std::move(spec));
       continue;
     }
     std::string var_name = ExtractVariableName(key);

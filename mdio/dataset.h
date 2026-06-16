@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "mdio/dataset_factory.h"
+#include "mdio/header_variable.h"
 #include "mdio/variable.h"
 #include "mdio/variable_collection.h"
 #include "mdio/zarr/zarr.h"
@@ -188,12 +189,14 @@ class Dataset {
   Dataset(const nlohmann::json& metadata, const VariableCollection& variables,
           const coordinate_map& coordinates,
           const tensorstore::IndexDomain<>& domain,
-          tensorstore::Context context = tensorstore::Context::Default())
+          tensorstore::Context context = tensorstore::Context::Default(),
+          HeaderVariableCollection header_variables = {})
       : metadata(metadata),
         variables(variables),
         coordinates(coordinates),
         domain(domain),
-        context_(context) {}
+        context_(context),
+        header_variables(std::move(header_variables)) {}
 
   friend std::ostream& operator<<(std::ostream& os, const Dataset& dataset) {
     // Output metadata
@@ -205,6 +208,12 @@ class Dataset {
       os << "Variable: " << key
          << " - Dimensions: " << dataset.variables.at(key).value().dimensions()
          << "\n";
+    }
+
+    const auto header_keys = dataset.header_variables.get_iterable_accessor();
+    for (const auto& key : header_keys) {
+      os << "Header Variable: " << key << " - Dimensions: "
+         << dataset.header_variables.at(key).value().dimensions() << "\n";
     }
 
     // Output coordinates
@@ -223,6 +232,13 @@ class Dataset {
     os << "Domain: " << dataset.domain << "\n";
 
     return os;
+  }
+
+  template <typename T = void, DimensionIndex R = dynamic_rank,
+            ReadWriteMode M = ReadWriteMode::dynamic>
+  Result<HeaderVariable<T, R, M>> get_header_variable(
+      const std::string& variable_name) {
+    return header_variables.get<T, R, M>(variable_name);
   }
 
   /**
@@ -449,7 +465,8 @@ class Dataset {
                               .shape(shape)
                               .labels(labels)
                               .Finalize());
-    return Dataset{metadata, vars, coordinates, new_domain, context_};
+    return Dataset{metadata, vars, coordinates, new_domain, context_,
+                   header_variables};
   }
 
   /**
@@ -904,7 +921,7 @@ class Dataset {
       coords = {{label, coordinates.at(label)}};
     }
 
-    return Dataset{metadata, vars, coords, domain, context_};
+    return Dataset{metadata, vars, coords, domain, context_, header_variables};
   }
 
   /**
@@ -970,11 +987,27 @@ class Dataset {
     // Extract context from options for metadata writing
     tensorstore::Context context = transact_options.context;
 
+    HeaderVariableCollection header_collection;
+    std::vector<::nlohmann::json> normal_specs;
+    normal_specs.reserve(json_variables.size());
+    for (const auto& json : json_variables) {
+      if (internal::IsHeaderOnlySpec(json)) {
+        auto header_var = HeaderVariable<>::FromSpec(json);
+        if (!header_var.ok()) {
+          return header_var.status();
+        }
+        header_collection.add(header_var->get_variable_name(),
+                              header_var.value());
+      } else {
+        normal_specs.push_back(json);
+      }
+    }
+
     // FIXME - publish dataset
     std::vector<Future<mdio::Variable<>>> variables;
     std::vector<tensorstore::Promise<void>> promises;
     std::vector<tensorstore::AnyFuture> futures;
-    for (const auto& json : json_variables) {
+    for (const auto& json : normal_specs) {
       auto pair = tensorstore::PromiseFuturePair<void>::Make();
 
       auto var = mdio::Variable<>::Open(json, std::forward<Option>(options)...);
@@ -999,13 +1032,18 @@ class Dataset {
           mdio::internal::write_zmetadata(metadata, json_variables, context));
     }
 
+    if (futures.empty()) {
+      futures.push_back(tensorstore::MakeReadyFuture());
+    }
+
     // ready when everything's available ...
     auto all_done_future = tensorstore::WaitAllFuture(futures);
 
     auto pair = tensorstore::PromiseFuturePair<Dataset>::Make();
     all_done_future.ExecuteWhenReady(
         [promise = std::move(pair.promise), variables = std::move(variables),
-         metadata, context](tensorstore::ReadyFuture<void> readyFut) {
+         header_collection = std::move(header_collection), metadata,
+         context](tensorstore::ReadyFuture<void> readyFut) {
           if (metadata.contains("api_version") &&
               !metadata.contains("apiVersion")) {
             promise.SetResult(
@@ -1072,7 +1110,8 @@ class Dataset {
           }
 
           Dataset new_dataset{metadata, collection, coords,
-                              dataset_domain.value(), context};
+                              dataset_domain.value(), context,
+                              header_collection};
           promise.SetResult(std::move(new_dataset));
         });
     return pair.future;
@@ -1229,6 +1268,7 @@ class Dataset {
    */
   tensorstore::Future<void> CommitMetadata() {
     auto keys = variables.get_iterable_accessor();
+    auto header_keys = header_variables.get_iterable_accessor();
 
     // Build out list of modified variables
     std::vector<std::string> modifiedVariables;
@@ -1243,8 +1283,19 @@ class Dataset {
       }
     }
 
+    std::vector<std::string> modifiedHeaderVariables;
+    for (const auto& key : header_keys) {
+      auto var = header_variables.at(key).value();
+      if (var.was_updated() || var.should_publish()) {
+        modifiedHeaderVariables.push_back(key);
+      }
+      if (var.should_publish()) {
+        var.set_metadata_publish_flag(false);
+      }
+    }
+
     // If nothing changed, we don't want to perform any writes
-    if (modifiedVariables.empty()) {
+    if (modifiedVariables.empty() && modifiedHeaderVariables.empty()) {
       tensorstore::Future<void> err =
           tensorstore::MakeResult<tensorstore::Future<void>>(
               absl::InvalidArgumentError("No variables were modified."));
@@ -1298,6 +1349,10 @@ class Dataset {
       json_vars.emplace_back(json);
     }
 
+    for (const auto& key : header_keys) {
+      json_vars.emplace_back(header_variables.at(key).value().ToCommitJson());
+    }
+
     // Now let's get the .zmetadata going.
     auto zmetadata_future =
         mdio::internal::write_zmetadata(metadata, json_vars, context_);
@@ -1313,6 +1368,21 @@ class Dataset {
       auto pair = tensorstore::PromiseFuturePair<
           tensorstore::TimestampedStorageGeneration>::Make();
       auto var = std::make_shared<Variable<>>(variables.at(key).value());
+      auto updateFuture = var->PublishMetadata();
+      updateFuture.ExecuteWhenReady(
+          [promise = std::move(pair.promise),
+           var](tensorstore::ReadyFuture<
+                tensorstore::TimestampedStorageGeneration>
+                    readyFut) { promise.SetResult(readyFut.result()); });
+      variableFutures.push_back(std::move(updateFuture));
+      futures.push_back(std::move(pair.future));
+    }
+
+    for (const auto& key : modifiedHeaderVariables) {
+      auto pair = tensorstore::PromiseFuturePair<
+          tensorstore::TimestampedStorageGeneration>::Make();
+      auto var = std::make_shared<HeaderVariable<>>(
+          header_variables.at(key).value());
       auto updateFuture = var->PublishMetadata();
       updateFuture.ExecuteWhenReady(
           [promise = std::move(pair.promise),
@@ -1353,6 +1423,9 @@ class Dataset {
 
   /// variables contained in the dataset
   VariableCollection variables;
+
+  /// metadata-only header variables (e.g. SEG-Y file header)
+  HeaderVariableCollection header_variables;
 
   /// link a variable name to its coordinates via its name(s)
   coordinate_map coordinates;

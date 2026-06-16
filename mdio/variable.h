@@ -833,6 +833,171 @@ Future<Variable<T, R, M>> Open(const nlohmann::json& json_spec,
 }  // namespace internal
 
 /**
+ * @brief Shared metadata and user-attribute machinery for Variable-like types.
+ *
+ * Holds the variable identity (name, long name), the raw metadata JSON, and the
+ * mutable UserAttributes together with the change-tracking and publish-flag
+ * bookkeeping that both `Variable` and `HeaderVariable` rely on. Storage and I/O
+ * are deliberately left to the derived classes, since a regular Variable is
+ * backed by a TensorStore while a metadata-only header variable is not.
+ *
+ * This is a non-template base because none of this state depends on the
+ * element type, rank, or read-write mode of the derived class.
+ */
+class VariableBase {
+ public:
+  VariableBase() = default;
+
+  VariableBase(std::string variableName, std::string longName,
+               ::nlohmann::json metadata,
+               std::shared_ptr<std::shared_ptr<UserAttributes>> attributes)
+      : attributes(std::move(attributes)),
+        variableName(std::move(variableName)),
+        longName(std::move(longName)),
+        metadata(std::move(metadata)) {
+    if (this->attributes && *this->attributes) {
+      attributesAddress =
+          reinterpret_cast<std::uintptr_t>(&(**this->attributes));
+    }
+  }
+
+  /**
+   * @brief Gets the name of the variable.
+   */
+  const std::string& get_variable_name() const { return variableName; }
+
+  /**
+   * @brief Gets the long name of the variable.
+   */
+  const std::string& get_long_name() const { return longName; }
+
+  /**
+   * @brief Attempts to safely update the user attributes.
+   * @tparam T_attrs The optional histogram type. Must be either int32_t or
+   * float (Default: float).
+   * NOTE: This does not commit changes to durable media. See the Dataset
+   * CommitMetadata method to persist changes.
+   */
+  template <typename T_attrs = float>
+  Result<void> UpdateAttributes(const nlohmann::json& newAttrs) {
+    auto res = (*attributes)->template FromJson<T_attrs>(newAttrs);
+    if (res.status().ok()) {
+      // Create a new UserAttributes object and update the inner std::shared_ptr
+      *attributes = std::make_shared<UserAttributes>(res.value());
+    }
+    return res;
+  }
+
+  /**
+   * @brief Gets the User Attributes as a JSON object.
+   * Returned object is expected to have a parent key of "attributes".
+   */
+  nlohmann::json GetAttributes() const { return (*attributes)->ToJson(); }
+
+  /**
+   * @brief Gets the entire metadata of the variable.
+   */
+  nlohmann::json getMetadata() const {
+    auto ret = getReducedMetadata();
+    auto attrs = GetAttributes();
+    if (attrs.is_object() && !attrs.empty()) {
+      if (!ret.contains("metadata")) {
+        ret["metadata"] = nlohmann::json::object();
+      }
+      ret["metadata"].merge_patch(attrs);
+    }
+    return ret;
+  }
+
+  /**
+   * @brief A reduced version of the metadata lacking the mutable
+   * UserAttributes. Intended primarily for internal use.
+   */
+  const nlohmann::json getReducedMetadata() const {
+    nlohmann::json ret = metadata;
+    ret["long_name"] = longName;
+    return metadata;
+  }
+
+  /**
+   * @brief Checks if the User Attributes have changed since construction.
+   */
+  const bool was_updated() const {
+    // We need a double dereference to get the address of the underlying object
+    // This works because the UserAttributes object is immutable and can only be
+    // replaced.
+    std::uintptr_t currentAddress =
+        reinterpret_cast<std::uintptr_t>(&(**attributes));
+    return attributesAddress != currentAddress;
+  }
+
+  /**
+   * @brief Sets the flag whether the metadata should get republished.
+   * Intended for internal use with the trimming utility.
+   */
+  void set_metadata_publish_flag(const bool shouldPublish) {
+    if (!toPublish) {
+      // This should never be the case, but better safe than sorry
+      toPublish = std::make_shared<std::shared_ptr<bool>>(
+          std::make_shared<bool>(shouldPublish));
+    } else {
+      *toPublish = std::make_shared<bool>(shouldPublish);
+    }
+  }
+
+  /**
+   * @brief Gets whether the metadata should get republished.
+   */
+  bool should_publish() const {
+    if (toPublish && *toPublish) {
+      // Deref the shared_ptr so we're not increasing refcount
+      return **toPublish;
+    }
+    // If the flag was a nullptr, err on the side of caution and republish
+    return true;
+  }
+
+  /**
+   * @brief Gets the original address of the User Attributes.
+   * This method should NEVER be called by the user. It allows for the copy
+   * constructor without re-serializing metadata.
+   */
+  const std::uintptr_t get_attributes_address() const {
+    return attributesAddress;
+  }
+
+  // The data that should remain static, but MAY need to be updated.
+  std::shared_ptr<std::shared_ptr<UserAttributes>> attributes;
+
+ protected:
+  /**
+   * This method should NEVER be called by the user.
+   * Intended to be called as a callback by the Dataset CommitMetadata method
+   * after the updated data is committed to durable media.
+   */
+  void _dataset_only_callback_committed() {
+    // We only want to update the address if the UserAttributes object has
+    // changed location. This indicates a new UserAttributes object has taken
+    // the place of the existing one.
+    if (attributes.get() != nullptr && attributes->get() != nullptr) {
+      attributesAddress = reinterpret_cast<std::uintptr_t>(&(**attributes));
+    }
+  }
+
+  // An identifier for the variable
+  std::string variableName;
+  // optional, default to name
+  std::string longName;
+  // other metadata
+  ::nlohmann::json metadata;
+  // The address of the attributes. This MUST NEVER be touched by the user.
+  std::uintptr_t attributesAddress = 0;
+  // The metadata will need to be updated if the trim util was used on it.
+  std::shared_ptr<std::shared_ptr<bool>> toPublish =
+      std::make_shared<std::shared_ptr<bool>>(std::make_shared<bool>(false));
+};
+
+/**
  * @brief A templated struct representing an MDIO Variable with a tensorstore.
  * This is an MDIO specified zarr V2 tensorstore variable.
  * It represents the non-volitile (on-disk, in-cloud, etc.) data.
@@ -848,7 +1013,7 @@ Future<Variable<T, R, M>> Open(const nlohmann::json& json_spec,
  */
 template <typename T = void, DimensionIndex R = dynamic_rank,
           ReadWriteMode M = ReadWriteMode::dynamic>
-class Variable {
+class Variable : public VariableBase {
  public:
   Variable() = default;
 
@@ -856,28 +1021,20 @@ class Variable {
            const ::nlohmann::json& metdata,
            const tensorstore::TensorStore<T, R, M>& store,
            const std::shared_ptr<std::shared_ptr<UserAttributes>> attributes)
-      : variableName(variableName),
-        longName(longName),
-        metadata(metdata),
-        store(store),
-        attributes(attributes) {
-    attributesAddress = reinterpret_cast<std::uintptr_t>((*attributes).get());
-  }
+      : VariableBase(variableName, longName, metdata, attributes),
+        store(store) {}
 
   // Allows for conversion to compatible types (SourceElement), which should
   // always be possible to void.
   template <typename SourceElement, DimensionIndex SourceRank,
             ReadWriteMode SourceMode>
   Variable(const Variable<SourceElement, SourceRank, SourceMode>& other)
-      : variableName(other.get_variable_name()),
-        longName(other.get_long_name()),
-        metadata(other.getReducedMetadata()),
-        store(other.get_store()),
-        attributes(other.attributes),
-        attributesAddress(other.get_attributes_address()) {}
+      : VariableBase(other.get_variable_name(), other.get_long_name(),
+                     other.getReducedMetadata(), other.attributes),
+        store(other.get_store()) {}
 
   friend std::ostream& operator<<(std::ostream& os, const Variable& obj) {
-    os << obj.variableName << "\t" << obj.dimensions() << "\n";
+    os << obj.get_variable_name() << "\t" << obj.dimensions() << "\n";
     os << obj.store.dtype() << "\t" << obj.store.rank();
     return os;
   }
@@ -1422,59 +1579,6 @@ class Variable {
     return pair.future;
   }
 
-  /**
-   * @brief Attempts to safely update the user attributes of a Variable
-   * (["metadata"]["attributes"] and/or ["metadata"]["statsV1"]).
-   * @tparam T_attrs The optional type of the histogram. Must be either int32_t
-   * or float (Default: float)
-   * @param newAttrs The JSON representation of a UserAttribute.
-   * @return An OK status if the attributes were successfully updated, otherwise
-   * an error and the attributes remain unchanged.
-   * @details \b Intended_Usage
-   * @code
-   * // Status check ignored for brevity
-   * auto var = my_dataset.variables.at("my_variable_key").value();
-   * nlohmann::json to_update = var.GetAttributes();
-   * to_update["attributes"]["new_attr"] = "new_value";
-   * std::vector<int32_t> binCenters;
-   * // Populate with your data as needed
-   * to_update["statsV1"]["histogram"]["binCenters"] = binCenters;
-   * // NOTE: The vector is of type int32_t. We must pass the type as a
-   * template argument.
-   * auto update_result = var.UpdateAttributes<int32_t>(to_update);
-   * if (!update_result.status().ok()) {
-   *      // In this case nothing will happen. We output an error and move on
-   *      // with what previously existed.
-   *      std::cerr << "Failed to update attributes: " <<
-   *      update_result.status() << std::endl;
-   * }
-   * @endcode
-   * NOTE: This does not commit changes to durable media.
-   * Please see CommitMetadata method in the Dataset to commit changes.
-   */
-  template <typename T_attrs = float>
-  Result<void> UpdateAttributes(const nlohmann::json& newAttrs) {
-    auto res = (*attributes)->template FromJson<T_attrs>(newAttrs);
-    if (res.status().ok()) {
-      // Create a new UserAttributes object and update the inner std::shared_ptr
-      *attributes = std::make_shared<UserAttributes>(res.value());
-    }
-    return res;
-  }
-
-  /**
-   * @brief Gets the User Attributes of the Variable as a JSON object.
-   * Returned object is expected to have a parent key of "attributes".
-   * This is expected to be the exact copy of the attributes field.
-   * @see
-   * https://mdio-python.readthedocs.io/en/v1/data_models/version_1.html#mdio.schema.v1.variable.VariableMetadata.attributes
-   * @return The User Attributes in JSON form.
-   */
-  nlohmann::json GetAttributes() const {
-    // Dereference the outer std::shared_ptr to get the inner std::shared_ptr
-    return (*attributes)->ToJson();
-  }
-
   Result<nlohmann::json> get_units() const {
     auto attrs = GetAttributes();
 
@@ -1485,66 +1589,6 @@ class Variable {
 
     // Return an error if the units do not exist.
     return absl::InvalidArgumentError("This Variable does not contain units");
-  }
-
-  /**
-   * @brief Gets the entire metadata of the Variable.
-   * Returned object is expected to have a parent key of "metadata".
-   * @return The metadata in JSON form
-   */
-  nlohmann::json getMetadata() const {
-    auto ret = getReducedMetadata();
-    auto attrs = GetAttributes();
-    // Check for not being a `nlohmann::json::object()`
-    if (attrs.is_object() && !attrs.empty()) {
-      if (!ret.contains("metadata")) {
-        ret["metadata"] = nlohmann::json::object();
-      }
-      ret["metadata"].merge_patch(attrs);
-    }
-    return ret;
-  }
-
-  /**
-   * @brief A reduced version of the metadata
-   * NOTE: This may only be useful for internal uses. See `getMetadata()` for
-   * the full metadata. This version should lack the mutable UserAttributes
-   * portions, if they exist.
-   * @return The reduced metadata in JSON form
-   */
-  const nlohmann::json getReducedMetadata() const {
-    nlohmann::json ret = metadata;
-    ret["long_name"] = longName;
-    return metadata;
-  }
-
-  /**
-   * @brief Checks if the User Attributes has changed in the Variable.
-   * @return true if the User Attributes has changed, false otherwise.
-   */
-  const bool was_updated() const {
-    // We need a double dereference to get the address of the underlying object
-    // This works because the UserAttributes object is immutable and can only be
-    // replaced.
-    std::uintptr_t currentAddress =
-        reinterpret_cast<std::uintptr_t>(&(**attributes));
-    return attributesAddress != currentAddress;
-  }
-
-  /**
-   * @brief Sets the flag whether the metadata should get republished.
-   * Intended for internal use with the trimming utility.
-   *
-   * @param shouldPublish True if the metadata should get republished.
-   */
-  void set_metadata_publish_flag(const bool shouldPublish) {
-    if (!toPublish) {
-      // This should never be the case, but better safe than sorry
-      toPublish = std::make_shared<std::shared_ptr<bool>>(
-          std::make_shared<bool>(shouldPublish));
-    } else {
-      *toPublish = std::make_shared<bool>(shouldPublish);
-    }
   }
 
   /**
@@ -1621,18 +1665,6 @@ class Variable {
 
   // ===========================Member data getters===========================
   /**
-   * @brief Gets the name of the variable.
-   * @return The name of the variable.
-   */
-  const std::string& get_variable_name() const { return variableName; }
-
-  /**
-   * @brief Gets the long name of the variable.
-   * @return The long name of the variable.
-   */
-  const std::string& get_long_name() const { return longName; }
-
-  /**
    * @brief Gets the underlying tensorstore of the variable.
    * @return The tensorstore of the variable.
    */
@@ -1644,66 +1676,9 @@ class Variable {
     store = new_store;
   }
 
-  // The data that should remain static, but MAY need to be updated.
-  std::shared_ptr<std::shared_ptr<UserAttributes>> attributes;
-
-  /**
-   * @brief Gets the original address of the User Attributes.
-   * This method should NEVER be called by the user.
-   * It allows for the copy constructor without re-serializing metadata.
-   * @return The original address of the User Attributes.
-   */
-  const std::uintptr_t get_attributes_address() const {
-    return attributesAddress;
-  }
-
-  /**
-   * @brief Gets whether the metadata should get republished.
-   *
-   * @return True if the metadata should get republished.
-   */
-  bool should_publish() const {
-    if (toPublish && *toPublish) {
-      // Deref the shared_ptr so we're not increasing refcount
-      return **toPublish;
-    }
-    // If the flag was a nullptr, err on the side of caution and republish
-    return true;
-  }
-
  private:
-  /**
-   * This method should NEVER be called by the user.
-   * This method is intended to be called as a callback by the Dataset
-   * CommitMetadata method after the updated data is committed to durable media.
-   * @brief Updates the current address of the User Attributes.
-   */
-  void _dataset_only_callback_committed() {
-    // We only want to update the address if the UserAttributes object has
-    // changed location This indicates a new UserAttributes object has taken the
-    // place of the existing one.
-    if (attributes.get() != nullptr && attributes->get() != nullptr) {
-      std::uintptr_t newAddress =
-          reinterpret_cast<std::uintptr_t>(&(**attributes));
-      attributesAddress = newAddress;
-    }
-    // It is fine that this will only change in the "collection" instance of the
-    // Variable, because that is the only one that will be operated on by the
-    // Dataset commit
-  }
-  // An identifier for the variable
-  std::string variableName;
-  // optional, default to name
-  std::string longName;
-  // other metadata
-  ::nlohmann::json metadata;
   // delegate the I/O to the tensorstore
   tensorstore::TensorStore<T, R, M> store;
-  // The address of the attributes. This MUST NEVER be touched by the user.
-  std::uintptr_t attributesAddress;
-  // The metadata will need to be updated if the trim util was used on it.
-  std::shared_ptr<std::shared_ptr<bool>> toPublish =
-      std::make_shared<std::shared_ptr<bool>>(std::make_shared<bool>(false));
 };
 
 // Tensorstore Array's don't have an IndexDomain and so they can't be slice with

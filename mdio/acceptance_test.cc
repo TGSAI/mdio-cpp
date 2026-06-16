@@ -28,6 +28,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <sstream>
 #include <nlohmann/json.hpp>  // NOLINT
 
 #include "mdio/dataset.h"
@@ -1339,7 +1340,41 @@ TEST_P(MultidimioCompatibilityTest, datasetCompatible) {
 
   EXPECT_TRUE(ds.status().ok()) << ds.status();
 
-  std::cout << ds.value() << std::endl;
+  auto dataset = ds.value();
+  EXPECT_TRUE(dataset.header_variables.contains_key("segy_file_header"));
+
+  auto header_var = dataset.get_header_variable("segy_file_header");
+  ASSERT_TRUE(header_var.status().ok()) << header_var.status();
+  EXPECT_EQ(header_var.value().get_variable_name(), "segy_file_header");
+  EXPECT_EQ(header_var.value().rank(), 0);
+
+  auto read_future = header_var.value().Read();
+  EXPECT_FALSE(read_future.status().ok());
+
+  std::stringstream printed;
+  printed << dataset;
+  EXPECT_THAT(printed.str(), ::testing::HasSubstr("Header Variable: segy_file_header"));
+
+  auto attrs = header_var.value().GetAttributes();
+  ASSERT_TRUE(attrs.contains("attributes"));
+  ASSERT_TRUE(attrs["attributes"].contains("textHeader"));
+  nlohmann::json updated_attrs = attrs;
+  updated_attrs["attributes"]["testMarker"] = "cpp-mdio";
+  ASSERT_TRUE(header_var.value().UpdateAttributes(updated_attrs).ok());
+
+  // Persist through the Dataset commit path, which rewrites the consolidated
+  // metadata and republishes the variable attributes together, keeping them in
+  // sync. This is the canonical way to persist metadata changes.
+  auto commit_future = dataset.CommitMetadata();
+  ASSERT_TRUE(commit_future.status().ok()) << commit_future.status();
+
+  auto reopened = mdio::Dataset::Open(test_path, mdio::constants::kOpen);
+  ASSERT_TRUE(reopened.status().ok()) << reopened.status();
+  auto reopened_header =
+      reopened.value().get_header_variable("segy_file_header");
+  ASSERT_TRUE(reopened_header.status().ok()) << reopened_header.status();
+  EXPECT_EQ(reopened_header.value().GetAttributes()["attributes"]["testMarker"],
+            "cpp-mdio");
 
   // Clean up
   std::filesystem::remove_all(test_path);
