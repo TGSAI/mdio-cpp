@@ -28,6 +28,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <map>
 #include <sstream>
 #include <nlohmann/json.hpp>  // NOLINT
 
@@ -44,6 +45,8 @@ constexpr char XARRAY_SCRIPT_RELATIVE_PATH[] =
     "/mdio/regression_tests/xarray_compatibility_test.py";
 constexpr char MULTIDIMIO_SCRIPT_RELATIVE_PATH[] =
     "/mdio/regression_tests/multidimio_compatibility_test.py";
+constexpr char FILL_VALUE_PARITY_SCRIPT_RELATIVE_PATH[] =
+    "/mdio/regression_tests/fill_value_parity_test.py";
 constexpr int ERROR_CODE = EXIT_FAILURE;
 constexpr int SUCCESS_CODE = EXIT_SUCCESS;
 
@@ -1171,6 +1174,122 @@ TEST_P(DatasetTest, fillValue) {
   }
 
   std::filesystem::remove_all(test_path);
+}
+
+namespace {
+
+// Reads the "fill_value" from a Variable through the mdio API (its TensorStore
+// spec) rather than poking at the Zarr metadata files directly.
+nlohmann::json GetFillValueViaApi(const mdio::Variable<>& variable) {
+  auto spec_result = variable.spec();
+  if (!spec_result.status().ok()) {
+    return nlohmann::json("__SPEC_ERROR__");
+  }
+  auto json_result = spec_result.value().ToJson();
+  if (!json_result.ok()) {
+    return nlohmann::json("__TOJSON_ERROR__");
+  }
+  const nlohmann::json& spec_json = json_result.value();
+  if (spec_json.contains("metadata") &&
+      spec_json["metadata"].contains("fill_value")) {
+    return spec_json["metadata"]["fill_value"];
+  }
+  return nlohmann::json("__NO_FILL_VALUE__");
+}
+
+// Normalizes fill values so semantically-equal encodings compare equal.
+// mdio-python materializes bool as int8, so its V3 bool fill is the integer 0,
+// while mdio-cpp keeps a native bool fill (false). Mapping booleans to integers
+// lets the two representations match.
+nlohmann::json NormalizeFillValue(nlohmann::json fill_value) {
+  if (fill_value.is_boolean()) {
+    return fill_value.get<bool>() ? 1 : 0;
+  }
+  return fill_value;
+}
+
+}  // namespace
+
+// Integration test: mdio-python is the source of truth for fill values. We ask
+// mdio-python to build a dataset covering every supported scalar dtype, then
+// build the equivalent dataset with mdio-cpp and assert the on-disk fill values
+// match. Expectations are derived from mdio-python at runtime (never
+// hardcoded), so the test tracks mdio-python automatically.
+TEST_P(DatasetTest, fillValueParityWithPython) {
+  const bool is_v3 = version_ == mdio::zarr::ZarrVersion::kV3;
+
+  std::string srcPath =
+      std::string(GetPythonBasePath()) + FILL_VALUE_PARITY_SCRIPT_RELATIVE_PATH;
+  if (access(srcPath.c_str(), F_OK) == -1) {
+    FAIL() << "Script not found: " << srcPath;
+  }
+
+  // 1. Generate the reference dataset with mdio-python.
+  std::string python_path = base_path_ + "/fill_value_python";
+  std::filesystem::remove_all(python_path);
+  setenv("ZARR_DEFAULT_ZARR_FORMAT", is_v3 ? "3" : "2", /*overwrite=*/1);
+  bool scripts_passed =
+      RunPythonScripts(srcPath, {{python_path}},
+                       "Fill value parity skipped due to import error");
+  unsetenv("ZARR_DEFAULT_ZARR_FORMAT");
+  ASSERT_TRUE(scripts_passed)
+      << "mdio-python failed to generate the reference dataset";
+
+  // 2. Open the reference dataset through the mdio API and read each dtype's
+  //    fill value from its spec. Variables are named "v_<dtype>", so the dtype
+  //    set is driven entirely by mdio-python.
+  auto python_ds_future =
+      mdio::Dataset::Open(python_path + "/", mdio::constants::kOpen);
+  ASSERT_TRUE(python_ds_future.status().ok()) << python_ds_future.status();
+  auto python_ds = python_ds_future.value();
+
+  std::map<std::string, nlohmann::json> python_fill;  // dtype -> fill_value
+  for (const auto& key : python_ds.variables.get_keys()) {
+    if (key.rfind("v_", 0) != 0) {
+      continue;
+    }
+    auto var = python_ds.variables.at(key);
+    ASSERT_TRUE(var.status().ok()) << key << ": " << var.status();
+    python_fill[key.substr(2)] = GetFillValueViaApi(var.value());
+  }
+  ASSERT_FALSE(python_fill.empty())
+      << "mdio-python produced no dtype variables to compare against";
+
+  // 3. Build an equivalent dataset with mdio-cpp covering the same dtypes.
+  nlohmann::json manifest;
+  manifest["metadata"] = {{"name", "fill_value_cpp"},
+                          {"apiVersion", "1.0.0"},
+                          {"createdOn", "2023-12-12T15:02:06.413469-06:00"}};
+  manifest["variables"] = nlohmann::json::array();
+  for (const auto& [dtype, _] : python_fill) {
+    nlohmann::json var;
+    var["name"] = "v_" + dtype;
+    var["dataType"] = dtype;
+    var["dimensions"] = nlohmann::json::array(
+        {nlohmann::json{{"name", "v_" + dtype}, {"size", 4}}});
+    manifest["variables"].push_back(var);
+  }
+
+  std::string cpp_path = base_path_ + "/fill_value_cpp";
+  std::filesystem::remove_all(cpp_path);
+  auto cpp_ds_future = mdio::Dataset::from_json(
+      manifest, cpp_path, version_, mdio::constants::kCreateClean);
+  ASSERT_TRUE(cpp_ds_future.status().ok()) << cpp_ds_future.status();
+  auto cpp_ds = cpp_ds_future.value();
+
+  // 4. Compare mdio-cpp's fill values against mdio-python's, dtype by dtype,
+  //    reading both through the same API so encodings are consistent.
+  for (const auto& [dtype, py_fill] : python_fill) {
+    auto var = cpp_ds.variables.at("v_" + dtype);
+    ASSERT_TRUE(var.status().ok()) << dtype << ": " << var.status();
+    nlohmann::json cpp_fill = GetFillValueViaApi(var.value());
+    EXPECT_EQ(NormalizeFillValue(cpp_fill), NormalizeFillValue(py_fill))
+        << "dtype=" << dtype << " version=" << (is_v3 ? "V3" : "V2")
+        << " cpp=" << cpp_fill.dump() << " python=" << py_fill.dump();
+  }
+
+  std::filesystem::remove_all(python_path);
+  std::filesystem::remove_all(cpp_path);
 }
 
 TEST_P(DatasetTest, TEARDOWN) {

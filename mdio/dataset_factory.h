@@ -15,6 +15,9 @@
 #ifndef MDIO_DATASET_FACTORY_H_
 #define MDIO_DATASET_FACTORY_H_
 
+#include <cmath>
+#include <cstdint>
+#include <limits>
 #include <optional>
 #include <set>
 #include <string>
@@ -278,6 +281,107 @@ inline absl::Status transform_metadata(const std::string& path,
 }
 
 /**
+ * @brief Sets the Zarr fill value on a Variable stub based on its data type.
+ *
+ * The selected fill values mirror mdio-python's `fill_value_map`, which is the
+ * source of truth for cross-implementation parity:
+ *   - bool            -> null (no fill); Zarr V3 requires a concrete value, so
+ *                        we emit false to match mdio-python materializing 0.
+ *   - float{16,32,64} -> NaN
+ *   - int{8,16,32,64} -> type maximum (e.g. int32 -> 2147483647)
+ *   - uint{8..64}     -> type maximum (e.g. uint32 -> 4294967295)
+ *   - complex{64,128} -> complex(NaN, NaN), encoded as [real, imag]
+ *   - structured      -> zero-initialized bytes (base64 encoded)
+ *
+ * This must be applied to every Variable regardless of whether the spec carries
+ * a "metadata" block, so that dimension coordinates (which often omit metadata)
+ * receive the same fill values as data variables.
+ *
+ * @param json A MDIO Dataset Variable list element
+ * @param variable A Variable stub (will be modified). Its dtype metadata must
+ *                 already be populated via transform_dtype.
+ * @param version The Zarr version to target
+ */
+inline void set_fill_value(const nlohmann::json& json,
+                           nlohmann::json& variable /*NOLINT*/,
+                           mdio::zarr::ZarrVersion version) {
+  if (!json["dataType"].contains("fields")) {
+    std::string dtype_str = json["dataType"].get<std::string>();
+    variable["metadata"]["fill_value"] = nlohmann::json::value_t::null;
+    if (dtype_str == "complex64" || dtype_str == "complex128") {
+      variable["metadata"]["fill_value"] =
+          nlohmann::json::array({std::nan(""), std::nan("")});
+    } else if (!dtype_str.empty() && dtype_str[0] == 'f') {
+      variable["metadata"]["fill_value"] = std::nan("");
+    } else if (dtype_str == "bool") {
+      if (version == mdio::zarr::ZarrVersion::kV3) {
+        // Zarr V3 mandates a fill value; mdio-python resolves bool's null to
+        // 0 (false) when materializing the array.
+        variable["metadata"]["fill_value"] = false;
+      }
+      // Zarr V2 keeps the null fill value set above.
+    } else if (dtype_str == "int8") {
+      variable["metadata"]["fill_value"] = std::numeric_limits<int8_t>::max();
+    } else if (dtype_str == "int16") {
+      variable["metadata"]["fill_value"] = std::numeric_limits<int16_t>::max();
+    } else if (dtype_str == "int32") {
+      variable["metadata"]["fill_value"] = std::numeric_limits<int32_t>::max();
+    } else if (dtype_str == "int64") {
+      variable["metadata"]["fill_value"] = std::numeric_limits<int64_t>::max();
+    } else if (dtype_str == "uint8") {
+      variable["metadata"]["fill_value"] = std::numeric_limits<uint8_t>::max();
+    } else if (dtype_str == "uint16") {
+      variable["metadata"]["fill_value"] = std::numeric_limits<uint16_t>::max();
+    } else if (dtype_str == "uint32") {
+      variable["metadata"]["fill_value"] = std::numeric_limits<uint32_t>::max();
+    } else if (dtype_str == "uint64") {
+      variable["metadata"]["fill_value"] = std::numeric_limits<uint64_t>::max();
+    }
+  } else {
+    // Structured dtypes for both V2 and V3 use zero-initialized bytes, matching
+    // mdio-python's np.void zero fill. Accumulate the total number of bytes (N).
+    uint16_t num_bytes = 0;
+    std::string dtype_key =
+        version == mdio::zarr::ZarrVersion::kV3 ? "data_type" : "dtype";
+    for (const auto& field : variable["metadata"][dtype_key]) {
+      std::string dtype = field[1].get<std::string>();
+      if (version == mdio::zarr::ZarrVersion::kV2) {
+        // V2 format: "<i2", "<f4", "<c8", etc. - number is byte size
+        if (dtype.at(1) != 'c') {
+          num_bytes += std::stoi(dtype.substr(2));
+        } else {
+          // Complex types: c8 = 8 bytes, c16 = 16 bytes
+          if (dtype.at(2) == '8') {
+            num_bytes += 8;
+          } else {
+            num_bytes += 16;
+          }
+        }
+      } else {
+        // V3 format: "int16", "float32", "complex64", etc. - number is bit
+        // size
+        if (dtype.find("complex") == 0) {
+          // complex64 = 8 bytes, complex128 = 16 bytes
+          int bits = std::stoi(dtype.substr(7));
+          num_bytes += bits / 8;
+        } else if (dtype == "bool") {
+          num_bytes += 1;
+        } else {
+          // Extract the number from the end (int16 -> 16, float32 -> 32)
+          size_t pos = dtype.find_first_of("0123456789");
+          if (pos != std::string::npos) {
+            int bits = std::stoi(dtype.substr(pos));
+            num_bytes += bits / 8;
+          }
+        }
+      }
+    }
+    std::string raw(num_bytes, '\0');
+    variable["metadata"]["fill_value"] = encode_base64(raw);
+  }
+}
+
+/**
  * @brief Constructs an MDIO Variable spec from an MDIO Dataset Variable list
  * element This function is intended to be an internal helper function for
  * formatting Variable specs
@@ -373,70 +477,6 @@ inline tensorstore::Result<nlohmann::json> from_json_to_spec(
       variableStub["metadata"]["chunks"] = chunkShape;
     }
 
-    if (!json["dataType"].contains("fields")) {
-      std::string dtype_str = json["dataType"].get<std::string>();
-      variableStub["metadata"]["fill_value"] = nlohmann::json::value_t::null;
-      if (dtype_str == "complex64") {
-        std::string raw(8, '\0');
-        if (version == mdio::zarr::ZarrVersion::kV2) {
-          variableStub["metadata"]["fill_value"] = encode_base64(raw);
-        }
-        // V3 handles complex fill values differently
-      } else if (dtype_str == "complex128") {
-        std::string raw(16, '\0');
-        if (version == mdio::zarr::ZarrVersion::kV2) {
-          variableStub["metadata"]["fill_value"] = encode_base64(raw);
-        }
-      } else if (!dtype_str.empty() && dtype_str[0] == 'f') {
-        variableStub["metadata"]["fill_value"] = std::nan("");
-      } else if (dtype_str == "bool") {
-        variableStub["metadata"]["fill_value"] = false;
-      } else {
-        variableStub["metadata"]["fill_value"] = 0;
-      }
-    } else {
-      // Structured dtypes for both V2 and V3
-      // Accumulate the total number of bytes (N)
-      uint16_t num_bytes = 0;
-      std::string dtype_key =
-          version == mdio::zarr::ZarrVersion::kV3 ? "data_type" : "dtype";
-      for (const auto& field : variableStub["metadata"][dtype_key]) {
-        std::string dtype = field[1].get<std::string>();
-        if (version == mdio::zarr::ZarrVersion::kV2) {
-          // V2 format: "<i2", "<f4", "<c8", etc. - number is byte size
-          if (dtype.at(1) != 'c') {
-            num_bytes += std::stoi(dtype.substr(2));
-          } else {
-            // Complex types: c8 = 8 bytes, c16 = 16 bytes
-            if (dtype.at(2) == '8') {
-              num_bytes += 8;
-            } else {
-              num_bytes += 16;
-            }
-          }
-        } else {
-          // V3 format: "int16", "float32", "complex64", etc. - number is bit
-          // size
-          if (dtype.find("complex") == 0) {
-            // complex64 = 8 bytes, complex128 = 16 bytes
-            int bits = std::stoi(dtype.substr(7));
-            num_bytes += bits / 8;
-          } else if (dtype == "bool") {
-            num_bytes += 1;
-          } else {
-            // Extract the number from the end (int16 -> 16, float32 -> 32)
-            size_t pos = dtype.find_first_of("0123456789");
-            if (pos != std::string::npos) {
-              int bits = std::stoi(dtype.substr(pos));
-              num_bytes += bits / 8;
-            }
-          }
-        }
-      }
-      std::string raw(num_bytes, '\0');
-      variableStub["metadata"]["fill_value"] = encode_base64(raw);
-    }
-
     variableStub["attributes"]["metadata"] = json["metadata"];
   } else {
     // No metadata supplied means no chunkGrid
@@ -447,6 +487,11 @@ inline tensorstore::Result<nlohmann::json> from_json_to_spec(
       variableStub["metadata"]["chunks"] = variableStub["metadata"]["shape"];
     }
   }
+
+  // Fill values depend only on the data type, so they must be set for every
+  // Variable (including dimension coordinates that omit a "metadata" block) to
+  // stay aligned with mdio-python.
+  set_fill_value(json, variableStub, version);
 
   auto transform_result = transform_metadata(path, variableStub);
   if (!transform_result.ok()) {
