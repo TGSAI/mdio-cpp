@@ -165,9 +165,9 @@ inline std::string GetDataTypeName(const nlohmann::json& data_type) {
  */
 inline bool IsMetadataOnlyDataType(const nlohmann::json& data_type) {
   static const std::unordered_set<std::string> kMetadataOnlyNames = {
-      "fixed_length_utf32", "fixed_length_ascii", "string",
-      "variable_length_utf8", "raw_bytes", "null_terminated_bytes",
-      "variable_length_bytes", "numpy.datetime64", "numpy.timedelta64"};
+      "fixed_length_utf32",    "fixed_length_ascii", "string",
+      "variable_length_utf8",  "raw_bytes",          "null_terminated_bytes",
+      "variable_length_bytes", "numpy.datetime64",   "numpy.timedelta64"};
   return kMetadataOnlyNames.count(GetDataTypeName(data_type)) > 0;
 }
 

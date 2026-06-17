@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -50,8 +51,7 @@ inline std::string VariableNameFromKvstorePath(const std::string& path) {
 }
 
 inline Result<tensorstore::IndexDomain<>> BuildDomainFromShapeAndLabels(
-    const std::vector<Index>& shape,
-    const std::vector<std::string>& labels) {
+    const std::vector<Index>& shape, const std::vector<std::string>& labels) {
   tensorstore::IndexDomainBuilder<> builder(shape.size());
   if (!shape.empty()) {
     builder.shape(shape);
@@ -67,8 +67,7 @@ inline Result<tensorstore::IndexDomain<>> BuildDomainFromShapeAndLabels(
 }
 
 inline std::vector<std::string> ExtractDimensionLabels(
-    const ::nlohmann::json& array_metadata,
-    const ::nlohmann::json& attrs) {
+    const ::nlohmann::json& array_metadata, const ::nlohmann::json& attrs) {
   if (array_metadata.contains("dimension_names") &&
       array_metadata["dimension_names"].is_array()) {
     std::vector<std::string> labels;
@@ -118,8 +117,8 @@ class HeaderVariable : public VariableBase {
   }
 
   /**
-   * @brief Constructs a HeaderVariable from a discovery spec emitted by the Zarr
-   * layer.
+   * @brief Constructs a HeaderVariable from a discovery spec emitted by the
+   * Zarr layer.
    */
   static Result<HeaderVariable> FromSpec(const ::nlohmann::json& spec) {
     if (!internal::IsHeaderOnlySpec(spec)) {
@@ -131,9 +130,8 @@ class HeaderVariable : public VariableBase {
           "Header variable spec is missing kvstore path.");
     }
 
-    const std::string variable_name =
-        internal::VariableNameFromKvstorePath(
-            spec["kvstore"]["path"].get<std::string>());
+    const std::string variable_name = internal::VariableNameFromKvstorePath(
+        spec["kvstore"]["path"].get<std::string>());
     const zarr::ZarrVersion zarr_version = zarr::GetVersionFromSpec(spec);
 
     ::nlohmann::json attrs = ::nlohmann::json::object();
@@ -150,8 +148,7 @@ class HeaderVariable : public VariableBase {
         attrs = array_metadata["attributes"];
       }
       if (array_metadata.contains("data_type")) {
-        dtype_name =
-            zarr::v3::GetDataTypeName(array_metadata["data_type"]);
+        dtype_name = zarr::v3::GetDataTypeName(array_metadata["data_type"]);
       }
     } else {
       if (!spec.contains("_mdio_zarray")) {
@@ -191,8 +188,7 @@ class HeaderVariable : public VariableBase {
     }
 
     std::string long_name;
-    if (metadata.contains("long_name") &&
-        metadata["long_name"].is_string()) {
+    if (metadata.contains("long_name") && metadata["long_name"].is_string()) {
       long_name = metadata["long_name"].get<std::string>();
     } else {
       long_name = variable_name;
@@ -302,8 +298,8 @@ class HeaderVariable : public VariableBase {
     auto kvs_future = tensorstore::kvstore::Open(kvstore_spec_);
     kvs_future.ExecuteWhenReady(
         [promise = std::move(pair.promise), zarr_version = zarr_version_,
-         attrs_to_write = BuildPublishAttrs(),
-         this](tensorstore::ReadyFuture<tensorstore::KvStore> ready_kvs) mutable {
+         attrs_to_write = BuildPublishAttrs(), this](
+            tensorstore::ReadyFuture<tensorstore::KvStore> ready_kvs) mutable {
           if (!ready_kvs.result().ok()) {
             promise.SetResult(ready_kvs.result().status());
             return;
@@ -341,13 +337,12 @@ class HeaderVariable : public VariableBase {
                   zarr_json["attributes"] = attrs_to_write;
 
                   auto write_result = tensorstore::kvstore::Write(
-                      kvs, "/zarr.json",
-                      absl::Cord(zarr_json.dump(4)));
+                      kvs, "/zarr.json", absl::Cord(zarr_json.dump(4)));
                   write_result.ExecuteWhenReady(
-                      [promise = std::move(promise), this](
-                          tensorstore::ReadyFuture<
-                              tensorstore::TimestampedStorageGeneration>
-                              ready_write) {
+                      [promise = std::move(promise),
+                       this](tensorstore::ReadyFuture<
+                             tensorstore::TimestampedStorageGeneration>
+                                 ready_write) {
                         if (!ready_write.result().ok()) {
                           promise.SetResult(ready_write.result().status());
                           return;
@@ -360,13 +355,14 @@ class HeaderVariable : public VariableBase {
             return;
           }
 
-          auto write_future = tensorstore::kvstore::Write(
-              ready_kvs.value(), "/.zattrs", absl::Cord(attrs_to_write.dump(4)));
+          auto write_future =
+              tensorstore::kvstore::Write(ready_kvs.value(), "/.zattrs",
+                                          absl::Cord(attrs_to_write.dump(4)));
           write_future.ExecuteWhenReady(
-              [promise = std::move(promise), this](
-                  tensorstore::ReadyFuture<
-                      tensorstore::TimestampedStorageGeneration>
-                      ready_write) {
+              [promise = std::move(promise),
+               this](tensorstore::ReadyFuture<
+                     tensorstore::TimestampedStorageGeneration>
+                         ready_write) {
                 if (!ready_write.result().ok()) {
                   promise.SetResult(ready_write.result().status());
                   return;

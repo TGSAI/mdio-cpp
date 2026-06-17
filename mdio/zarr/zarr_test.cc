@@ -1148,7 +1148,8 @@ TEST(ZarrUnified, IsMetadataOnlyDataType_StringLike) {
 }
 
 TEST(ZarrUnified, IsMetadataOnlyDataType_NumericAndStructAreOpenable) {
-  for (const auto* name : {"int32", "float32", "float64", "complex64", "bool"}) {
+  for (const auto* name :
+       {"int32", "float32", "float64", "complex64", "bool"}) {
     EXPECT_FALSE(mdio::zarr::v3::IsMetadataOnlyDataType(nlohmann::json(name)))
         << name;
   }
@@ -1172,12 +1173,14 @@ TEST(ZarrUnified, V2_IsMetadataOnlyDataType_StringLike) {
 TEST(ZarrUnified, V2_IsMetadataOnlyDataType_NumericAndStructAreOpenable) {
   for (const auto* typestr :
        {"<i4", "<i8", "<u2", "<f4", "<f8", "|b1", "<c8"}) {
-    EXPECT_FALSE(mdio::zarr::v2::IsMetadataOnlyDataType(nlohmann::json(typestr)))
+    EXPECT_FALSE(
+        mdio::zarr::v2::IsMetadataOnlyDataType(nlohmann::json(typestr)))
         << typestr;
   }
 
   // Structured (record) dtype is an array of fields, not a string.
-  auto structured = nlohmann::json::parse(R"([["cdp-x", "<i4"], ["cdp-y", "<i4"]])");
+  auto structured =
+      nlohmann::json::parse(R"([["cdp-x", "<i4"], ["cdp-y", "<i4"]])");
   EXPECT_FALSE(mdio::zarr::v2::IsMetadataOnlyDataType(structured));
 }
 

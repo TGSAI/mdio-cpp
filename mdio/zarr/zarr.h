@@ -249,8 +249,8 @@ inline nlohmann::json UpdateSpecVersion(nlohmann::json json_spec,
  * describing a structured dtype, and the caller has neither selected a "field"
  * nor already set "open_as_void", the flag is enabled.
  *
- * Specs that are not structured, that already pick a field, that already set the
- * flag, or that carry no "metadata" are returned unchanged.
+ * Specs that are not structured, that already pick a field, that already set
+ * the flag, or that carry no "metadata" are returned unchanged.
  *
  * @param json_spec The variable/store spec.
  * @return nlohmann::json The (possibly) updated spec.

@@ -465,8 +465,8 @@ class Dataset {
                               .shape(shape)
                               .labels(labels)
                               .Finalize());
-    return Dataset{metadata, vars, coordinates, new_domain, context_,
-                   header_variables};
+    return Dataset{metadata,   vars,     coordinates,
+                   new_domain, context_, header_variables};
   }
 
   /**
@@ -1109,9 +1109,9 @@ class Dataset {
             return;
           }
 
-          Dataset new_dataset{metadata, collection, coords,
-                              dataset_domain.value(), context,
-                              header_collection};
+          Dataset new_dataset{metadata, collection,
+                              coords,   dataset_domain.value(),
+                              context,  header_collection};
           promise.SetResult(std::move(new_dataset));
         });
     return pair.future;
@@ -1381,8 +1381,8 @@ class Dataset {
     for (const auto& key : modifiedHeaderVariables) {
       auto pair = tensorstore::PromiseFuturePair<
           tensorstore::TimestampedStorageGeneration>::Make();
-      auto var = std::make_shared<HeaderVariable<>>(
-          header_variables.at(key).value());
+      auto var =
+          std::make_shared<HeaderVariable<>>(header_variables.at(key).value());
       auto updateFuture = var->PublishMetadata();
       updateFuture.ExecuteWhenReady(
           [promise = std::move(pair.promise),

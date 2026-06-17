@@ -1326,9 +1326,9 @@ TEST_P(MultidimioCompatibilityTest, datasetCompatible) {
       {test_path + "/"},
   };
 
-  bool scripts_passed = RunPythonScripts(
-      srcPath, arg_sets,
-      "Multidimio compatibility skipped due to import error");
+  bool scripts_passed =
+      RunPythonScripts(srcPath, arg_sets,
+                       "Multidimio compatibility skipped due to import error");
   unsetenv("ZARR_DEFAULT_ZARR_FORMAT");
 
   EXPECT_TRUE(scripts_passed) << "multidimio compatibility test failed";
@@ -1353,7 +1353,8 @@ TEST_P(MultidimioCompatibilityTest, datasetCompatible) {
 
   std::stringstream printed;
   printed << dataset;
-  EXPECT_THAT(printed.str(), ::testing::HasSubstr("Header Variable: segy_file_header"));
+  EXPECT_THAT(printed.str(),
+              ::testing::HasSubstr("Header Variable: segy_file_header"));
 
   auto attrs = header_var.value().GetAttributes();
   ASSERT_TRUE(attrs.contains("attributes"));

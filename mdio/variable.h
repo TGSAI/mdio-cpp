@@ -837,8 +837,8 @@ Future<Variable<T, R, M>> Open(const nlohmann::json& json_spec,
  *
  * Holds the variable identity (name, long name), the raw metadata JSON, and the
  * mutable UserAttributes together with the change-tracking and publish-flag
- * bookkeeping that both `Variable` and `HeaderVariable` rely on. Storage and I/O
- * are deliberately left to the derived classes, since a regular Variable is
+ * bookkeeping that both `Variable` and `HeaderVariable` rely on. Storage and
+ * I/O are deliberately left to the derived classes, since a regular Variable is
  * backed by a TensorStore while a metadata-only header variable is not.
  *
  * This is a non-template base because none of this state depends on the
