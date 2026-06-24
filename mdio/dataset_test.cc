@@ -19,6 +19,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -618,8 +619,12 @@ TEST(Dataset, iselWithStride) {
       ASSERT_EQ(inlineAccessor[i], i) << "Expected inline value to be " << i
                                       << " but got " << inlineAccessor[i];
     } else {
-      ASSERT_EQ(inlineAccessor[i], 0)
-          << "Expected inline value to be 0 but got " << inlineAccessor[i];
+      // Unwritten (odd) indices hold the fill value, which for uint32 mirrors
+      // mdio-python's type-max convention (4294967295).
+      ASSERT_EQ(inlineAccessor[i], std::numeric_limits<uint32_t>::max())
+          << "Expected inline value to be fill value "
+          << std::numeric_limits<uint32_t>::max() << " but got "
+          << inlineAccessor[i];
     }
   }
 
