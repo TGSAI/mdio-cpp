@@ -100,7 +100,7 @@ inline void normalize_legacy_compressors(nlohmann::json& spec /*NOLINT*/) {
  */
 inline absl::Status validate_schema(nlohmann::json& spec /*NOLINT*/) {
   // Translate legacy compressor keys (e.g. "algorithm"/"level") to the schema's
-  // keys so specs authored against older MDIO-cpp releases continue to validate.
+  // keys so specs authored against older MDIO-cpp releases continue to validate
   normalize_legacy_compressors(spec);
 
   nlohmann::json targetSchema =

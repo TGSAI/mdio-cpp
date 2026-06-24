@@ -28,9 +28,9 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <sstream>
 #include <map>
 #include <nlohmann/json.hpp>  // NOLINT
-#include <sstream>
 
 #include "mdio/dataset.h"
 #include "mdio/dataset_factory.h"
