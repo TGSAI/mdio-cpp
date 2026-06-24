@@ -29,8 +29,8 @@
 #include <cstdlib>
 #include <filesystem>
 #include <map>
-#include <sstream>
 #include <nlohmann/json.hpp>  // NOLINT
+#include <sstream>
 
 #include "mdio/dataset.h"
 #include "mdio/dataset_factory.h"
@@ -1272,8 +1272,8 @@ TEST_P(DatasetTest, fillValueParityWithPython) {
 
   std::string cpp_path = base_path_ + "/fill_value_cpp";
   std::filesystem::remove_all(cpp_path);
-  auto cpp_ds_future = mdio::Dataset::from_json(
-      manifest, cpp_path, version_, mdio::constants::kCreateClean);
+  auto cpp_ds_future = mdio::Dataset::from_json(manifest, cpp_path, version_,
+                                                mdio::constants::kCreateClean);
   ASSERT_TRUE(cpp_ds_future.status().ok()) << cpp_ds_future.status();
   auto cpp_ds = cpp_ds_future.value();
 

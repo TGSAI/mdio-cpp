@@ -36,6 +36,62 @@ inline bool contains(const std::unordered_set<std::string>& set,
 }
 
 /**
+ * @brief Rewrites a single Blosc compressor object from legacy MDIO-cpp keys to
+ * the keys used by the official MDIO v1 schema.
+ *
+ * Legacy MDIO-cpp specs used "algorithm" (compression name), "level"
+ * (compression level), and an integer "shuffle". The official schema uses
+ * "cname", "clevel", and a string-enum "shuffle". To preserve backward
+ * compatibility we translate the legacy keys in place before schema validation.
+ */
+inline void normalize_legacy_blosc(nlohmann::json& compressor /*NOLINT*/) {
+  if (!compressor.is_object()) {
+    return;
+  }
+  // Only blosc carries these legacy keys; leave ZFP and others untouched.
+  if (compressor.contains("name") && compressor["name"] != "blosc") {
+    return;
+  }
+  if (compressor.contains("algorithm") && !compressor.contains("cname")) {
+    compressor["cname"] = compressor["algorithm"];
+  }
+  compressor.erase("algorithm");
+
+  if (compressor.contains("level") && !compressor.contains("clevel")) {
+    compressor["clevel"] = compressor["level"];
+  }
+  compressor.erase("level");
+
+  if (compressor.contains("shuffle") && compressor["shuffle"].is_number()) {
+    const int value = compressor["shuffle"].get<int>();
+    if (value == 0) {
+      compressor["shuffle"] = "noshuffle";
+    } else if (value == 2) {
+      compressor["shuffle"] = "bitshuffle";
+    } else {
+      compressor["shuffle"] = "shuffle";
+    }
+  }
+}
+
+/**
+ * @brief Translates any legacy compressor keys in a Dataset spec to the keys
+ * expected by the current MDIO schema, preserving backward compatibility for
+ * specs authored against older MDIO-cpp releases.
+ * @param spec A Dataset JSON spec (modified in place).
+ */
+inline void normalize_legacy_compressors(nlohmann::json& spec /*NOLINT*/) {
+  if (!spec.contains("variables") || !spec["variables"].is_array()) {
+    return;
+  }
+  for (auto& variable : spec["variables"]) {
+    if (variable.contains("compressor")) {
+      normalize_legacy_blosc(variable["compressor"]);
+    }
+  }
+}
+
+/**
  * @brief Validates that a provided Dataset JSON spec conforms with the current
  * MDIO Dataset schema
  * @param spec A Dataset JSON spec
@@ -43,6 +99,10 @@ inline bool contains(const std::unordered_set<std::string>& set,
  * InvalidArgumentError if validation fails for any reason
  */
 inline absl::Status validate_schema(nlohmann::json& spec /*NOLINT*/) {
+  // Translate legacy compressor keys (e.g. "algorithm"/"level") to the schema's
+  // keys so specs authored against older MDIO-cpp releases continue to validate.
+  normalize_legacy_compressors(spec);
+
   nlohmann::json targetSchema =
       nlohmann::json::parse(kDatasetSchema, nullptr, false);
   if (targetSchema.is_discarded()) {

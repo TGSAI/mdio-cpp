@@ -107,6 +107,45 @@ inline absl::Status transform_dtype(
 }
 
 /**
+ * @brief Maps a Blosc shuffle value to the numcodecs (Zarr V2) integer form.
+ * Accepts the MDIO schema string enum (noshuffle/shuffle/bitshuffle) as well as
+ * the legacy integer form, which is passed through unchanged.
+ */
+inline nlohmann::json blosc_shuffle_to_int(const nlohmann::json& shuffle) {
+  if (shuffle.is_string()) {
+    const std::string value = shuffle.get<std::string>();
+    if (value == "noshuffle") {
+      return 0;
+    }
+    if (value == "bitshuffle") {
+      return 2;
+    }
+    // Default / "shuffle"
+    return 1;
+  }
+  return shuffle;
+}
+
+/**
+ * @brief Maps a Blosc shuffle value to the Zarr V3 codec string form.
+ * Accepts the MDIO schema string enum as well as the legacy integer form
+ * (0 -> noshuffle, 2 -> bitshuffle, otherwise shuffle).
+ */
+inline nlohmann::json blosc_shuffle_to_string(const nlohmann::json& shuffle) {
+  if (shuffle.is_number_integer()) {
+    const int value = shuffle.get<int>();
+    if (value == 0) {
+      return "noshuffle";
+    }
+    if (value == 2) {
+      return "bitshuffle";
+    }
+    return "shuffle";
+  }
+  return shuffle;
+}
+
+/**
  * @brief Modifies a Variable spec to use proper Zarr compressor
  * This function is intended to be an internal helper function for formatting
  * Variable specs It will modify with side-effect on "input"
@@ -130,27 +169,38 @@ inline absl::Status transform_compressor(
       nlohmann::json blosc_codec = {{"name", "blosc"}};
       blosc_codec["configuration"] = nlohmann::json::object();
 
-      if (input["compressor"].contains("algorithm")) {
+      // Accept both the schema key "cname" and the legacy MDIO-cpp key
+      // "algorithm" for backward compatibility.
+      if (input["compressor"].contains("cname")) {
+        blosc_codec["configuration"]["cname"] = input["compressor"]["cname"];
+      } else if (input["compressor"].contains("algorithm")) {
         blosc_codec["configuration"]["cname"] =
             input["compressor"]["algorithm"];
       } else {
         blosc_codec["configuration"]["cname"] = "lz4";
       }
 
-      if (input["compressor"].contains("level")) {
-        if (input["compressor"]["level"] > 9 ||
-            input["compressor"]["level"] < 0) {
+      // Accept both the schema key "clevel" and the legacy key "level".
+      if (input["compressor"].contains("clevel") ||
+          input["compressor"].contains("level")) {
+        auto clevel = input["compressor"].contains("clevel")
+                          ? input["compressor"]["clevel"]
+                          : input["compressor"]["level"];
+        if (clevel > 9 || clevel < 0) {
           return absl::InvalidArgumentError(
               "Compressor level must be between 0 and 9");
         }
-        blosc_codec["configuration"]["clevel"] = input["compressor"]["level"];
+        blosc_codec["configuration"]["clevel"] = clevel;
       } else {
         blosc_codec["configuration"]["clevel"] = 5;
       }
 
-      if (input["compressor"].contains("shuffle")) {
+      // V3 blosc codec expects shuffle as a string enum. Accept the schema's
+      // string form as well as the legacy integer form (0/1/2).
+      if (input["compressor"].contains("shuffle") &&
+          !input["compressor"]["shuffle"].is_null()) {
         blosc_codec["configuration"]["shuffle"] =
-            input["compressor"]["shuffle"];
+            blosc_shuffle_to_string(input["compressor"]["shuffle"]);
       } else {
         blosc_codec["configuration"]["shuffle"] = "shuffle";
       }
@@ -180,26 +230,37 @@ inline absl::Status transform_compressor(
         return absl::InvalidArgumentError("Compressor name must be specified");
       }
 
-      if (input["compressor"].contains("algorithm")) {
+      // Accept both the schema key "cname" and the legacy MDIO-cpp key
+      // "algorithm" for backward compatibility.
+      if (input["compressor"].contains("cname")) {
+        variable["metadata"]["compressor"]["cname"] =
+            input["compressor"]["cname"];
+      } else if (input["compressor"].contains("algorithm")) {
         variable["metadata"]["compressor"]["cname"] =
             input["compressor"]["algorithm"];
       } else {
         variable["metadata"]["compressor"]["cname"] = "lz4";
       }
-      if (input["compressor"].contains("level")) {
-        if (input["compressor"]["level"] > 9 ||
-            input["compressor"]["level"] < 0) {
+      // Accept both the schema key "clevel" and the legacy key "level".
+      if (input["compressor"].contains("clevel") ||
+          input["compressor"].contains("level")) {
+        auto clevel = input["compressor"].contains("clevel")
+                          ? input["compressor"]["clevel"]
+                          : input["compressor"]["level"];
+        if (clevel > 9 || clevel < 0) {
           return absl::InvalidArgumentError(
               "Compressor level must be between 0 and 9");
         }
-        variable["metadata"]["compressor"]["clevel"] =
-            input["compressor"]["level"];
+        variable["metadata"]["compressor"]["clevel"] = clevel;
       } else {
         variable["metadata"]["compressor"]["clevel"] = 5;
       }
-      if (input["compressor"].contains("shuffle")) {
+      // V2 (numcodecs) blosc expects shuffle as an integer. Accept the schema's
+      // string enum as well as the legacy integer form.
+      if (input["compressor"].contains("shuffle") &&
+          !input["compressor"]["shuffle"].is_null()) {
         variable["metadata"]["compressor"]["shuffle"] =
-            input["compressor"]["shuffle"];
+            blosc_shuffle_to_int(input["compressor"]["shuffle"]);
       } else {
         variable["metadata"]["compressor"]["shuffle"] = 1;
       }
@@ -339,7 +400,8 @@ inline void set_fill_value(const nlohmann::json& json,
     }
   } else {
     // Structured dtypes for both V2 and V3 use zero-initialized bytes, matching
-    // mdio-python's np.void zero fill. Accumulate the total number of bytes (N).
+    // mdio-python's np.void zero fill. Accumulate the total number of bytes
+    // (N).
     uint16_t num_bytes = 0;
     std::string dtype_key =
         version == mdio::zarr::ZarrVersion::kV3 ? "data_type" : "dtype";

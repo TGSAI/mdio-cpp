@@ -18,17 +18,27 @@
 #include <string>
 
 /*
-Note before progressing beyone here:
-This string is a direct copy of the MDIO Dataset model schema.
-https://mdio-python.readthedocs.io/en/v1/data_models/version_1.html
+Note before progressing beyond here:
+This string is a direct copy of the MDIO Dataset model schema as emitted by
+mdio-python v1.2.0 (Dataset.model_json_schema()).
+https://mdio-python.readthedocs.io/en/stable/data_models/version_1.html
 
 It should NOT be modified unless the MDIO Dataset model schema is updated.
+
+NOTE: The kDatasetSchema raw string literal below is wrapped in
+"clang-format off/on" guards. Running "clang-format -i" will otherwise reflow
+the JSON inside the raw string literal and corrupt it. Do not remove the guards.
+
+NOTE: The raw string uses the R"JSON( ... )JSON" delimiter (not a bare R"( )").
+A schema description contains the substring )" (e.g. "...(integer 0-9)"), which
+would prematurely terminate a bare R"( )" literal. Keep the JSON delimiter.
 */
 
-/*NOLINT*/ static const std::string kSchemaVersion = "1.0.0";
+/*NOLINT*/ static const std::string kSchemaVersion = "1.2.0";
 
 // TODO(BrianMichell): Cleanup NOLINT
-/*NOLINT*/ static const std::string kDatasetSchema = R"( 
+// clang-format off
+/*NOLINT*/ static const std::string kDatasetSchema = R"JSON(
 {
    "title": "Dataset",
    "description": "Represents an MDIO v1 dataset.\n\nA dataset consists of variables and metadata.",
@@ -43,81 +53,11 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
          "type": "array"
       },
       "metadata": {
-         "allOf": [
-            {
-               "$ref": "#/$defs/DatasetMetadata"
-            }
-         ],
+         "$ref": "#/$defs/DatasetMetadata",
          "description": "Dataset metadata."
       }
    },
    "$defs": {
-      "AllUnits": {
-         "additionalProperties": false,
-         "description": "All Units.",
-         "properties": {
-            "unitsV1": {
-               "anyOf": [
-                  {
-                     "$ref": "#/$defs/LengthUnitModel"
-                  },
-                  {
-                     "$ref": "#/$defs/TimeUnitModel"
-                  },
-                  {
-                     "$ref": "#/$defs/AngleUnitModel"
-                  },
-                  {
-                     "$ref": "#/$defs/DensityUnitModel"
-                  },
-                  {
-                     "$ref": "#/$defs/SpeedUnitModel"
-                  },
-                  {
-                     "$ref": "#/$defs/FrequencyUnitModel"
-                  },
-                  {
-                     "$ref": "#/$defs/VoltageUnitModel"
-                  },
-                  {
-                     "items": {
-                        "anyOf": [
-                           {
-                              "$ref": "#/$defs/LengthUnitModel"
-                           },
-                           {
-                              "$ref": "#/$defs/TimeUnitModel"
-                           },
-                           {
-                              "$ref": "#/$defs/AngleUnitModel"
-                           },
-                           {
-                              "$ref": "#/$defs/DensityUnitModel"
-                           },
-                           {
-                              "$ref": "#/$defs/SpeedUnitModel"
-                           },
-                           {
-                              "$ref": "#/$defs/FrequencyUnitModel"
-                           },
-                           {
-                              "$ref": "#/$defs/VoltageUnitModel"
-                           }
-                        ]
-                     },
-                     "type": "array"
-                  },
-                  {
-                     "type": "null"
-                  }
-               ],
-               "default": null,
-               "title": "Unitsv1"
-            }
-         },
-         "title": "AllUnits",
-         "type": "object"
-      },
       "AngleUnitEnum": {
          "description": "Enum class representing units of angle.",
          "enum": [
@@ -132,11 +72,7 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
          "description": "Model representing units of angle.",
          "properties": {
             "angle": {
-               "allOf": [
-                  {
-                     "$ref": "#/$defs/AngleUnitEnum"
-                  }
-               ],
+               "$ref": "#/$defs/AngleUnitEnum",
                "description": "Unit of angle."
             }
          },
@@ -156,35 +92,47 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
                "title": "Name",
                "type": "string"
             },
-            "algorithm": {
-               "allOf": [
-                  {
-                     "$ref": "#/$defs/BloscAlgorithm"
-                  }
-               ],
-               "default": "lz4",
-               "description": "The Blosc compression algorithm to be used."
+            "cname": {
+               "$ref": "#/$defs/BloscCname",
+               "default": "zstd",
+               "description": "Compression algorithm name."
             },
-            "level": {
+            "clevel": {
                "default": 5,
-               "description": "The compression level.",
+               "description": "Compression level (integer 0\u20139)",
                "maximum": 9,
                "minimum": 0,
-               "title": "Level",
+               "title": "Clevel",
                "type": "integer"
             },
             "shuffle": {
-               "allOf": [
+               "anyOf": [
                   {
                      "$ref": "#/$defs/BloscShuffle"
+                  },
+                  {
+                     "type": "null"
                   }
                ],
-               "default": 1,
-               "description": "The shuffle strategy to be applied before compression."
+               "default": null,
+               "description": "Shuffling mode before compression."
+            },
+            "typesize": {
+               "anyOf": [
+                  {
+                     "type": "integer"
+                  },
+                  {
+                     "type": "null"
+                  }
+               ],
+               "default": null,
+               "description": "The size in bytes that the shuffle is performed over.",
+               "title": "Typesize"
             },
             "blocksize": {
                "default": 0,
-               "description": "The size of the block to be used for compression.",
+               "description": "The size (in bytes) of blocks to divide data before compression.",
                "title": "Blocksize",
                "type": "integer"
             }
@@ -192,28 +140,28 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
          "title": "Blosc",
          "type": "object"
       },
-      "BloscAlgorithm": {
-         "description": "Enum for Blosc algorithm options.",
+      "BloscCname": {
+         "description": "Enum for compression library used by blosc.",
          "enum": [
-            "blosclz",
             "lz4",
             "lz4hc",
-            "zlib",
-            "zstd"
+            "blosclz",
+            "zstd",
+            "snappy",
+            "zlib"
          ],
-         "title": "BloscAlgorithm",
+         "title": "BloscCname",
          "type": "string"
       },
       "BloscShuffle": {
-         "description": "Enum for Blosc shuffle options.",
+         "description": "Enum for shuffle filter used by blosc.",
          "enum": [
-            0,
-            1,
-            2,
-            -1
+            "noshuffle",
+            "shuffle",
+            "bitshuffle"
          ],
          "title": "BloscShuffle",
-         "type": "integer"
+         "type": "string"
       },
       "CenteredBinHistogram": {
          "additionalProperties": false,
@@ -252,15 +200,11 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
       },
       "Coordinate": {
          "additionalProperties": false,
-         "description": "An MDIO coordinate array with metadata.",
+         "description": "A simple MDIO Coordinate array with metadata.\n\nFor large or complex Coordinates, define a Variable instead.",
          "properties": {
             "dataType": {
-               "allOf": [
-                  {
-                     "$ref": "#/$defs/ScalarType"
-                  }
-               ],
-               "description": "Data type of coordinate."
+               "$ref": "#/$defs/ScalarType",
+               "description": "Data type of Coordinate."
             },
             "dimensions": {
                "anyOf": [
@@ -317,25 +261,14 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
             "metadata": {
                "anyOf": [
                   {
-                     "items": {
-                        "anyOf": [
-                           {
-                              "$ref": "#/$defs/AllUnits"
-                           },
-                           {
-                              "$ref": "#/$defs/UserAttributes"
-                           }
-                        ]
-                     },
-                     "type": "array"
+                     "$ref": "#/$defs/CoordinateMetadata"
                   },
                   {
                      "type": "null"
                   }
                ],
                "default": null,
-               "description": "Coordinate metadata.",
-               "title": "Metadata"
+               "description": "Coordinate Metadata."
             }
          },
          "required": [
@@ -346,9 +279,60 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
          "title": "Coordinate",
          "type": "object"
       },
+      "CoordinateMetadata": {
+         "additionalProperties": false,
+         "description": "Reduced Metadata, perfect for simple Coordinates.",
+         "properties": {
+            "unitsV1": {
+               "anyOf": [
+                  {
+                     "$ref": "#/$defs/LengthUnitModel"
+                  },
+                  {
+                     "$ref": "#/$defs/TimeUnitModel"
+                  },
+                  {
+                     "$ref": "#/$defs/AngleUnitModel"
+                  },
+                  {
+                     "$ref": "#/$defs/DensityUnitModel"
+                  },
+                  {
+                     "$ref": "#/$defs/SpeedUnitModel"
+                  },
+                  {
+                     "$ref": "#/$defs/FrequencyUnitModel"
+                  },
+                  {
+                     "$ref": "#/$defs/VoltageUnitModel"
+                  },
+                  {
+                     "type": "null"
+                  }
+               ],
+               "default": null,
+               "title": "Unitsv1"
+            },
+            "attributes": {
+               "anyOf": [
+                  {
+                     "additionalProperties": true,
+                     "type": "object"
+                  },
+                  {
+                     "type": "null"
+                  }
+               ],
+               "default": null,
+               "title": "Attributes"
+            }
+         },
+         "title": "CoordinateMetadata",
+         "type": "object"
+      },
       "DatasetMetadata": {
          "additionalProperties": false,
-         "description": "The metadata about the dataset.",
+         "description": "Contains information about a dataset.",
          "properties": {
             "name": {
                "description": "Name or identifier for the dataset.",
@@ -369,6 +353,7 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
             "attributes": {
                "anyOf": [
                   {
+                     "additionalProperties": true,
                      "type": "object"
                   },
                   {
@@ -403,11 +388,7 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
          "description": "Model representing units of density.",
          "properties": {
             "density": {
-               "allOf": [
-                  {
-                     "$ref": "#/$defs/DensityUnitEnum"
-                  }
-               ],
+               "$ref": "#/$defs/DensityUnitEnum",
                "description": "Unit of density."
             }
          },
@@ -469,7 +450,6 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
          "type": "object"
       },
       "FrequencyUnitEnum": {
-         "const": "Hz",
          "description": "Enum class representing units of frequency.",
          "enum": [
             "Hz"
@@ -482,11 +462,7 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
          "description": "Model representing units of frequency.",
          "properties": {
             "frequency": {
-               "allOf": [
-                  {
-                     "$ref": "#/$defs/FrequencyUnitEnum"
-                  }
-               ],
+               "$ref": "#/$defs/FrequencyUnitEnum",
                "description": "Unit of frequency."
             }
          },
@@ -495,6 +471,16 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
          ],
          "title": "FrequencyUnitModel",
          "type": "object"
+      },
+      "Histogram": {
+         "anyOf": [
+            {
+               "$ref": "#/$defs/CenteredBinHistogram"
+            },
+            {
+               "$ref": "#/$defs/EdgeDefinedHistogram"
+            }
+         ]
       },
       "LengthUnitEnum": {
          "description": "Enum class representing metric units of length.",
@@ -516,11 +502,7 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
          "description": "Model representing units of length.",
          "properties": {
             "length": {
-               "allOf": [
-                  {
-                     "$ref": "#/$defs/LengthUnitEnum"
-                  }
-               ],
+               "$ref": "#/$defs/LengthUnitEnum",
                "description": "Unit of length."
             }
          },
@@ -564,11 +546,7 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
                "type": "string"
             },
             "configuration": {
-               "allOf": [
-                  {
-                     "$ref": "#/$defs/RectilinearChunkShape"
-                  }
-               ],
+               "$ref": "#/$defs/RectilinearChunkShape",
                "description": "Configuration of the irregular chunk grid."
             }
          },
@@ -611,11 +589,7 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
                "type": "string"
             },
             "configuration": {
-               "allOf": [
-                  {
-                     "$ref": "#/$defs/RegularChunkShape"
-                  }
-               ],
+               "$ref": "#/$defs/RegularChunkShape",
                "description": "Configuration of the regular chunk grid."
             }
          },
@@ -659,10 +633,11 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
             "float16",
             "float32",
             "float64",
-            "longdouble",
+            "float128",
             "complex64",
             "complex128",
-            "clongdouble"
+            "complex256",
+            "V240"
          ],
          "title": "ScalarType",
          "type": "string"
@@ -681,11 +656,7 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
          "description": "Model representing units of speed.",
          "properties": {
             "speed": {
-               "allOf": [
-                  {
-                     "$ref": "#/$defs/SpeedUnitEnum"
-                  }
-               ],
+               "$ref": "#/$defs/SpeedUnitEnum",
                "description": "Unit of speed."
             }
          },
@@ -762,16 +733,8 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
                "type": "number"
             },
             "histogram": {
-               "anyOf": [
-                  {
-                     "$ref": "#/$defs/CenteredBinHistogram"
-                  },
-                  {
-                     "$ref": "#/$defs/EdgeDefinedHistogram"
-                  }
-               ],
-               "description": "Binned frequency distribution.",
-               "title": "Histogram"
+               "$ref": "#/$defs/Histogram",
+               "description": "Binned frequency distribution."
             }
          },
          "required": [
@@ -804,11 +767,7 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
          "description": "Model representing units of time.",
          "properties": {
             "time": {
-               "allOf": [
-                  {
-                     "$ref": "#/$defs/TimeUnitEnum"
-                  }
-               ],
+               "$ref": "#/$defs/TimeUnitEnum",
                "description": "Unit of time."
             }
          },
@@ -818,30 +777,9 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
          "title": "TimeUnitModel",
          "type": "object"
       },
-      "UserAttributes": {
-         "additionalProperties": false,
-         "description": "User defined attributes as key/value pairs.",
-         "properties": {
-            "attributes": {
-               "anyOf": [
-                  {
-                     "type": "object"
-                  },
-                  {
-                     "type": "null"
-                  }
-               ],
-               "default": null,
-               "description": "User defined attributes as key/value pairs.",
-               "title": "Attributes"
-            }
-         },
-         "title": "UserAttributes",
-         "type": "object"
-      },
       "Variable": {
          "additionalProperties": false,
-         "description": "An MDIO variable that has coordinates and metadata.",
+         "description": "An MDIO Variable that has coordinates and metadata.",
          "properties": {
             "dataType": {
                "anyOf": [
@@ -926,7 +864,7 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
                   }
                ],
                "default": null,
-               "description": "Coordinates of the MDIO variable dimensions.",
+               "description": "Coordinates of the MDIO Variable dimensions.",
                "title": "Coordinates"
             },
             "metadata": {
@@ -939,7 +877,7 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
                   }
                ],
                "default": null,
-               "description": "Variable metadata."
+               "description": "Variable Metadata."
             }
          },
          "required": [
@@ -952,23 +890,8 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
       },
       "VariableMetadata": {
          "additionalProperties": false,
+         "description": "Complete Metadata for Variables and complex or large Coordinates.",
          "properties": {
-            "chunkGrid": {
-               "anyOf": [
-                  {
-                     "$ref": "#/$defs/RegularChunkGrid"
-                  },
-                  {
-                     "$ref": "#/$defs/RectilinearChunkGrid"
-                  },
-                  {
-                     "type": "null"
-                  }
-               ],
-               "default": null,
-               "description": "Chunk grid specification for the array.",
-               "title": "Chunkgrid"
-            },
             "unitsV1": {
                "anyOf": [
                   {
@@ -993,39 +916,40 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
                      "$ref": "#/$defs/VoltageUnitModel"
                   },
                   {
-                     "items": {
-                        "anyOf": [
-                           {
-                              "$ref": "#/$defs/LengthUnitModel"
-                           },
-                           {
-                              "$ref": "#/$defs/TimeUnitModel"
-                           },
-                           {
-                              "$ref": "#/$defs/AngleUnitModel"
-                           },
-                           {
-                              "$ref": "#/$defs/DensityUnitModel"
-                           },
-                           {
-                              "$ref": "#/$defs/SpeedUnitModel"
-                           },
-                           {
-                              "$ref": "#/$defs/FrequencyUnitModel"
-                           },
-                           {
-                              "$ref": "#/$defs/VoltageUnitModel"
-                           }
-                        ]
-                     },
-                     "type": "array"
+                     "type": "null"
+                  }
+               ],
+               "default": null,
+               "title": "Unitsv1"
+            },
+            "attributes": {
+               "anyOf": [
+                  {
+                     "additionalProperties": true,
+                     "type": "object"
                   },
                   {
                      "type": "null"
                   }
                ],
                "default": null,
-               "title": "Unitsv1"
+               "title": "Attributes"
+            },
+            "chunkGrid": {
+               "anyOf": [
+                  {
+                     "$ref": "#/$defs/RegularChunkGrid"
+                  },
+                  {
+                     "$ref": "#/$defs/RectilinearChunkGrid"
+                  },
+                  {
+                     "type": "null"
+                  }
+               ],
+               "default": null,
+               "description": "Chunk grid specification for the array.",
+               "title": "Chunkgrid"
             },
             "statsV1": {
                "anyOf": [
@@ -1045,19 +969,6 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
                "default": null,
                "description": "Minimal summary statistics.",
                "title": "Statsv1"
-            },
-            "attributes": {
-               "anyOf": [
-                  {
-                     "type": "object"
-                  },
-                  {
-                     "type": "null"
-                  }
-               ],
-               "default": null,
-               "description": "User defined attributes as key/value pairs.",
-               "title": "Attributes"
             }
          },
          "title": "VariableMetadata",
@@ -1078,11 +989,7 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
          "description": "Model representing units of voltage.",
          "properties": {
             "voltage": {
-               "allOf": [
-                  {
-                     "$ref": "#/$defs/VoltageUnitEnum"
-                  }
-               ],
+               "$ref": "#/$defs/VoltageUnitEnum",
                "description": "Unit of voltage."
             }
          },
@@ -1143,12 +1050,6 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
                "default": null,
                "description": "Fixed precision in terms of number of uncompressed bits per value.",
                "title": "Precision"
-            },
-            "writeHeader": {
-               "default": true,
-               "description": "Encode array shape, scalar type, and compression parameters.",
-               "title": "Writeheader",
-               "type": "boolean"
             }
          },
          "required": [
@@ -1160,9 +1061,9 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
       "ZFPMode": {
          "description": "Enum for ZFP algorithm modes.",
          "enum": [
-            "fixed_accuracy",
-            "fixed_precision",
             "fixed_rate",
+            "fixed_precision",
+            "fixed_accuracy",
             "reversible"
          ],
          "title": "ZFPMode",
@@ -1176,6 +1077,7 @@ It should NOT be modified unless the MDIO Dataset model schema is updated.
       "metadata"
    ]
 }
-)";
+)JSON";
+// clang-format on
 
 #endif  // MDIO_DATASET_SCHEMA_H_
