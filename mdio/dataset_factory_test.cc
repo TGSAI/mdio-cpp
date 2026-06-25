@@ -704,6 +704,205 @@ TEST(TransformCompressor, noCompressorV2) {
   EXPECT_TRUE(variable["metadata"]["compressor"].is_null());
 }
 
+TEST(TransformCompressor, noCompressorV3) {
+  // V3 with no compressor leaves the stub's default codecs untouched.
+  nlohmann::json input = nlohmann::json::object();
+  nlohmann::json variable = {{"metadata", nlohmann::json::object()}};
+  auto status =
+      transform_compressor(input, variable, mdio::zarr::ZarrVersion::kV3);
+  ASSERT_TRUE(status.ok()) << status;
+  EXPECT_FALSE(variable["metadata"].contains("codecs"));
+}
+
+TEST(TransformCompressor, bloscDefaultsV2) {
+  nlohmann::json input = {{"compressor", {{"name", "blosc"}}}};
+  nlohmann::json variable = {{"metadata", nlohmann::json::object()}};
+  auto status =
+      transform_compressor(input, variable, mdio::zarr::ZarrVersion::kV2);
+  ASSERT_TRUE(status.ok()) << status;
+  const auto& comp = variable["metadata"]["compressor"];
+  EXPECT_EQ(comp["id"], "blosc");
+  EXPECT_EQ(comp["cname"], "lz4");
+  EXPECT_EQ(comp["clevel"], 5);
+  EXPECT_EQ(comp["shuffle"], 1);
+  EXPECT_EQ(comp["blocksize"], 0);
+}
+
+TEST(TransformCompressor, bloscLegacyKeysV2) {
+  // Legacy MDIO-cpp keys: "algorithm"/"level" plus integer shuffle.
+  nlohmann::json input = {{"compressor",
+                           {{"name", "blosc"},
+                            {"algorithm", "zstd"},
+                            {"level", 7},
+                            {"shuffle", 2},
+                            {"blocksize", 1024}}}};
+  nlohmann::json variable = {{"metadata", nlohmann::json::object()}};
+  auto status =
+      transform_compressor(input, variable, mdio::zarr::ZarrVersion::kV2);
+  ASSERT_TRUE(status.ok()) << status;
+  const auto& comp = variable["metadata"]["compressor"];
+  EXPECT_EQ(comp["cname"], "zstd");
+  EXPECT_EQ(comp["clevel"], 7);
+  EXPECT_EQ(comp["shuffle"], 2);
+  EXPECT_EQ(comp["blocksize"], 1024);
+}
+
+TEST(TransformCompressor, bloscSchemaKeysV2) {
+  // Schema keys: "cname"/"clevel" plus string shuffle enum.
+  nlohmann::json input = {{"compressor",
+                           {{"name", "blosc"},
+                            {"cname", "zstd"},
+                            {"clevel", 3},
+                            {"shuffle", "bitshuffle"}}}};
+  nlohmann::json variable = {{"metadata", nlohmann::json::object()}};
+  auto status =
+      transform_compressor(input, variable, mdio::zarr::ZarrVersion::kV2);
+  ASSERT_TRUE(status.ok()) << status;
+  const auto& comp = variable["metadata"]["compressor"];
+  EXPECT_EQ(comp["cname"], "zstd");
+  EXPECT_EQ(comp["clevel"], 3);
+  EXPECT_EQ(comp["shuffle"], 2);
+}
+
+TEST(TransformCompressor, clevelOutOfRangeV2) {
+  nlohmann::json input = {{"compressor", {{"name", "blosc"}, {"clevel", 10}}}};
+  nlohmann::json variable = {{"metadata", nlohmann::json::object()}};
+  auto status =
+      transform_compressor(input, variable, mdio::zarr::ZarrVersion::kV2);
+  ASSERT_FALSE(status.ok());
+  EXPECT_THAT(status.message(),
+              testing::HasSubstr("Compressor level must be between 0 and 9"));
+}
+
+TEST(TransformCompressor, bloscDefaultsV3) {
+  nlohmann::json input = {{"compressor", {{"name", "blosc"}}}};
+  nlohmann::json variable = {{"metadata", nlohmann::json::object()}};
+  auto status =
+      transform_compressor(input, variable, mdio::zarr::ZarrVersion::kV3);
+  ASSERT_TRUE(status.ok()) << status;
+  const auto& codecs = variable["metadata"]["codecs"];
+  ASSERT_EQ(codecs.size(), 2u);
+  EXPECT_EQ(codecs[0]["name"], "bytes");
+  EXPECT_EQ(codecs[1]["name"], "blosc");
+  const auto& cfg = codecs[1]["configuration"];
+  EXPECT_EQ(cfg["cname"], "lz4");
+  EXPECT_EQ(cfg["clevel"], 5);
+  EXPECT_EQ(cfg["shuffle"], "shuffle");
+  EXPECT_EQ(cfg["blocksize"], 0);
+}
+
+TEST(TransformCompressor, bloscLegacyKeysV3) {
+  // Legacy keys with integer shuffle should map to the V3 string enum.
+  nlohmann::json input = {{"compressor",
+                           {{"name", "blosc"},
+                            {"algorithm", "zstd"},
+                            {"level", 7},
+                            {"shuffle", 0}}}};
+  nlohmann::json variable = {{"metadata", nlohmann::json::object()}};
+  auto status =
+      transform_compressor(input, variable, mdio::zarr::ZarrVersion::kV3);
+  ASSERT_TRUE(status.ok()) << status;
+  const auto& cfg = variable["metadata"]["codecs"][1]["configuration"];
+  EXPECT_EQ(cfg["cname"], "zstd");
+  EXPECT_EQ(cfg["clevel"], 7);
+  EXPECT_EQ(cfg["shuffle"], "noshuffle");
+}
+
+TEST(TransformCompressor, clevelOutOfRangeV3) {
+  nlohmann::json input = {{"compressor", {{"name", "blosc"}, {"clevel", -1}}}};
+  nlohmann::json variable = {{"metadata", nlohmann::json::object()}};
+  auto status =
+      transform_compressor(input, variable, mdio::zarr::ZarrVersion::kV3);
+  ASSERT_FALSE(status.ok());
+  EXPECT_THAT(status.message(),
+              testing::HasSubstr("Compressor level must be between 0 and 9"));
+}
+
+TEST(ResolveBloscCname, prefersCnameOverAlgorithm) {
+  nlohmann::json compressor = {{"cname", "zstd"}, {"algorithm", "lz4"}};
+  EXPECT_EQ(resolve_blosc_cname(compressor), "zstd");
+}
+
+TEST(ResolveBloscCname, fallsBackToAlgorithm) {
+  nlohmann::json compressor = {{"algorithm", "lz4"}};
+  EXPECT_EQ(resolve_blosc_cname(compressor), "lz4");
+}
+
+TEST(ResolveBloscCname, defaultsToLz4) {
+  nlohmann::json compressor = nlohmann::json::object();
+  EXPECT_EQ(resolve_blosc_cname(compressor), "lz4");
+}
+
+TEST(ResolveBloscClevel, prefersClevelOverLevel) {
+  nlohmann::json compressor = {{"clevel", 3}, {"level", 7}};
+  auto result = resolve_blosc_clevel(compressor);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result.value(), 3);
+}
+
+TEST(ResolveBloscClevel, fallsBackToLevel) {
+  nlohmann::json compressor = {{"level", 7}};
+  auto result = resolve_blosc_clevel(compressor);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result.value(), 7);
+}
+
+TEST(ResolveBloscClevel, defaultsToFive) {
+  nlohmann::json compressor = nlohmann::json::object();
+  auto result = resolve_blosc_clevel(compressor);
+  ASSERT_TRUE(result.ok()) << result.status();
+  EXPECT_EQ(result.value(), 5);
+}
+
+TEST(ResolveBloscClevel, rejectsOutOfRange) {
+  for (int bad : {-1, 10}) {
+    nlohmann::json compressor = {{"clevel", bad}};
+    auto result = resolve_blosc_clevel(compressor);
+    EXPECT_FALSE(result.ok()) << "clevel " << bad << " should be rejected";
+  }
+}
+
+TEST(ResolveBloscClevel, acceptsBoundaries) {
+  for (int ok : {0, 9}) {
+    nlohmann::json compressor = {{"clevel", ok}};
+    auto result = resolve_blosc_clevel(compressor);
+    ASSERT_TRUE(result.ok()) << result.status();
+    EXPECT_EQ(result.value(), ok);
+  }
+}
+
+TEST(ResolveBloscBlocksize, returnsProvidedValue) {
+  nlohmann::json compressor = {{"blocksize", 1024}};
+  EXPECT_EQ(resolve_blosc_blocksize(compressor), 1024);
+}
+
+TEST(ResolveBloscBlocksize, defaultsToZero) {
+  nlohmann::json compressor = nlohmann::json::object();
+  EXPECT_EQ(resolve_blosc_blocksize(compressor), 0);
+}
+
+TEST(BloscShuffle, toIntFromStringEnum) {
+  EXPECT_EQ(blosc_shuffle_to_int("noshuffle"), 0);
+  EXPECT_EQ(blosc_shuffle_to_int("shuffle"), 1);
+  EXPECT_EQ(blosc_shuffle_to_int("bitshuffle"), 2);
+}
+
+TEST(BloscShuffle, toIntPassesThroughInteger) {
+  EXPECT_EQ(blosc_shuffle_to_int(0), 0);
+  EXPECT_EQ(blosc_shuffle_to_int(1), 1);
+  EXPECT_EQ(blosc_shuffle_to_int(2), 2);
+}
+
+TEST(BloscShuffle, toStringFromInteger) {
+  EXPECT_EQ(blosc_shuffle_to_string(0), "noshuffle");
+  EXPECT_EQ(blosc_shuffle_to_string(1), "shuffle");
+  EXPECT_EQ(blosc_shuffle_to_string(2), "bitshuffle");
+}
+
+TEST(BloscShuffle, toStringPassesThroughString) {
+  EXPECT_EQ(blosc_shuffle_to_string("bitshuffle"), "bitshuffle");
+}
+
 TEST(TransformMetadata, gcsPath) {
   nlohmann::json variable = {
       {"kvstore", {{"driver", "file"}, {"path", "myvar"}}}};
