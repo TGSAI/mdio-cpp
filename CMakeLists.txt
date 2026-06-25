@@ -75,8 +75,6 @@ include(CMakeDependentOption)
 # provides a method to download dependencies:
 include(FetchContent)
 include(CMakeHelpers/MdioHelpers)
-# optional code coverage support:
-include(CodeCoverage)
 
 list(APPEND mdio_DEFAULT_COPTS
     "-Wno-deprecated-declarations"

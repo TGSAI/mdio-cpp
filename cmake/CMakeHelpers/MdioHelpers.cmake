@@ -297,12 +297,6 @@ function(mdio_cc_test)
     PRIVATE ${mdio_CC_TEST_COPTS}
   )
 
-  # Add coverage flags only to mdio test targets (not dependencies)
-  if(MDIO_ENABLE_COVERAGE)
-    target_compile_options(${_NAME} PRIVATE ${MDIO_COVERAGE_COMPILE_FLAGS})
-    target_link_options(${_NAME} PRIVATE ${MDIO_COVERAGE_LINK_FLAGS})
-  endif()
-
   target_link_libraries(${_NAME}
     PUBLIC ${mdio_CC_TEST_DEPS}
     PRIVATE ${mdio_CC_TEST_LINKOPTS}
