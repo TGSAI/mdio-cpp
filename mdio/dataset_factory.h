@@ -169,7 +169,8 @@ inline tensorstore::Result<nlohmann::json> resolve_blosc_clevel(
 /**
  * @brief Resolves the Blosc blocksize, defaulting to 0 when not present.
  */
-inline nlohmann::json resolve_blosc_blocksize(const nlohmann::json& compressor) {
+inline nlohmann::json resolve_blosc_blocksize(
+    const nlohmann::json& compressor) {
   if (compressor.contains("blocksize")) {
     return compressor["blocksize"];
   }
@@ -425,7 +426,8 @@ inline void set_fill_value(const nlohmann::json& json,
     for (const auto& field : variable["metadata"][dtype_key]) {
       num_bytes += zarr_dtype_byte_size(field[1].get<std::string>(), version);
     }
-    variable["metadata"]["fill_value"] = encode_base64(std::string(num_bytes, '\0'));
+    variable["metadata"]["fill_value"] =
+        encode_base64(std::string(num_bytes, '\0'));
   }
 }
 
