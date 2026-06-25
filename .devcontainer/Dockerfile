@@ -60,7 +60,7 @@ ENV PATH="/venv/bin:$PATH"
 
 RUN mkdir -p /tmp/devcontainer
 COPY .devcontainer/pyproject.toml .devcontainer/uv.lock /tmp/devcontainer/
-RUN uv sync --project /tmp/devcontainer --frozen --all-groups --all-extras
+RUN uv sync --project /tmp/devcontainer --frozen --all-groups
 
 # if we want the user to be able to do pip install etc.
 RUN chmod -R 777 /venv
