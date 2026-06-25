@@ -61,6 +61,10 @@ absl::Status Run() {
   /// mdio::constants::kCreateClean -
   ///    Create a new dataset and overwrite an existing one.
   ///
+  /// New datasets default to the Zarr V3 format. To target a specific format,
+  /// pass an optional mdio::zarr::ZarrVersion argument before the open mode,
+  /// e.g. mdio::Dataset::from_json(json_spec, dataset_path,
+  ///        mdio::zarr::ZarrVersion::kV2, mdio::constants::kCreateClean);
   auto dataset_future = mdio::Dataset::from_json(json_spec, dataset_path,
                                                  mdio::constants::kCreateClean);
 
