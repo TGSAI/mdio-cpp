@@ -535,6 +535,21 @@ TEST_P(VariableTest, chunkSize) {
   EXPECT_TRUE(i2.value().get_chunk_shape().status().ok());
 }
 
+TEST_P(VariableTest, getCompressor) {
+  // V2 stores compression under "compressor"; V3 stores it under "codecs".
+  const std::string compression_key =
+      version_ == mdio::zarr::ZarrVersion::kV3 ? "codecs" : "compressor";
+  for (const auto& def : kTestVariables) {
+    auto var = OpenTestVariable(def.name, version_, base_path_);
+    ASSERT_TRUE(var.status().ok()) << var.status();
+    auto spec = var.value().get_spec();
+    ASSERT_TRUE(spec.status().ok()) << spec.status();
+    EXPECT_TRUE(spec.value()["metadata"].contains(compression_key))
+        << "Missing " << compression_key << " for " << def.name << ": "
+        << spec.value();
+  }
+}
+
 TEST_P(VariableTest, shape) {
   auto i2 = OpenTestVariable("i2", version_, base_path_);
   ASSERT_TRUE(i2.status().ok()) << i2.status();
