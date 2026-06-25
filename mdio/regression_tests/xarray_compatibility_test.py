@@ -18,7 +18,7 @@ try:
     import xarray as xr
 except ImportError:
     print("Failed to import xarray.")
-    sys.exit(0xfd) # 64768
+    sys.exit(0xfd)
 
 
 def test_xarray_dataset(file_path, consolidated_metadata):

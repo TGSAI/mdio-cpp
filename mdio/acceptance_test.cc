@@ -49,8 +49,11 @@ constexpr char FILL_VALUE_PARITY_SCRIPT_RELATIVE_PATH[] =
     "/mdio/regression_tests/fill_value_parity_test.py";
 constexpr int ERROR_CODE = EXIT_FAILURE;
 constexpr int SUCCESS_CODE = EXIT_SUCCESS;
+constexpr int PYTHON_SKIP_CODE = 0xfd;
 
 using float16_t = mdio::dtypes::float_16_t;
+
+enum class PythonScriptStatus { kPassed, kFailed, kSkipped };
 
 /**
  * @brief Test variable definition with dtype info for V2 and V3.
@@ -384,45 +387,46 @@ int executePythonScript(const std::string& scriptPath,
 
 /**
  * @brief Runs Python scripts with fork/wait and checks results.
- * @return true if all scripts passed, false otherwise.
+ * @return status for the forked scripts.
  */
-bool RunPythonScripts(const std::string& script_path,
-                      const std::vector<std::vector<std::string>>& arg_sets,
-                      const std::string& skip_message) {
+PythonScriptStatus RunPythonScripts(
+    const std::string& script_path,
+    const std::vector<std::vector<std::string>>& arg_sets) {
   std::vector<pid_t> pids;
 
   for (const auto& args : arg_sets) {
     pid_t pid = fork();
     if (pid == 0) {
       int result = executePythonScript(script_path, args);
-      if (result == 0xfd00) {
-        exit(SUCCESS_CODE);
-      }
       exit(result);
     } else if (pid > 0) {
       pids.push_back(pid);
     } else {
       perror("fork failed");
-      return false;
+      return PythonScriptStatus::kFailed;
     }
   }
 
   bool all_passed = true;
+  bool should_skip = false;
   for (pid_t pid : pids) {
     int status;
     if (waitpid(pid, &status, 0) == -1) {
       perror("waitpid failed");
-      return false;
+      return PythonScriptStatus::kFailed;
     }
     if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-      if (WIFEXITED(status) && WEXITSTATUS(status) == 0xfd00) {
-        // Import error - will be handled by caller
+      if (WIFEXITED(status) && WEXITSTATUS(status) == PYTHON_SKIP_CODE) {
+        should_skip = true;
         continue;
       }
       all_passed = false;
     }
   }
-  return all_passed;
+  if (should_skip) {
+    return PythonScriptStatus::kSkipped;
+  }
+  return all_passed ? PythonScriptStatus::kPassed : PythonScriptStatus::kFailed;
 }
 
 // ============================================================================
@@ -1234,11 +1238,12 @@ TEST_P(DatasetTest, fillValueParityWithPython) {
   std::string python_path = base_path_ + "/fill_value_python";
   std::filesystem::remove_all(python_path);
   setenv("ZARR_DEFAULT_ZARR_FORMAT", is_v3 ? "3" : "2", /*overwrite=*/1);
-  bool scripts_passed =
-      RunPythonScripts(srcPath, {{python_path}},
-                       "Fill value parity skipped due to import error");
+  auto script_status = RunPythonScripts(srcPath, {{python_path}});
   unsetenv("ZARR_DEFAULT_ZARR_FORMAT");
-  ASSERT_TRUE(scripts_passed)
+  if (script_status == PythonScriptStatus::kSkipped) {
+    GTEST_SKIP() << "Fill value parity skipped due to import error";
+  }
+  ASSERT_EQ(script_status, PythonScriptStatus::kPassed)
       << "mdio-python failed to generate the reference dataset";
 
   // 2. Open the reference dataset through the mdio API and read each dtype's
@@ -1394,8 +1399,11 @@ TEST_P(XarrayCompatibilityTest, datasetCompatible) {
   }
 
   std::string version_name = ZarrVersionToString(version_);
-  EXPECT_TRUE(RunPythonScripts(
-      srcPath, arg_sets, "Xarray compatibility skipped due to import error"))
+  auto script_status = RunPythonScripts(srcPath, arg_sets);
+  if (script_status == PythonScriptStatus::kSkipped) {
+    GTEST_SKIP() << "Xarray compatibility skipped due to import error";
+  }
+  EXPECT_EQ(script_status, PythonScriptStatus::kPassed)
       << "xarray " << version_name << " compatibility test failed";
 
   // std::filesystem::remove_all(test_path);
@@ -1451,12 +1459,14 @@ TEST_P(MultidimioCompatibilityTest, datasetCompatible) {
       {test_path + "/"},
   };
 
-  bool scripts_passed =
-      RunPythonScripts(srcPath, arg_sets,
-                       "Multidimio compatibility skipped due to import error");
+  auto script_status = RunPythonScripts(srcPath, arg_sets);
   unsetenv("ZARR_DEFAULT_ZARR_FORMAT");
 
-  EXPECT_TRUE(scripts_passed) << "multidimio compatibility test failed";
+  if (script_status == PythonScriptStatus::kSkipped) {
+    GTEST_SKIP() << "Multidimio compatibility skipped due to import error";
+  }
+  ASSERT_EQ(script_status, PythonScriptStatus::kPassed)
+      << "multidimio compatibility test failed";
 
   // Now try to open the ingested dataset with C++
   std::cout << "Attempting to open the ingested dataset with C++..."
