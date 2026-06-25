@@ -333,6 +333,34 @@ inline absl::Status transform_metadata(const std::string& path,
 }
 
 /**
+ * @brief Returns the byte size of a single Zarr field dtype string.
+ *
+ * Handles both Zarr versions; the trailing number already encodes the size:
+ *   - V2: "<i2"/"<c8"/"|u1" - the number is the byte size, so it is returned
+ *         directly (complex c8 -> 8, c16 -> 16).
+ *   - V3: "int16"/"complex64"/"bool" - the number is the bit size, so it is
+ *         divided by 8 (complex64 -> 8). "bool" has no number and is 1 byte.
+ *
+ * @param dtype A single Zarr dtype string for one structured field
+ * @param version The Zarr version the dtype string is formatted for
+ * @return The size of the dtype in bytes
+ */
+inline uint16_t zarr_dtype_byte_size(const std::string& dtype,
+                                     mdio::zarr::ZarrVersion version) {
+  if (version == mdio::zarr::ZarrVersion::kV2) {
+    return static_cast<uint16_t>(std::stoi(dtype.substr(2)));
+  }
+  if (dtype == "bool") {
+    return 1;
+  }
+  const size_t pos = dtype.find_first_of("0123456789");
+  if (pos == std::string::npos) {
+    return 0;
+  }
+  return static_cast<uint16_t>(std::stoi(dtype.substr(pos)) / 8);
+}
+
+/**
  * @brief Sets the Zarr fill value on a Variable stub based on its data type.
  *
  * The selected fill values mirror mdio-python's `fill_value_map`, which is the
@@ -358,79 +386,46 @@ inline void set_fill_value(const nlohmann::json& json,
                            nlohmann::json& variable /*NOLINT*/,
                            mdio::zarr::ZarrVersion version) {
   if (!json["dataType"].contains("fields")) {
-    std::string dtype_str = json["dataType"].get<std::string>();
-    variable["metadata"]["fill_value"] = nlohmann::json::value_t::null;
-    if (dtype_str == "complex64" || dtype_str == "complex128") {
-      variable["metadata"]["fill_value"] =
-          nlohmann::json::array({std::nan(""), std::nan("")});
-    } else if (!dtype_str.empty() && dtype_str[0] == 'f') {
-      variable["metadata"]["fill_value"] = std::nan("");
-    } else if (dtype_str == "bool") {
-      if (version == mdio::zarr::ZarrVersion::kV3) {
-        // Zarr V3 mandates a fill value; mdio-python resolves bool's null to
-        // 0 (false) when materializing the array.
-        variable["metadata"]["fill_value"] = false;
-      }
-      // Zarr V2 keeps the null fill value set above.
-    } else if (dtype_str == "int8") {
-      variable["metadata"]["fill_value"] = std::numeric_limits<int8_t>::max();
-    } else if (dtype_str == "int16") {
-      variable["metadata"]["fill_value"] = std::numeric_limits<int16_t>::max();
-    } else if (dtype_str == "int32") {
-      variable["metadata"]["fill_value"] = std::numeric_limits<int32_t>::max();
-    } else if (dtype_str == "int64") {
-      variable["metadata"]["fill_value"] = std::numeric_limits<int64_t>::max();
-    } else if (dtype_str == "uint8") {
-      variable["metadata"]["fill_value"] = std::numeric_limits<uint8_t>::max();
-    } else if (dtype_str == "uint16") {
-      variable["metadata"]["fill_value"] = std::numeric_limits<uint16_t>::max();
-    } else if (dtype_str == "uint32") {
-      variable["metadata"]["fill_value"] = std::numeric_limits<uint32_t>::max();
-    } else if (dtype_str == "uint64") {
-      variable["metadata"]["fill_value"] = std::numeric_limits<uint64_t>::max();
+    // Scalar dtypes map directly to a fixed fill value. Floats use NaN, complex
+    // uses [NaN, NaN], and integers use their type maximum. bool is version
+    // dependent and handled below.
+    static const std::unordered_map<std::string, nlohmann::json> kScalarFill = {
+        {"float16", std::nan("")},
+        {"float32", std::nan("")},
+        {"float64", std::nan("")},
+        {"complex64", nlohmann::json::array({std::nan(""), std::nan("")})},
+        {"complex128", nlohmann::json::array({std::nan(""), std::nan("")})},
+        {"int8", std::numeric_limits<int8_t>::max()},
+        {"int16", std::numeric_limits<int16_t>::max()},
+        {"int32", std::numeric_limits<int32_t>::max()},
+        {"int64", std::numeric_limits<int64_t>::max()},
+        {"uint8", std::numeric_limits<uint8_t>::max()},
+        {"uint16", std::numeric_limits<uint16_t>::max()},
+        {"uint32", std::numeric_limits<uint32_t>::max()},
+        {"uint64", std::numeric_limits<uint64_t>::max()},
+    };
+
+    const std::string dtype_str = json["dataType"].get<std::string>();
+    const auto it = kScalarFill.find(dtype_str);
+    if (it != kScalarFill.end()) {
+      variable["metadata"]["fill_value"] = it->second;
+    } else if (dtype_str == "bool" && version == mdio::zarr::ZarrVersion::kV3) {
+      // Zarr V3 mandates a fill value; mdio-python resolves bool's null to
+      // 0 (false) when materializing the array. Zarr V2 keeps null.
+      variable["metadata"]["fill_value"] = false;
+    } else {
+      variable["metadata"]["fill_value"] = nlohmann::json::value_t::null;
     }
   } else {
     // Structured dtypes for both V2 and V3 use zero-initialized bytes, matching
-    // mdio-python's np.void zero fill. Accumulate the total number of bytes
-    // (N).
-    uint16_t num_bytes = 0;
-    std::string dtype_key =
+    // mdio-python's np.void zero fill. Sum the byte size of every field.
+    const std::string dtype_key =
         version == mdio::zarr::ZarrVersion::kV3 ? "data_type" : "dtype";
+    uint16_t num_bytes = 0;
     for (const auto& field : variable["metadata"][dtype_key]) {
-      std::string dtype = field[1].get<std::string>();
-      if (version == mdio::zarr::ZarrVersion::kV2) {
-        // V2 format: "<i2", "<f4", "<c8", etc. - number is byte size
-        if (dtype.at(1) != 'c') {
-          num_bytes += std::stoi(dtype.substr(2));
-        } else {
-          // Complex types: c8 = 8 bytes, c16 = 16 bytes
-          if (dtype.at(2) == '8') {
-            num_bytes += 8;
-          } else {
-            num_bytes += 16;
-          }
-        }
-      } else {
-        // V3 format: "int16", "float32", "complex64", etc. - number is bit
-        // size
-        if (dtype.find("complex") == 0) {
-          // complex64 = 8 bytes, complex128 = 16 bytes
-          int bits = std::stoi(dtype.substr(7));
-          num_bytes += bits / 8;
-        } else if (dtype == "bool") {
-          num_bytes += 1;
-        } else {
-          // Extract the number from the end (int16 -> 16, float32 -> 32)
-          size_t pos = dtype.find_first_of("0123456789");
-          if (pos != std::string::npos) {
-            int bits = std::stoi(dtype.substr(pos));
-            num_bytes += bits / 8;
-          }
-        }
-      }
+      num_bytes += zarr_dtype_byte_size(field[1].get<std::string>(), version);
     }
-    std::string raw(num_bytes, '\0');
-    variable["metadata"]["fill_value"] = encode_base64(raw);
+    variable["metadata"]["fill_value"] = encode_base64(std::string(num_bytes, '\0'));
   }
 }
 
