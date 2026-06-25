@@ -665,20 +665,6 @@ TEST(EncodeBase64, binaryData) {
   EXPECT_EQ(encoded, "AAAAAAAAAAA=");
 }
 
-TEST(ToZarrDtype, unknownDtype) {
-  auto result = to_zarr_dtype("unknown_dtype");
-  ASSERT_FALSE(result.status().ok());
-  EXPECT_THAT(result.status().message(), testing::HasSubstr("Unknown dtype"));
-}
-
-TEST(ToZarrDtype, validDtypes) {
-  EXPECT_TRUE(to_zarr_dtype("float32").status().ok());
-  EXPECT_TRUE(to_zarr_dtype("float64").status().ok());
-  EXPECT_TRUE(to_zarr_dtype("int32").status().ok());
-  EXPECT_TRUE(to_zarr_dtype("uint16").status().ok());
-  EXPECT_TRUE(to_zarr_dtype("bool").status().ok());
-}
-
 TEST(TransformCompressor, nonBloscCompressorV2) {
   nlohmann::json input = {{"compressor", {{"name", "gzip"}}}};
   nlohmann::json variable = {{"metadata", nlohmann::json::object()}};

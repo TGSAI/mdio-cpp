@@ -45,20 +45,6 @@ inline std::string encode_base64(const std::string raw) {
 }
 
 /**
- * @brief Converts a Dataset spec dtype to a numpy style dtype (Zarr V2)
- * This function is intended to be an internal helper function for formatting
- * Variable specs It presupposes that all dtypes are little endian or endianless
- * if bool.
- * @param dtype A string representing the dtype of a Variable
- * @return A string representing the dtype in numpy format limited to the dtypes
- * supported by MDIO Dataset
- * @deprecated Use mdio::zarr::v2::ToZarrDtype for explicit V2 conversions.
- */
-inline tensorstore::Result<std::string> to_zarr_dtype(const std::string dtype) {
-  return mdio::zarr::v2::ToZarrDtype(dtype);
-}
-
-/**
  * @brief Converts a Dataset spec dtype to the appropriate Zarr format
  * @param dtype A string representing the dtype of a Variable
  * @param version The Zarr version to target
