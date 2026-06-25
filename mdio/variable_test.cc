@@ -24,6 +24,7 @@
 #include <string>
 #include <utility>
 
+#include "mdio/zarr/zarr.h"
 #include "tensorstore/driver/zarr/compressor.h"
 #include "tensorstore/driver/zarr/driver_impl.h"
 #include "tensorstore/driver/zarr/dtype.h"
@@ -34,6 +35,74 @@
 // clang-format off
 #include <nlohmann/json.hpp>  // NOLINT
 // clang-format on
+
+namespace {
+
+/**
+ * @brief Returns a string representation of the Zarr version for naming.
+ */
+std::string ZarrVersionToString(mdio::zarr::ZarrVersion version) {
+  return version == mdio::zarr::ZarrVersion::kV3 ? "V3" : "V2";
+}
+
+/**
+ * @brief Returns the base path for test data based on Zarr version.
+ */
+std::string GetBasePath(mdio::zarr::ZarrVersion version) {
+  return version == mdio::zarr::ZarrVersion::kV3 ? "variable_test_v3"
+                                                 : "variable_test";
+}
+
+/**
+ * @brief Returns the TensorStore driver name for the given version.
+ */
+std::string GetTestDriverName(mdio::zarr::ZarrVersion version) {
+  return version == mdio::zarr::ZarrVersion::kV3 ? "zarr3" : "zarr";
+}
+
+/**
+ * @brief Creates a variable spec for testing based on Zarr version.
+ */
+::nlohmann::json CreateTestVariableSpec(mdio::zarr::ZarrVersion version,
+                                        const std::string& name) {
+  nlohmann::json spec;
+  spec["driver"] = GetTestDriverName(version);
+  spec["kvstore"]["driver"] = "file";
+  spec["kvstore"]["path"] = name;
+
+  if (version == mdio::zarr::ZarrVersion::kV3) {
+    spec["metadata"]["data_type"] = "int16";
+    spec["metadata"]["shape"] = nlohmann::json::array({500, 500});
+    spec["metadata"]["chunk_grid"]["name"] = "regular";
+    spec["metadata"]["chunk_grid"]["configuration"]["chunk_shape"] =
+        nlohmann::json::array({100, 50});
+    spec["metadata"]["chunk_key_encoding"]["name"] = "default";
+    spec["metadata"]["chunk_key_encoding"]["configuration"]["separator"] = "/";
+    nlohmann::json bytes_codec;
+    bytes_codec["name"] = "bytes";
+    spec["metadata"]["codecs"] = nlohmann::json::array({bytes_codec});
+    spec["attributes"]["metadata"]["attributes"]["job status"] = "win";
+    spec["attributes"]["metadata"]["attributes"]["project code"] = "fail";
+    spec["attributes"]["metadata"]["unitsV1"] = {"m", "ft"};
+    spec["attributes"]["long_name"] = "foooooo .....";
+    spec["attributes"]["dimension_names"] = {"x", "y"};
+  } else {
+    spec["metadata"]["compressor"]["id"] = "blosc";
+    spec["metadata"]["dtype"] = "<i2";
+    spec["metadata"]["shape"] = {500, 500};
+    spec["metadata"]["chunks"] = {100, 50};
+    spec["metadata"]["dimension_separator"] = "/";
+    spec["attributes"]["metadata"]["attributes"]["job status"] = "win";
+    spec["attributes"]["metadata"]["attributes"]["project code"] = "fail";
+    spec["attributes"]["metadata"]["unitsV1"] = {"m", "ft"};
+    spec["attributes"]["long_name"] = "foooooo .....";
+    spec["attributes"]["dimension_names"] = {"x", "y"};
+  }
+
+  return spec;
+}
+
+}  // namespace
 
 // clang-format off
 ::nlohmann::json json_good = ::nlohmann::json::object({
@@ -156,7 +225,7 @@ mdio::Result<::nlohmann::json> PopulateStore(const nlohmann::json& json_good) {
       mdio::Variable<>::Open(json_good, mdio::constants::kCreateClean)
           .result());
 
-  MDIO_ASSIGN_OR_RETURN(auto variableDataFuture, result.Read().result())
+  MDIO_ASSIGN_OR_RETURN(auto variableDataFuture, result.Read().result());
 
   // Create a 500x500 array with the data to write
   auto data = tensorstore::AllocateArray<int16_t>({500, 500});
@@ -1275,5 +1344,136 @@ TEST(VariableData, fromVariableFillTest) {
       << "Expected NaN filled array but got "
       << variableData.value().get_data_accessor().data()[0];
 }
+
+// ============================================================================
+// Parameterized Variable Tests for V2/V3
+// ============================================================================
+
+class VariableVersionTest
+    : public ::testing::TestWithParam<mdio::zarr::ZarrVersion> {
+ protected:
+  void SetUp() override {
+    version_ = GetParam();
+    base_path_ = GetBasePath(version_);
+    std::filesystem::remove_all(base_path_);
+  }
+
+  void TearDown() override { std::filesystem::remove_all(base_path_); }
+
+  mdio::zarr::ZarrVersion version_;
+  std::string base_path_;
+};
+
+TEST_P(VariableVersionTest, open) {
+  auto spec = CreateTestVariableSpec(version_, base_path_);
+  auto variable =
+      mdio::Variable<>::Open(spec, mdio::constants::kCreateClean).result();
+
+  ASSERT_TRUE(variable.ok()) << variable.status();
+
+  EXPECT_THAT(variable->dimensions().shape(), ::testing::ElementsAre(500, 500));
+  EXPECT_THAT(variable->dimensions().labels(),
+              ::testing::ElementsAre("x", "y"));
+  EXPECT_EQ(variable->dtype(), mdio::constants::kInt16);
+  EXPECT_EQ(variable->get_variable_name(), base_path_);
+  EXPECT_EQ(variable->get_long_name(), std::string("foooooo ....."));
+}
+
+TEST_P(VariableVersionTest, slice) {
+  auto spec = CreateTestVariableSpec(version_, base_path_);
+  auto variable =
+      mdio::Variable<>::Open(spec, mdio::constants::kCreateClean).value();
+
+  mdio::RangeDescriptor<mdio::Index> desc1 = {"x", 0, 5, 1};
+  mdio::RangeDescriptor<mdio::Index> desc2 = {"y", 5, 11, 1};
+
+  auto result = variable.slice(desc2, desc1);
+  ASSERT_TRUE(result.ok()) << result.status();
+
+  auto domain = result->dimensions();
+  EXPECT_THAT(domain.labels(), ::testing::ElementsAre("x", "y"));
+  EXPECT_THAT(domain.origin(), ::testing::ElementsAre(0, 5));
+  EXPECT_THAT(domain.shape(), ::testing::ElementsAre(5, 6));
+}
+
+TEST_P(VariableVersionTest, rank) {
+  auto spec = CreateTestVariableSpec(version_, base_path_);
+  auto variable = mdio::Variable<>::Open(spec, mdio::constants::kCreateClean);
+  ASSERT_TRUE(variable.status().ok()) << variable.status();
+  auto rank = variable.value().rank();
+  EXPECT_EQ(rank, 2);
+}
+
+TEST_P(VariableVersionTest, readWrite) {
+  auto spec = CreateTestVariableSpec(version_, base_path_);
+  auto variableRes =
+      mdio::Variable<>::Open(spec, mdio::constants::kCreateClean);
+  ASSERT_TRUE(variableRes.status().ok()) << variableRes.status();
+  auto variable = variableRes.value();
+
+  auto varDataRes = variable.Read();
+  ASSERT_TRUE(varDataRes.status().ok()) << varDataRes.status();
+  auto varData = varDataRes.value();
+
+  auto data = reinterpret_cast<int16_t*>(varData.get_data_accessor().data());
+  data[0] = 1234;
+  data[1] = 5678;
+
+  auto writeFut = variable.Write(varData);
+  ASSERT_TRUE(writeFut.status().ok()) << writeFut.status();
+
+  // Re-read and verify
+  auto rereadFut = variable.Read();
+  ASSERT_TRUE(rereadFut.status().ok()) << rereadFut.status();
+  auto rereadData = rereadFut.value();
+  auto rereadPtr =
+      reinterpret_cast<int16_t*>(rereadData.get_data_accessor().data());
+
+  EXPECT_EQ(rereadPtr[0], 1234);
+  EXPECT_EQ(rereadPtr[1], 5678);
+}
+
+TEST_P(VariableVersionTest, getIntervals) {
+  auto spec = CreateTestVariableSpec(version_, base_path_);
+  auto varRes = mdio::Variable<>::Open(spec, mdio::constants::kCreateClean);
+  ASSERT_TRUE(varRes.status().ok()) << varRes.status();
+  auto var = varRes.value();
+
+  auto intervalRes = var.get_intervals();
+  ASSERT_TRUE(intervalRes.status().ok()) << intervalRes.status();
+  auto intervals = intervalRes.value();
+  ASSERT_EQ(intervals.size(), 2);
+}
+
+TEST_P(VariableVersionTest, outOfBoundsSlice) {
+  auto spec = CreateTestVariableSpec(version_, base_path_);
+  auto var =
+      mdio::Variable<>::Open(spec, mdio::constants::kCreateClean).result();
+
+  ASSERT_TRUE(var.ok());
+  EXPECT_THAT(var->dimensions().shape(), ::testing::ElementsAre(500, 500));
+
+  mdio::RangeDescriptor<mdio::Index> x_inbounds = {"x", 100, 250, 1};
+  mdio::RangeDescriptor<mdio::Index> y_inbounds = {"y", 0, 500, 1};
+  mdio::RangeDescriptor<mdio::Index> x_outbounds = {"x", 250, 1000, 1};
+
+  auto inbounds = var.value().slice(x_inbounds, y_inbounds);
+  EXPECT_TRUE(inbounds.status().ok()) << inbounds.status();
+
+  auto outbounds = var.value().slice(x_outbounds, y_inbounds);
+  EXPECT_TRUE(outbounds.status().ok()) << outbounds.status();
+
+  auto badDomain = outbounds.value();
+  EXPECT_THAT(badDomain.dimensions().shape(), ::testing::ElementsAre(250, 500))
+      << badDomain.dimensions();
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ZarrVersions, VariableVersionTest,
+    ::testing::Values(mdio::zarr::ZarrVersion::kV2,
+                      mdio::zarr::ZarrVersion::kV3),
+    [](const ::testing::TestParamInfo<mdio::zarr::ZarrVersion>& info) {
+      return ZarrVersionToString(info.param);
+    });
 
 }  // namespace

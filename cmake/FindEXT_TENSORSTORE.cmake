@@ -3,11 +3,11 @@ IF ( NOT TARGET tensorstore )
 
  include(FetchContent)
 
- FetchContent_Declare(
-  tensorstore
-  GIT_REPOSITORY
-  https://github.com/brian-michell/tensorstore.git
-  GIT_TAG v0.1.63_latest
+FetchContent_Declare(
+ tensorstore
+ GIT_REPOSITORY
+ https://github.com/google/tensorstore.git
+ GIT_TAG 917edaf341217f750b7bd3b8db6e75e6db64eab8
 )
 
 FetchContent_MakeAvailable(tensorstore)

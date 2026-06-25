@@ -39,10 +39,15 @@ absl::Status Run(std::string dataset_path) {
 
   auto json_spec = XarrayExample();
 
+  // This example round-trips through Python's xarray, which reads the store via
+  // zarr-python 2.x (see pyproject.toml) using consolidated metadata. That is a
+  // Zarr V2 concept, so we pin this dataset to V2 explicitly. Bumping to V3
+  // would require zarr-python 3.x and a v3-capable xarray.
   MDIO_ASSIGN_OR_RETURN(auto dataset,
                         mdio::Dataset::from_json(json_spec, dataset_path,
+                                                 mdio::zarr::ZarrVersion::kV2,
                                                  mdio::constants::kCreateClean)
-                            .result())
+                            .result());
 
   auto populate_inline = [](SharedArray<uint32_t>& data) {
     for (auto i = data.domain()[0].inclusive_min();

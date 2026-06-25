@@ -15,7 +15,6 @@
 #ifndef MDIO_VARIABLE_H_
 #define MDIO_VARIABLE_H_
 
-#include <filesystem>
 #include <limits>
 #include <map>
 #include <memory>
@@ -29,10 +28,10 @@
 #include "absl/strings/str_split.h"
 #include "mdio/impl.h"
 #include "mdio/stats.h"
+#include "mdio/zarr/zarr.h"
 #include "tensorstore/array.h"
 #include "tensorstore/driver/driver.h"
 #include "tensorstore/driver/registry.h"
-#include "tensorstore/driver/zarr/dtype.h"
 #include "tensorstore/index_space/dim_expression.h"
 #include "tensorstore/index_space/index_domain_builder.h"
 #include "tensorstore/kvstore/kvstore.h"
@@ -41,6 +40,8 @@
 #include "tensorstore/stack.h"
 #include "tensorstore/tensorstore.h"
 #include "tensorstore/util/future.h"
+#include "tensorstore/util/option.h"
+#include "tensorstore/util/status.h"
 
 // clang-format off
 #include <nlohmann/json.hpp>  // NOLINT
@@ -245,10 +246,10 @@ inline absl::Status CheckMissingDriverStatus(const absl::Status& status) {
  * @brief Validates and processes a JSON specification for a tensorstore
  * variable.
  *
- * This function validates and processes the JSON specification for a zarr V2
- * tensorstore variable. It expects the JSON specification will have a field
- * called attributes that contains a field called dimension_names. This is a
- * specification of MDIO and is not specifically required by zarr V2
+ * This function validates and processes the JSON specification for a zarr
+ * tensorstore variable (V2 or V3). It expects the JSON specification will have
+ * a field called attributes that contains a field called dimension_names. This
+ * is a specification of MDIO and is not specifically required by zarr.
  *
  * @tparam Mode The read-write mode to use.
  * @param json_spec The JSON specification to validate and process.
@@ -274,16 +275,31 @@ Result<std::tuple<nlohmann::json, nlohmann::json>> ValidateAndProcessJson(
 
   nlohmann::json json_for_store = json_spec;
 
-  // remove attributes, the v2 store won't parse it.
+  // remove attributes, the store won't parse it.
   json_for_store.erase("attributes");
 
   // Create a new JSON and add the kvstore
   nlohmann::json new_json = json_spec["attributes"];
-  // update the variable name
-  new_json["variable_name"] =
-      std::filesystem::path(json_spec["kvstore"]["path"]).stem().string();
+  // update the variable name - extract last path component
+  std::string path = json_spec["kvstore"]["path"].get<std::string>();
+  // Remove trailing slashes
+  path = zarr::NormalizePath(path);
+  // Extract last component (variable name)
+  std::vector<std::string> path_parts = absl::StrSplit(path, '/');
+  new_json["variable_name"] = path_parts.empty() ? path : path_parts.back();
 
   return std::make_tuple(json_for_store, new_json);
+}
+
+/**
+ * @brief Gets the Zarr version from a JSON specification.
+ *
+ * @param json_spec The JSON specification.
+ * @return zarr::ZarrVersion The detected version.
+ */
+inline zarr::ZarrVersion GetZarrVersionFromSpec(
+    const nlohmann::json& json_spec) {
+  return zarr::GetVersionFromSpec(json_spec);
 }
 
 /**
@@ -393,10 +409,10 @@ Result<Variable<T, R, M>> from_json(
  * the created variable.
  */
 template <typename T = void, DimensionIndex R = dynamic_rank,
-          ReadWriteMode M = ReadWriteMode::dynamic, typename... Option>
+          ReadWriteMode M = ReadWriteMode::dynamic>
 Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
                                          const nlohmann::json& json_var,
-                                         Option&&... options) {
+                                         TransactionalOpenOptions&& options) {
   auto spec = tensorstore::MakeReadyFuture<::nlohmann::json>(json_var);
 
   // FIXME - add schematized validation of the variable.
@@ -410,73 +426,53 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
                         "Variable spec requires metadata");
   }
 
-  if (!json_spec["metadata"].contains("dtype")) {
-    return absl::Status(absl::StatusCode::kInvalidArgument,
-                        "Variable metadata requires dtype");
+  // Detect Zarr version early to handle dtype field differences
+  zarr::ZarrVersion zarr_version = zarr::GetVersionFromSpec(json_spec);
+
+  // Check for dtype (V2) or data_type (V3)
+  bool has_dtype = json_spec["metadata"].contains("dtype");
+  bool has_data_type = json_spec["metadata"].contains("data_type");
+
+  if (!has_dtype && !has_data_type) {
+    return absl::Status(
+        absl::StatusCode::kInvalidArgument,
+        "Variable metadata requires dtype (V2) or data_type (V3)");
   }
 
-  MDIO_ASSIGN_OR_RETURN(auto zarr_dtype, tensorstore::internal_zarr::ParseDType(
-                                             json_spec["metadata"]["dtype"]))
+  // Detect a structured (record) dtype so we can route create through the
+  // create-with-field-then-reopen-as-void flow (see the reopen step below).
+  bool do_handle_structarray = false;
+  std::string first_field_name;
+  if ((has_dtype || has_data_type) && !json_spec.contains("field")) {
+    auto field_names =
+        zarr::GetStructFieldNames(zarr_version, json_spec["metadata"]);
+    if (!field_names.empty()) {
+      do_handle_structarray = true;
+      first_field_name = field_names.front();
+    }
+  }
 
-  // Handles the use case of creating a struct array, but intending to open as
-  // void.
-  auto do_handle_structarray =
-      zarr_dtype.has_fields && !json_spec.contains("field");
-  auto json_spec_with_field = json_spec;
+  auto json_spec_with_open_flag = json_spec;
   if (do_handle_structarray) {
-    // pick the first name, it won't effect the .zarray json:
-    json_spec_with_field["field"] = zarr_dtype.fields[0].name;
+    // Create with a concrete field at the native rank; this still writes the
+    // full struct .zarray/zarr.json and does not alter it.
+    json_spec_with_open_flag["field"] = first_field_name;
   }
 
-  auto json_spec_without_metadata = json_spec;
-  json_spec_without_metadata.erase("metadata");
-  auto future_json_store = tensorstore::MakeReadyFuture<::nlohmann::json>(
-      json_spec_without_metadata);
+  // Extract context from the TransactionalOpenOptions directly
+  tensorstore::Context context = options.context;
+  tensorstore::OpenMode open_mode = options.open_mode;
 
-  auto publish = [](const ::nlohmann::json& json_var, bool isCloudStore,
-                    const tensorstore::TensorStore<T, R, M>& store)
+  auto publish = [zarr_version, context](
+                     const ::nlohmann::json& json_var, bool isCloudStore,
+                     const tensorstore::TensorStore<T, R, M>& store)
       -> Future<tensorstore::TimestampedStorageGeneration> {
-    auto output_json = json_var;
-    output_json["_ARRAY_DIMENSIONS"] = output_json["dimension_names"];
-    output_json.erase("dimension_names");
-    output_json.erase("variable_name");
-    if (output_json.contains("metadata")) {
-      output_json["metadata"].erase("chunkGrid");
-      for (auto& item : output_json["metadata"].items()) {
-        output_json[item.key()] = std::move(item.value());
-      }
-      output_json.erase("metadata");
+    // Use version-specific attribute writing
+    if (zarr_version == zarr::ZarrVersion::kV3) {
+      return zarr::v3::WriteVariableAttributes(store, json_var, isCloudStore);
+    } else {
+      return zarr::v2::WriteVariableAttributes(store, json_var, isCloudStore);
     }
-    if (output_json.contains("long_name")) {
-      if (output_json["long_name"] == "") {
-        output_json.erase("long_name");
-      }
-    }
-    // Case where empty array of coordinates is provided
-    if (output_json.contains("coordinates")) {
-      auto coords = output_json["coordinates"];
-      if (coords.empty() ||
-          (coords.is_string() && coords.get<std::string>() == "")) {
-        output_json.erase("coordinates");
-      }
-    }
-    std::string outpath = "/.zattrs";
-    if (isCloudStore) {
-      outpath = ".zattrs";
-    }
-    // It's important to use the store's kvstore or else we get a race condition
-    // on "mkdir".
-    return tensorstore::kvstore::Write(store.kvstore(), outpath,
-                                       absl::Cord(output_json.dump(4)));
-  };
-
-  // this is intended to handle the struct array where we "reopen" the store
-  // but this time as struct ... but we loose the capactity for forward options.
-  // FIXME - strip "create/delete existing" and foward other options.
-  auto apply_reopen = [](const tensorstore::TensorStore<T, R, M>& store,
-                         const ::nlohmann::json& attributes,
-                         const ::nlohmann::json& json_spec) {
-    return tensorstore::Open<T, R, M>(json_spec);
   };
 
   auto build = [](const ::nlohmann::json& metadata,
@@ -496,15 +492,28 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
     return from_json<T, R, M>(metadata, labeled_store);
   };
 
-  // Start by creating a future for the store ...
-  auto future_store = tensorstore::Open<T, R, M>(
-      json_spec_with_field, std::forward<Option>(options)...);
+  // Start by creating a future for the store with explicit context
+  auto future_store =
+      tensorstore::Open<T, R, M>(json_spec_with_open_flag, context, open_mode);
 
   auto handled_store = future_store;
   if (do_handle_structarray) {
-    handled_store =
-        tensorstore::MapFutureValue(tensorstore::InlineExecutor{}, apply_reopen,
-                                    future_store, spec, future_json_store);
+    // A structured array cannot be created through the open_as_void view: the
+    // void view is rank N+1 (it adds the trailing byte axis) while the on-disk
+    // struct is rank N, which trips a rank conflict on create. So we create
+    // with a concrete field (above) and then reopen the store as void to hand
+    // back the byte view.
+    auto reopen_spec = json_spec_with_open_flag;
+    reopen_spec.erase("metadata");
+    reopen_spec.erase("field");
+    reopen_spec["open_as_void"] = true;
+    auto reopen = [context, reopen_spec](
+                      const tensorstore::TensorStore<T, R, M>& /*created*/) {
+      return tensorstore::Open<T, R, M>(reopen_spec, context,
+                                        tensorstore::OpenMode::open);
+    };
+    handled_store = tensorstore::MapFutureValue(
+        tensorstore::InlineExecutor{}, std::move(reopen), future_store);
   } else {
     handled_store = std::move(future_store);
   }
@@ -542,6 +551,23 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
 }
 
 /**
+ * @brief Creates a Variable from a JSON specification (variadic options
+ * version). This overload accepts individual options and converts them to
+ * TransactionalOpenOptions.
+ */
+template <typename T = void, DimensionIndex R = dynamic_rank,
+          ReadWriteMode M = ReadWriteMode::dynamic, typename... Option>
+Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
+                                         const nlohmann::json& json_var,
+                                         Option&&... options) {
+  TransactionalOpenOptions transact_options;
+  TENSORSTORE_RETURN_IF_ERROR(tensorstore::internal::SetAll(
+      transact_options, std::forward<Option>(options)...));
+  return CreateVariable<T, R, M>(json_spec, json_var,
+                                 std::move(transact_options));
+}
+
+/**
  * @brief Opens a Variable from a JSON specification.
  * Provide an Open method for an existing file...
  * @tparam T The data type of the Variable.
@@ -553,9 +579,9 @@ Future<Variable<T, R, M>> CreateVariable(const nlohmann::json& json_spec,
  * Variable.
  */
 template <typename T = void, DimensionIndex R = dynamic_rank,
-          ReadWriteMode M = ReadWriteMode::dynamic, typename... Option>
+          ReadWriteMode M = ReadWriteMode::dynamic>
 Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
-                                       Option&&... options) {
+                                       TransactionalOpenOptions&& options) {
   // Infer the name from the path
   std::string variable_name = json_store["kvstore"]["path"].get<std::string>();
   std::vector<std::string> pathComponents = absl::StrSplit(variable_name, "/");
@@ -568,39 +594,71 @@ Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
     suppliedAttributes["attributes"] = store_spec["attributes"];
     store_spec.erase("attributes");
   }
-  // attributes is not a valid key for the tensorstore open ...
-  // FIXME - resolve opening struct array with field and no metadata
-  //         updates to Tensorstore required ...
+  // Detect a structured dtype up front (while metadata is still present) so we
+  // can open directly as void. The version detection + flag logic lives in the
+  // zarr abstraction layer. This is the fast path; specs that arrive without
+  // "metadata" are still handled by the open/fail/retry fallback below.
+  store_spec = zarr::PrepareStructuredOpenSpec(store_spec);
+  // tensorstore cannot open a struct array given both "metadata" and no
+  // "field", so drop metadata here (PrepareStructuredOpenSpec already consumed
+  // it above).
   if (!store_spec.contains("field") && store_spec.contains("metadata")) {
     store_spec.erase("metadata");
   }
-  // the negative of this is valid for tensorstore ...
 
   // TODO(BrianMichell): Look into making the recheck_cached_data an open
   // option. store_spec["recheck_cached_data"] = false;  // This could become
   // problematic if we are doing read/write operations.
 
+  // Extract context directly from TransactionalOpenOptions
+  tensorstore::Context context = options.context;
+  tensorstore::OpenMode open_mode = options.open_mode;
+
   auto spec = tensorstore::MakeReadyFuture<::nlohmann::json>(store_spec);
 
-  // open a store:
+  // open a store with explicit context for credentials
   auto future_store =
-      tensorstore::Open<T, R, M>(store_spec, std::forward<Option>(options)...);
+      tensorstore::Open<T, R, M>(store_spec, context, open_mode);
 
-  // start by creating a kvstore future ...
-  auto kvs_future = tensorstore::kvstore::Open(store_spec["kvstore"]);
+  // start by creating a kvstore future with context for credentials
+  auto kvs_future = tensorstore::kvstore::Open(store_spec["kvstore"], context);
+
+  // Detect Zarr version from the store spec
+  zarr::ZarrVersion zarr_version = zarr::GetVersionFromSpec(store_spec);
 
   // go read the metadata return json ...
-  auto read = [](const tensorstore::KvStore& kvstore)
+  auto read = [zarr_version](const tensorstore::KvStore& kvstore)
       -> Future<tensorstore::kvstore::ReadResult> {
-    return tensorstore::kvstore::Read(kvstore, "/.zattrs");
+    if (zarr_version == zarr::ZarrVersion::kV3) {
+      // For V3, attributes are in zarr.json
+      return tensorstore::kvstore::Read(kvstore, "/zarr.json");
+    } else {
+      // For V2, attributes are in .zattrs
+      return tensorstore::kvstore::Read(kvstore, "/.zattrs");
+    }
   };
 
   // go read the attributes return json ...
-  auto parse = [](const tensorstore::kvstore::ReadResult& kvs_read,
-                  const ::nlohmann::json& spec) {
-    auto attributes =
+  auto parse = [zarr_version](const tensorstore::kvstore::ReadResult& kvs_read,
+                              const ::nlohmann::json& spec) {
+    auto parsed =
         nlohmann::json::parse(std::string(kvs_read.value), nullptr, false);
-    return attributes;
+    if (zarr_version == zarr::ZarrVersion::kV3) {
+      // For V3, extract attributes from zarr.json
+      nlohmann::json result;
+      if (parsed.contains("attributes")) {
+        result = parsed["attributes"];
+      } else {
+        result = nlohmann::json::object();
+      }
+      // For V3, dimension_names is at the root level of zarr.json
+      if (parsed.contains("dimension_names")) {
+        result["dimension_names"] = parsed["dimension_names"];
+      }
+      return result;
+    }
+    // For V2, the entire file is attributes
+    return parsed;
   };
 
   auto make_variable = [variable_name](
@@ -707,9 +765,43 @@ Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
   auto metadata = tensorstore::MapFutureValue(tensorstore::InlineExecutor{},
                                               parse, kvs_read_future, spec);
 
+  // Fallback for structured Variables whose spec arrives without "metadata"
+  // (e.g. path-based Dataset::Open or Dataset::SelectField, which build a spec
+  // of just driver + kvstore). In that case PrepareStructuredOpenSpec above
+  // cannot detect the struct, so the driver fails asking for a "field"; retry
+  // once with open_as_void set.
+  if (!future_store.status().ok()) {
+    std::string status_message = future_store.status().ToString();
+    if (status_message.find("Must specify a \"field\"") != std::string::npos &&
+        !store_spec.contains("open_as_void")) {
+      auto cpy = json_store;
+      cpy["open_as_void"] = true;
+      // Reconstruct options for the recursive call
+      TransactionalOpenOptions retry_options;
+      retry_options.context = context;
+      retry_options.open_mode = open_mode;
+      return OpenVariable<T, R, M>(cpy, std::move(retry_options));
+    }
+  }
+
   return tensorstore::MapFutureValue(
       tensorstore::InlineExecutor{}, make_variable, metadata, future_store,
       tensorstore::MakeReadyFuture<::nlohmann::json>(suppliedAttributes));
+}
+
+/**
+ * @brief Opens a Variable from a JSON specification (variadic options version).
+ * This overload accepts individual options and converts them to
+ * TransactionalOpenOptions.
+ */
+template <typename T = void, DimensionIndex R = dynamic_rank,
+          ReadWriteMode M = ReadWriteMode::dynamic, typename... Option>
+Future<Variable<T, R, M>> OpenVariable(const nlohmann::json& json_store,
+                                       Option&&... options) {
+  TransactionalOpenOptions transact_options;
+  TENSORSTORE_RETURN_IF_ERROR(tensorstore::internal::SetAll(
+      transact_options, std::forward<Option>(options)...));
+  return OpenVariable<T, R, M>(json_store, std::move(transact_options));
 }
 
 /**
@@ -729,7 +821,7 @@ Future<Variable<T, R, M>> Open(const nlohmann::json& json_spec,
   // situations where we would create new metadata
   if (options.open_mode == constants::kCreateClean ||
       options.open_mode == constants::kCreate) {
-    MDIO_ASSIGN_OR_RETURN(auto json_schema, ValidateAndProcessJson(json_spec))
+    MDIO_ASSIGN_OR_RETURN(auto json_schema, ValidateAndProcessJson(json_spec));
     // extract the json for the store and our metadata
     auto [json_store, metadata] = json_schema;
     // this will write metadata
@@ -739,6 +831,171 @@ Future<Variable<T, R, M>> Open(const nlohmann::json& json_spec,
   }
 }
 }  // namespace internal
+
+/**
+ * @brief Shared metadata and user-attribute machinery for Variable-like types.
+ *
+ * Holds the variable identity (name, long name), the raw metadata JSON, and the
+ * mutable UserAttributes together with the change-tracking and publish-flag
+ * bookkeeping that both `Variable` and `HeaderVariable` rely on. Storage and
+ * I/O are deliberately left to the derived classes, since a regular Variable is
+ * backed by a TensorStore while a metadata-only header variable is not.
+ *
+ * This is a non-template base because none of this state depends on the
+ * element type, rank, or read-write mode of the derived class.
+ */
+class VariableBase {
+ public:
+  VariableBase() = default;
+
+  VariableBase(std::string variableName, std::string longName,
+               ::nlohmann::json metadata,
+               std::shared_ptr<std::shared_ptr<UserAttributes>> attributes)
+      : attributes(std::move(attributes)),
+        variableName(std::move(variableName)),
+        longName(std::move(longName)),
+        metadata(std::move(metadata)) {
+    if (this->attributes && *this->attributes) {
+      attributesAddress =
+          reinterpret_cast<std::uintptr_t>(&(**this->attributes));
+    }
+  }
+
+  /**
+   * @brief Gets the name of the variable.
+   */
+  const std::string& get_variable_name() const { return variableName; }
+
+  /**
+   * @brief Gets the long name of the variable.
+   */
+  const std::string& get_long_name() const { return longName; }
+
+  /**
+   * @brief Attempts to safely update the user attributes.
+   * @tparam T_attrs The optional histogram type. Must be either int32_t or
+   * float (Default: float).
+   * NOTE: This does not commit changes to durable media. See the Dataset
+   * CommitMetadata method to persist changes.
+   */
+  template <typename T_attrs = float>
+  Result<void> UpdateAttributes(const nlohmann::json& newAttrs) {
+    auto res = (*attributes)->template FromJson<T_attrs>(newAttrs);
+    if (res.status().ok()) {
+      // Create a new UserAttributes object and update the inner std::shared_ptr
+      *attributes = std::make_shared<UserAttributes>(res.value());
+    }
+    return res;
+  }
+
+  /**
+   * @brief Gets the User Attributes as a JSON object.
+   * Returned object is expected to have a parent key of "attributes".
+   */
+  nlohmann::json GetAttributes() const { return (*attributes)->ToJson(); }
+
+  /**
+   * @brief Gets the entire metadata of the variable.
+   */
+  nlohmann::json getMetadata() const {
+    auto ret = getReducedMetadata();
+    auto attrs = GetAttributes();
+    if (attrs.is_object() && !attrs.empty()) {
+      if (!ret.contains("metadata")) {
+        ret["metadata"] = nlohmann::json::object();
+      }
+      ret["metadata"].merge_patch(attrs);
+    }
+    return ret;
+  }
+
+  /**
+   * @brief A reduced version of the metadata lacking the mutable
+   * UserAttributes. Intended primarily for internal use.
+   */
+  const nlohmann::json getReducedMetadata() const {
+    nlohmann::json ret = metadata;
+    ret["long_name"] = longName;
+    return metadata;
+  }
+
+  /**
+   * @brief Checks if the User Attributes have changed since construction.
+   */
+  const bool was_updated() const {
+    // We need a double dereference to get the address of the underlying object
+    // This works because the UserAttributes object is immutable and can only be
+    // replaced.
+    std::uintptr_t currentAddress =
+        reinterpret_cast<std::uintptr_t>(&(**attributes));
+    return attributesAddress != currentAddress;
+  }
+
+  /**
+   * @brief Sets the flag whether the metadata should get republished.
+   * Intended for internal use with the trimming utility.
+   */
+  void set_metadata_publish_flag(const bool shouldPublish) {
+    if (!toPublish) {
+      // This should never be the case, but better safe than sorry
+      toPublish = std::make_shared<std::shared_ptr<bool>>(
+          std::make_shared<bool>(shouldPublish));
+    } else {
+      *toPublish = std::make_shared<bool>(shouldPublish);
+    }
+  }
+
+  /**
+   * @brief Gets whether the metadata should get republished.
+   */
+  bool should_publish() const {
+    if (toPublish && *toPublish) {
+      // Deref the shared_ptr so we're not increasing refcount
+      return **toPublish;
+    }
+    // If the flag was a nullptr, err on the side of caution and republish
+    return true;
+  }
+
+  /**
+   * @brief Gets the original address of the User Attributes.
+   * This method should NEVER be called by the user. It allows for the copy
+   * constructor without re-serializing metadata.
+   */
+  const std::uintptr_t get_attributes_address() const {
+    return attributesAddress;
+  }
+
+  // The data that should remain static, but MAY need to be updated.
+  std::shared_ptr<std::shared_ptr<UserAttributes>> attributes;
+
+ protected:
+  /**
+   * This method should NEVER be called by the user.
+   * Intended to be called as a callback by the Dataset CommitMetadata method
+   * after the updated data is committed to durable media.
+   */
+  void _dataset_only_callback_committed() {
+    // We only want to update the address if the UserAttributes object has
+    // changed location. This indicates a new UserAttributes object has taken
+    // the place of the existing one.
+    if (attributes.get() != nullptr && attributes->get() != nullptr) {
+      attributesAddress = reinterpret_cast<std::uintptr_t>(&(**attributes));
+    }
+  }
+
+  // An identifier for the variable
+  std::string variableName;
+  // optional, default to name
+  std::string longName;
+  // other metadata
+  ::nlohmann::json metadata;
+  // The address of the attributes. This MUST NEVER be touched by the user.
+  std::uintptr_t attributesAddress = 0;
+  // The metadata will need to be updated if the trim util was used on it.
+  std::shared_ptr<std::shared_ptr<bool>> toPublish =
+      std::make_shared<std::shared_ptr<bool>>(std::make_shared<bool>(false));
+};
 
 /**
  * @brief A templated struct representing an MDIO Variable with a tensorstore.
@@ -756,7 +1013,7 @@ Future<Variable<T, R, M>> Open(const nlohmann::json& json_spec,
  */
 template <typename T = void, DimensionIndex R = dynamic_rank,
           ReadWriteMode M = ReadWriteMode::dynamic>
-class Variable {
+class Variable : public VariableBase {
  public:
   Variable() = default;
 
@@ -764,28 +1021,20 @@ class Variable {
            const ::nlohmann::json& metdata,
            const tensorstore::TensorStore<T, R, M>& store,
            const std::shared_ptr<std::shared_ptr<UserAttributes>> attributes)
-      : variableName(variableName),
-        longName(longName),
-        metadata(metdata),
-        store(store),
-        attributes(attributes) {
-    attributesAddress = reinterpret_cast<std::uintptr_t>((*attributes).get());
-  }
+      : VariableBase(variableName, longName, metdata, attributes),
+        store(store) {}
 
   // Allows for conversion to compatible types (SourceElement), which should
   // always be possible to void.
   template <typename SourceElement, DimensionIndex SourceRank,
             ReadWriteMode SourceMode>
   Variable(const Variable<SourceElement, SourceRank, SourceMode>& other)
-      : variableName(other.get_variable_name()),
-        longName(other.get_long_name()),
-        metadata(other.getReducedMetadata()),
-        store(other.get_store()),
-        attributes(other.attributes),
-        attributesAddress(other.get_attributes_address()) {}
+      : VariableBase(other.get_variable_name(), other.get_long_name(),
+                     other.getReducedMetadata(), other.attributes),
+        store(other.get_store()) {}
 
   friend std::ostream& operator<<(std::ostream& os, const Variable& obj) {
-    os << obj.variableName << "\t" << obj.dimensions() << "\n";
+    os << obj.get_variable_name() << "\t" << obj.dimensions() << "\n";
     os << obj.store.dtype() << "\t" << obj.store.rank();
     return os;
   }
@@ -809,8 +1058,9 @@ class Variable {
                               TransactionalOpenOptions, Option...>),
                           Future<Variable<T, R, M>>>
   Open(const nlohmann::json& json_spec, Option&&... option) {
-    TENSORSTORE_INTERNAL_ASSIGN_OPTIONS_OR_RETURN(TransactionalOpenOptions,
-                                                  options, option)
+    TransactionalOpenOptions options;
+    TENSORSTORE_RETURN_IF_ERROR(tensorstore::internal::SetAll(
+        options, std::forward<Option>(option)...));
     return mdio::internal::Open<T, R, M>(json_spec, std::move(options));
   }
 
@@ -1190,15 +1440,44 @@ class Variable {
     if (!json.contains("metadata")) {
       return absl::NotFoundError("Metadata did not contain key 'metadata'.");
     }
-    if (!json["metadata"].contains("chunks")) {
-      return absl::NotFoundError(
-          "Metadata['attributes'] did not contain key 'chunks'.");
+    const auto& metadata = json["metadata"];
+
+    auto parse_chunk_array =
+        [](const nlohmann::json& chunk_json) -> Result<std::vector<int64_t>> {
+      if (!chunk_json.is_array()) {
+        return absl::InvalidArgumentError("Chunk shape must be an array.");
+      }
+      return chunk_json.get<std::vector<int64_t>>();  // NOLINT
+    };
+
+    if (metadata.contains("chunks")) {
+      return parse_chunk_array(metadata["chunks"]);
     }
-    if (!json["metadata"]["chunks"].is_array()) {
-      return absl::InvalidArgumentError("Metadata['chunks'] is not an array.");
+
+    // Zarr v3 chunk grid configuration uses chunk_shape (or chunkShape).
+    if (metadata.contains("chunk_grid") &&
+        metadata["chunk_grid"].contains("configuration")) {
+      const auto& config = metadata["chunk_grid"]["configuration"];
+      if (config.contains("chunk_shape")) {
+        return parse_chunk_array(config["chunk_shape"]);
+      }
+      if (config.contains("chunkShape")) {
+        return parse_chunk_array(config["chunkShape"]);
+      }
     }
-    return json["metadata"]["chunks"]
-        .get<std::vector<long int>>();  // NOLINT: Tensorstore convention
+
+    if (metadata.contains("chunkGrid") &&
+        metadata["chunkGrid"].contains("configuration")) {
+      const auto& config = metadata["chunkGrid"]["configuration"];
+      if (config.contains("chunk_shape")) {
+        return parse_chunk_array(config["chunk_shape"]);
+      }
+      if (config.contains("chunkShape")) {
+        return parse_chunk_array(config["chunkShape"]);
+      }
+    }
+
+    return absl::NotFoundError("Metadata did not contain chunk shape.");
   }
 
   /**
@@ -1228,128 +1507,110 @@ class Variable {
   }
 
   /**
-   * @brief Publishes new ".zattrs" metadata to the Variable's durable storage.
+   * @brief Publishes updated attribute metadata to the Variable's durable
+   * storage.
+   * For Zarr V2 the attributes are written to a standalone `.zattrs` file. For
+   * Zarr V3 the attributes live inside the array's `zarr.json`, so the existing
+   * `zarr.json` is read, its `attributes` object is replaced, and the full
+   * document is written back (read-modify-write) to preserve the array's other
+   * metadata (codecs, shape, fill value, etc).
    * This method should not be called independantly as it will result in a
    * mismatch between the Variable metadata and Dataset metadata
    * @return A future representing the timestamped storage generation of the
    * updated Variable.
    */
   Future<tensorstore::TimestampedStorageGeneration> PublishMetadata() {
-    auto publish = [](const ::nlohmann::json& json_var, bool isCloudStore,
-                      const tensorstore::TensorStore<T, R, M>& store)
-        -> Future<tensorstore::TimestampedStorageGeneration> {
-      auto output_json = json_var;
-
-      output_json["attributes"]["_ARRAY_DIMENSIONS"] =
-          output_json["dimension_names"];
-      output_json.erase("dimension_names");
-      if (output_json.contains("long_name")) {
-        output_json["attributes"]["long_name"] = output_json["long_name"];
-        output_json.erase("long_name");
-      }
-      if (output_json.contains("coordinates")) {
-        output_json["attributes"]["coordinates"] = output_json["coordinates"];
-        output_json.erase("coordinates");
-      }
-      std::string outpath = "/.zattrs";
-      if (isCloudStore) {
-        outpath = ".zattrs";
-      }
-
-      if (output_json.contains("metadata")) {
-        output_json["attributes"]["metadata"] = output_json["metadata"];
-        output_json.erase("metadata");
-      }
-
-      return tensorstore::kvstore::Write(
-          store.kvstore(), outpath,
-          absl::Cord(output_json["attributes"].dump(4)));
-    };
-
-    bool isCloudStore = false;
-    // TODO(BrianMichell): Make more error tolerant
     auto json_spec = store.spec().value().ToJson(IncludeDefaults{}).value();
-    auto driver = json_spec["kvstore"]["driver"];
-    if (driver == "gcs" || driver == "s3") {
-      isCloudStore = true;
+    zarr::ZarrVersion zarr_version = zarr::GetVersionFromSpec(json_spec);
+
+    // Build the attributes object from the in-memory variable metadata. The
+    // on-disk layout differs by Zarr version: V2 nests the mdio metadata under
+    // an "metadata" key, while V3 flattens those fields directly under
+    // "attributes" (chunkGrid is represented natively as "chunk_grid").
+    ::nlohmann::json output_json = this->getMetadata();
+    output_json["attributes"]["_ARRAY_DIMENSIONS"] =
+        output_json["dimension_names"];
+    output_json.erase("dimension_names");
+    if (output_json.contains("long_name")) {
+      output_json["attributes"]["long_name"] = output_json["long_name"];
+      output_json.erase("long_name");
     }
-    auto isCloudStoreRF = tensorstore::MakeReadyFuture<bool>(isCloudStore);
-    auto metadataRF =
-        tensorstore::MakeReadyFuture<::nlohmann::json>(this->getMetadata());
-    auto storeRF =
-        tensorstore::MakeReadyFuture<tensorstore::TensorStore<T, R, M>>(store);
-    auto write_metadata_future =
-        tensorstore::MapFutureValue(tensorstore::InlineExecutor{}, publish,
-                                    metadataRF, isCloudStoreRF, storeRF);
+    if (output_json.contains("coordinates")) {
+      output_json["attributes"]["coordinates"] = output_json["coordinates"];
+      output_json.erase("coordinates");
+    }
+    if (output_json.contains("metadata")) {
+      if (zarr_version == zarr::ZarrVersion::kV3) {
+        for (auto& item : output_json["metadata"].items()) {
+          if (item.key() == "chunkGrid") {
+            continue;  // Represented natively as zarr.json "chunk_grid".
+          }
+          output_json["attributes"][item.key()] = item.value();
+        }
+      } else {
+        output_json["attributes"]["metadata"] = output_json["metadata"];
+      }
+      output_json.erase("metadata");
+    }
+    ::nlohmann::json attributes = output_json["attributes"];
+
     auto pair = tensorstore::PromiseFuturePair<
         tensorstore::TimestampedStorageGeneration>::Make();
-    write_metadata_future.ExecuteWhenReady(
-        [this, promise = std::move(pair.promise)](
-            tensorstore::ReadyFuture<tensorstore::TimestampedStorageGeneration>
-                readyFut) {
-          auto ready_result = readyFut.result();
-          if (!ready_result.ok()) {
-            promise.SetResult(ready_result.status());
-          } else {
-            _dataset_only_callback_committed();
-            promise.SetResult(ready_result.value());
-          }
-        });
-    // return write_metadata_future;
-    return pair.future;
-  }
 
-  /**
-   * @brief Attempts to safely update the user attributes of a Variable
-   * (["metadata"]["attributes"] and/or ["metadata"]["statsV1"]).
-   * @tparam T_attrs The optional type of the histogram. Must be either int32_t
-   * or float (Default: float)
-   * @param newAttrs The JSON representation of a UserAttribute.
-   * @return An OK status if the attributes were successfully updated, otherwise
-   * an error and the attributes remain unchanged.
-   * @details \b Intended_Usage
-   * @code
-   * // Status check ignored for brevity
-   * auto var = my_dataset.variables.at("my_variable_key").value();
-   * nlohmann::json to_update = var.GetAttributes();
-   * to_update["attributes"]["new_attr"] = "new_value";
-   * std::vector<int32_t> binCenters;
-   * // Populate with your data as needed
-   * to_update["statsV1"]["histogram"]["binCenters"] = binCenters;
-   * // NOTE: The vector is of type int32_t. We must pass the type as a
-   * template argument.
-   * auto update_result = var.UpdateAttributes<int32_t>(to_update);
-   * if (!update_result.status().ok()) {
-   *      // In this case nothing will happen. We output an error and move on
-   *      // with what previously existed.
-   *      std::cerr << "Failed to update attributes: " <<
-   *      update_result.status() << std::endl;
-   * }
-   * @endcode
-   * NOTE: This does not commit changes to durable media.
-   * Please see CommitMetadata method in the Dataset to commit changes.
-   */
-  template <typename T_attrs = float>
-  Result<void> UpdateAttributes(const nlohmann::json& newAttrs) {
-    auto res = (*attributes)->template FromJson<T_attrs>(newAttrs);
-    if (res.status().ok()) {
-      // Create a new UserAttributes object and update the inner std::shared_ptr
-      *attributes = std::make_shared<UserAttributes>(res.value());
+    if (zarr_version == zarr::ZarrVersion::kV3) {
+      auto kvstore = store.kvstore();
+      auto read_future = tensorstore::kvstore::Read(kvstore, "zarr.json");
+      read_future.ExecuteWhenReady(
+          [this, kvstore, attributes, promise = std::move(pair.promise)](
+              tensorstore::ReadyFuture<tensorstore::kvstore::ReadResult>
+                  readyRead) mutable {
+            auto read_result = readyRead.result();
+            if (!read_result.ok()) {
+              promise.SetResult(read_result.status());
+              return;
+            }
+            ::nlohmann::json zarr_json = ::nlohmann::json::parse(
+                std::string(read_result.value().value), nullptr, false);
+            if (zarr_json.is_discarded()) {
+              promise.SetResult(absl::InternalError(
+                  "Failed to parse zarr.json while publishing metadata."));
+              return;
+            }
+            zarr_json["attributes"] = attributes;
+            auto write_future = tensorstore::kvstore::Write(
+                kvstore, "zarr.json", absl::Cord(zarr_json.dump(4)));
+            write_future.ExecuteWhenReady(
+                [this, promise = std::move(promise)](
+                    tensorstore::ReadyFuture<
+                        tensorstore::TimestampedStorageGeneration>
+                        readyWrite) mutable {
+                  auto write_result = readyWrite.result();
+                  if (!write_result.ok()) {
+                    promise.SetResult(write_result.status());
+                  } else {
+                    _dataset_only_callback_committed();
+                    promise.SetResult(write_result.value());
+                  }
+                });
+          });
+    } else {
+      auto write_future = tensorstore::kvstore::Write(
+          store.kvstore(), ".zattrs", absl::Cord(attributes.dump(4)));
+      write_future.ExecuteWhenReady(
+          [this, promise = std::move(pair.promise)](
+              tensorstore::ReadyFuture<
+                  tensorstore::TimestampedStorageGeneration>
+                  readyWrite) mutable {
+            auto write_result = readyWrite.result();
+            if (!write_result.ok()) {
+              promise.SetResult(write_result.status());
+            } else {
+              _dataset_only_callback_committed();
+              promise.SetResult(write_result.value());
+            }
+          });
     }
-    return res;
-  }
-
-  /**
-   * @brief Gets the User Attributes of the Variable as a JSON object.
-   * Returned object is expected to have a parent key of "attributes".
-   * This is expected to be the exact copy of the attributes field.
-   * @see
-   * https://mdio-python.readthedocs.io/en/v1/data_models/version_1.html#mdio.schema.v1.variable.VariableMetadata.attributes
-   * @return The User Attributes in JSON form.
-   */
-  nlohmann::json GetAttributes() const {
-    // Dereference the outer std::shared_ptr to get the inner std::shared_ptr
-    return (*attributes)->ToJson();
+    return pair.future;
   }
 
   Result<nlohmann::json> get_units() const {
@@ -1362,66 +1623,6 @@ class Variable {
 
     // Return an error if the units do not exist.
     return absl::InvalidArgumentError("This Variable does not contain units");
-  }
-
-  /**
-   * @brief Gets the entire metadata of the Variable.
-   * Returned object is expected to have a parent key of "metadata".
-   * @return The metadata in JSON form
-   */
-  nlohmann::json getMetadata() const {
-    auto ret = getReducedMetadata();
-    auto attrs = GetAttributes();
-    // Check for not being a `nlohmann::json::object()`
-    if (attrs.is_object() && !attrs.empty()) {
-      if (!ret.contains("metadata")) {
-        ret["metadata"] = nlohmann::json::object();
-      }
-      ret["metadata"].merge_patch(attrs);
-    }
-    return ret;
-  }
-
-  /**
-   * @brief A reduced version of the metadata
-   * NOTE: This may only be useful for internal uses. See `getMetadata()` for
-   * the full metadata. This version should lack the mutable UserAttributes
-   * portions, if they exist.
-   * @return The reduced metadata in JSON form
-   */
-  const nlohmann::json getReducedMetadata() const {
-    nlohmann::json ret = metadata;
-    ret["long_name"] = longName;
-    return metadata;
-  }
-
-  /**
-   * @brief Checks if the User Attributes has changed in the Variable.
-   * @return true if the User Attributes has changed, false otherwise.
-   */
-  const bool was_updated() const {
-    // We need a double dereference to get the address of the underlying object
-    // This works because the UserAttributes object is immutable and can only be
-    // replaced.
-    std::uintptr_t currentAddress =
-        reinterpret_cast<std::uintptr_t>(&(**attributes));
-    return attributesAddress != currentAddress;
-  }
-
-  /**
-   * @brief Sets the flag whether the metadata should get republished.
-   * Intended for internal use with the trimming utility.
-   *
-   * @param shouldPublish True if the metadata should get republished.
-   */
-  void set_metadata_publish_flag(const bool shouldPublish) {
-    if (!toPublish) {
-      // This should never be the case, but better safe than sorry
-      toPublish = std::make_shared<std::shared_ptr<bool>>(
-          std::make_shared<bool>(shouldPublish));
-    } else {
-      *toPublish = std::make_shared<bool>(shouldPublish);
-    }
   }
 
   /**
@@ -1498,18 +1699,6 @@ class Variable {
 
   // ===========================Member data getters===========================
   /**
-   * @brief Gets the name of the variable.
-   * @return The name of the variable.
-   */
-  const std::string& get_variable_name() const { return variableName; }
-
-  /**
-   * @brief Gets the long name of the variable.
-   * @return The long name of the variable.
-   */
-  const std::string& get_long_name() const { return longName; }
-
-  /**
    * @brief Gets the underlying tensorstore of the variable.
    * @return The tensorstore of the variable.
    */
@@ -1521,66 +1710,9 @@ class Variable {
     store = new_store;
   }
 
-  // The data that should remain static, but MAY need to be updated.
-  std::shared_ptr<std::shared_ptr<UserAttributes>> attributes;
-
-  /**
-   * @brief Gets the original address of the User Attributes.
-   * This method should NEVER be called by the user.
-   * It allows for the copy constructor without re-serializing metadata.
-   * @return The original address of the User Attributes.
-   */
-  const std::uintptr_t get_attributes_address() const {
-    return attributesAddress;
-  }
-
-  /**
-   * @brief Gets whether the metadata should get republished.
-   *
-   * @return True if the metadata should get republished.
-   */
-  bool should_publish() const {
-    if (toPublish && *toPublish) {
-      // Deref the shared_ptr so we're not increasing refcount
-      return **toPublish;
-    }
-    // If the flag was a nullptr, err on the side of caution and republish
-    return true;
-  }
-
  private:
-  /**
-   * This method should NEVER be called by the user.
-   * This method is intended to be called as a callback by the Dataset
-   * CommitMetadata method after the updated data is committed to durable media.
-   * @brief Updates the current address of the User Attributes.
-   */
-  void _dataset_only_callback_committed() {
-    // We only want to update the address if the UserAttributes object has
-    // changed location This indicates a new UserAttributes object has taken the
-    // place of the existing one.
-    if (attributes.get() != nullptr && attributes->get() != nullptr) {
-      std::uintptr_t newAddress =
-          reinterpret_cast<std::uintptr_t>(&(**attributes));
-      attributesAddress = newAddress;
-    }
-    // It is fine that this will only change in the "collection" instance of the
-    // Variable, because that is the only one that will be operated on by the
-    // Dataset commit
-  }
-  // An identifier for the variable
-  std::string variableName;
-  // optional, default to name
-  std::string longName;
-  // other metadata
-  ::nlohmann::json metadata;
   // delegate the I/O to the tensorstore
   tensorstore::TensorStore<T, R, M> store;
-  // The address of the attributes. This MUST NEVER be touched by the user.
-  std::uintptr_t attributesAddress;
-  // The metadata will need to be updated if the trim util was used on it.
-  std::shared_ptr<std::shared_ptr<bool>> toPublish =
-      std::make_shared<std::shared_ptr<bool>>(std::make_shared<bool>(false));
 };
 
 // Tensorstore Array's don't have an IndexDomain and so they can't be slice with
@@ -1853,7 +1985,7 @@ Result<VariableData<T, R, OriginKind>> from_variable(
   // templated. this can fail if the types are inconsistent, at which point it
   // will return with a status.
   MDIO_ASSIGN_OR_RETURN(auto array,
-                        tensorstore::StaticDataTypeCast<T>(std::move(_array)))
+                        tensorstore::StaticDataTypeCast<T>(std::move(_array)));
 
   auto labeled_array = LabeledArray<T, R, OriginKind>{domain, std::move(array)};
 

@@ -15,16 +15,48 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "absl/log/globals.h"
+#include "absl/log/initialize.h"
 #include "mdio/dataset.h"
+#include "mdio/zarr/zarr.h"
 
 namespace {
+
+// Initialize Abseil logging before tests run to suppress verbose AWS logs
+struct AbslLogInit {
+  AbslLogInit() {
+    absl::InitializeLog();
+    // kError = show only errors, kInfinity = suppress all logs
+    absl::SetStderrThreshold(absl::LogSeverityAtLeast::kInfinity);
+  }
+};
+static AbslLogInit absl_log_init;
 
 // TODO(End user): User should point to their own S3 bucket here.
 // You may find the test dataset at: TODO: Upload the test dataset to a public
 // object store
 /*NOLINT*/ std::string const S3_PATH = "s3://USER_BUCKET";
 
-/*NOLINT*/ std::string const fullToyManifest = R"(
+/**
+ * @brief Returns a string representation of the Zarr version for naming.
+ */
+std::string ZarrVersionToString(mdio::zarr::ZarrVersion version) {
+  return version == mdio::zarr::ZarrVersion::kV3 ? "V3" : "V2";
+}
+
+/**
+ * @brief Returns the S3 path suffix for test data based on Zarr version.
+ */
+std::string GetS3PathSuffix(mdio::zarr::ZarrVersion version) {
+  return version == mdio::zarr::ZarrVersion::kV3 ? "/test_v3" : "/test_v2";
+}
+
+/**
+ * @brief Returns a manifest exercising both scalar and struct-array variables.
+ * Both V2 and V3 support the struct array (image_headers).
+ */
+std::string GetSimpleManifest() {
+  return R"(
 {
     "metadata": {
         "name": "campos_3d",
@@ -156,38 +188,61 @@ namespace {
     }]
 }
 )";
+}
 
-TEST(S3, create) {
+// ============================================================================
+// Parameterized S3 Tests for V2/V3
+// ============================================================================
+
+class S3VersionTest : public ::testing::TestWithParam<mdio::zarr::ZarrVersion> {
+ protected:
+  void SetUp() override {
+    version_ = GetParam();
+    test_path_ = S3_PATH + GetS3PathSuffix(version_);
+  }
+
+  mdio::zarr::ZarrVersion version_;
+  std::string test_path_;
+};
+
+TEST_P(S3VersionTest, create) {
   if (S3_PATH == "s3://USER_BUCKET") {
     GTEST_SKIP() << "Please set the S3_PATH to your own bucket in the "
                     "s3_test.cc file.";
   }
-  nlohmann::json j = nlohmann::json::parse(fullToyManifest);
-  auto dataset =
-      mdio::Dataset::from_json(j, S3_PATH, mdio::constants::kCreateClean);
+  nlohmann::json j = nlohmann::json::parse(GetSimpleManifest());
+  auto dataset = mdio::Dataset::from_json(j, test_path_, version_,
+                                          mdio::constants::kCreateClean);
   EXPECT_TRUE(dataset.status().ok()) << dataset.status();
 }
 
-TEST(S3, open) {
+TEST_P(S3VersionTest, open) {
   if (S3_PATH == "s3://USER_BUCKET") {
     GTEST_SKIP() << "Please set the S3_PATH to your own bucket in the "
                     "s3_test.cc file.";
   }
-  nlohmann::json j = nlohmann::json::parse(fullToyManifest);
-  auto dataset = mdio::Dataset::Open(S3_PATH, mdio::constants::kOpen);
-  EXPECT_TRUE(dataset.status().ok())
-      << dataset.status();  // TODO(BrianMichell): How will timeouts work with
-                            // this? Can we simulate it or make it excessively
-                            // short to force one?
+  // First create the dataset
+  nlohmann::json j = nlohmann::json::parse(GetSimpleManifest());
+  auto createRes = mdio::Dataset::from_json(j, test_path_, version_,
+                                            mdio::constants::kCreateClean);
+  ASSERT_TRUE(createRes.status().ok()) << createRes.status();
+
+  // Then open it
+  auto dataset = mdio::Dataset::Open(test_path_, mdio::constants::kOpen);
+  EXPECT_TRUE(dataset.status().ok()) << dataset.status();
 }
 
-TEST(S3, write) {
+TEST_P(S3VersionTest, readWrite) {
   if (S3_PATH == "s3://USER_BUCKET") {
     GTEST_SKIP() << "Please set the S3_PATH to your own bucket in the "
                     "s3_test.cc file.";
   }
-  nlohmann::json j = nlohmann::json::parse(fullToyManifest);
-  auto dataset = mdio::Dataset::Open(S3_PATH, mdio::constants::kOpen);
+  nlohmann::json j = nlohmann::json::parse(GetSimpleManifest());
+  auto createRes = mdio::Dataset::from_json(j, test_path_, version_,
+                                            mdio::constants::kCreateClean);
+  ASSERT_TRUE(createRes.status().ok()) << createRes.status();
+
+  auto dataset = mdio::Dataset::Open(test_path_, mdio::constants::kOpen);
   ASSERT_TRUE(dataset.status().ok()) << dataset.status();
 
   auto ds = dataset.value();
@@ -283,15 +338,18 @@ TEST(S3, write) {
   }
 }
 
-TEST(S3, read) {
+TEST_P(S3VersionTest, selectField) {
   if (S3_PATH == "s3://USER_BUCKET") {
     GTEST_SKIP() << "Please set the S3_PATH to your own bucket in the "
                     "s3_test.cc file.";
   }
-  nlohmann::json j = nlohmann::json::parse(fullToyManifest);
-  auto dataset = mdio::Dataset::Open(S3_PATH, mdio::constants::kOpen);
-  ASSERT_TRUE(dataset.status().ok()) << dataset.status();
+  nlohmann::json j = nlohmann::json::parse(GetSimpleManifest());
+  auto createRes = mdio::Dataset::from_json(j, test_path_, version_,
+                                            mdio::constants::kCreateClean);
+  ASSERT_TRUE(createRes.status().ok()) << createRes.status();
 
+  auto dataset = mdio::Dataset::Open(test_path_, mdio::constants::kOpen);
+  ASSERT_TRUE(dataset.status().ok()) << dataset.status();
   auto ds = dataset.value();
 
   for (auto& kv : ds.coordinates) {
@@ -302,5 +360,13 @@ TEST(S3, read) {
   auto future = ds.SelectField("image_headers", "cdp-x");
   ASSERT_TRUE(future.status().ok()) << future.status();
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    ZarrVersions, S3VersionTest,
+    ::testing::Values(mdio::zarr::ZarrVersion::kV2,
+                      mdio::zarr::ZarrVersion::kV3),
+    [](const ::testing::TestParamInfo<mdio::zarr::ZarrVersion>& info) {
+      return ZarrVersionToString(info.param);
+    });
 
 }  // namespace

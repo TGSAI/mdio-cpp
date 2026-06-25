@@ -1,3 +1,17 @@
+# Copyright 2026 TGS
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#    http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 cmake_minimum_required(VERSION 3.24)
 project(mdio VERSION 1.0.0 LANGUAGES CXX)
 
@@ -54,6 +68,15 @@ endif()
 if (TARGET nlohmann_json_json)
   install(TARGETS nlohmann_json_json EXPORT mdioTargets)
 endif()
+# Tensorstore's bazel_to_cmake (post-bzlmod rename) exposes nlohmann_json as
+# `nlohmann_json_nlohmann_json` plus a companion `.alwayslink` static lib that
+# the INTERFACE target links against. Both must be in the export set.
+if (TARGET nlohmann_json_nlohmann_json)
+  install(TARGETS nlohmann_json_nlohmann_json EXPORT mdioTargets)
+endif()
+if (TARGET nlohmann_json_nlohmann_json.alwayslink)
+  install(TARGETS nlohmann_json_nlohmann_json.alwayslink EXPORT mdioTargets)
+endif()
 
 # Export the targets to be used with FetchContent
 export(EXPORT mdioTargets FILE "${CMAKE_CURRENT_BINARY_DIR}/mdioTargets.cmake" NAMESPACE mdio::)
@@ -101,6 +124,7 @@ mdio_cc_test(
     GTest::gmock_main
     tensorstore::driver_array
     tensorstore::driver_zarr
+    tensorstore::driver_zarr3
     tensorstore::driver_json
     tensorstore::kvstore_file
     tensorstore::stack
@@ -110,6 +134,8 @@ mdio_cc_test(
     tensorstore::util_status_testutil
     nlohmann_json_schema_validator
     tensorstore::kvstore_gcs
+    absl::log_initialize
+    absl::log_globals
 )
 
 mdio_cc_test(
@@ -125,6 +151,7 @@ mdio_cc_test(
     GTest::gmock_main
     tensorstore::driver_array
     tensorstore::driver_zarr
+    tensorstore::driver_zarr3
     tensorstore::driver_json
     tensorstore::kvstore_file
     tensorstore::stack
@@ -134,6 +161,8 @@ mdio_cc_test(
     tensorstore::util_status_testutil
     nlohmann_json_schema_validator
     tensorstore::kvstore_s3
+    absl::log_initialize
+    absl::log_globals
 )
 
 mdio_cc_test(
@@ -186,6 +215,7 @@ mdio_cc_test(
   GTest::gmock_main
     tensorstore::driver_array
     tensorstore::driver_zarr
+    tensorstore::driver_zarr3
     tensorstore::driver_json
     tensorstore::kvstore_file
     tensorstore::stack
@@ -209,6 +239,7 @@ mdio_cc_test(
     GTest::gmock_main
     tensorstore::driver_array
     tensorstore::driver_zarr
+    tensorstore::driver_zarr3
     tensorstore::driver_json
     tensorstore::kvstore_file
     tensorstore::stack
@@ -232,6 +263,7 @@ mdio_cc_test(
     GTest::gmock_main
     tensorstore::driver_array
     tensorstore::driver_zarr
+    tensorstore::driver_zarr3
     tensorstore::driver_json
     tensorstore::kvstore_file
     tensorstore::tensorstore
@@ -255,6 +287,7 @@ mdio_cc_test(
     GTest::gmock_main
     tensorstore::driver_array
     tensorstore::driver_zarr
+    tensorstore::driver_zarr3
     tensorstore::driver_json
     tensorstore::kvstore_file
     tensorstore::stack
@@ -277,6 +310,7 @@ mdio_cc_test(
     GTest::gmock_main
     tensorstore::driver_array
     tensorstore::driver_zarr
+    tensorstore::driver_zarr3
     tensorstore::driver_json
     tensorstore::kvstore_file
     tensorstore::stack
@@ -301,6 +335,7 @@ mdio_cc_test(
     GTest::gmock_main
     tensorstore::driver_array
     tensorstore::driver_zarr
+    tensorstore::driver_zarr3
     tensorstore::driver_json
     tensorstore::kvstore_file
     tensorstore::stack
@@ -323,15 +358,8 @@ mdio_cc_test(
     ${mdio_DEFAULT_LINKOPTS}
   DEPS
     GTest::gmock_main
-    tensorstore::driver_array
-    tensorstore::driver_zarr
     tensorstore::driver_json
-    tensorstore::kvstore_file
-    tensorstore::stack
     tensorstore::tensorstore
-    tensorstore::index_space_dim_expression
-    tensorstore::index_space_index_transform
-    tensorstore::util_status_testutil
     nlohmann_json_schema_validator
 )
 
@@ -348,6 +376,7 @@ mdio_cc_test(
     GTest::gmock_main
     tensorstore::driver_array
     tensorstore::driver_zarr
+    tensorstore::driver_zarr3
     tensorstore::driver_json
     tensorstore::kvstore_file
     tensorstore::tensorstore
@@ -357,3 +386,52 @@ mdio_cc_test(
     tensorstore::util_status_testutil
     nlohmann_json_schema_validator
 )
+
+mdio_cc_test(
+  NAME
+    header_variable_test
+  SRCS
+    header_variable_test.cc
+  COPTS
+    ${mdio_DEFAULT_COPTS}
+  LINKOPTS
+    ${mdio_DEFAULT_LINKOPTS}
+  DEPS
+    GTest::gmock_main
+    tensorstore::driver_array
+    tensorstore::driver_zarr
+    tensorstore::driver_zarr3
+    tensorstore::driver_json
+    tensorstore::kvstore_file
+    tensorstore::tensorstore
+    tensorstore::stack
+    tensorstore::index_space_dim_expression
+    tensorstore::index_space_index_transform
+    tensorstore::util_status_testutil
+    nlohmann_json_schema_validator
+)
+
+mdio_cc_test(
+  NAME
+    zarr_test
+  SRCS
+    zarr/zarr_test.cc
+  COPTS
+    ${mdio_DEFAULT_COPTS} 
+  LINKOPTS
+    ${mdio_DEFAULT_LINKOPTS}
+  DEPS
+    GTest::gmock_main
+    tensorstore::driver_array
+    tensorstore::driver_zarr
+    tensorstore::driver_zarr3
+    tensorstore::driver_json
+    tensorstore::kvstore_file
+    tensorstore::tensorstore
+    tensorstore::stack
+    tensorstore::index_space_dim_expression
+    tensorstore::index_space_index_transform
+    tensorstore::util_status_testutil
+    nlohmann_json_schema_validator
+)
+

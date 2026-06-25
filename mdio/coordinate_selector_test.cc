@@ -26,6 +26,7 @@
 
 #include "mdio/dataset.h"
 #include "mdio/dataset_factory.h"
+#include "mdio/zarr/zarr.h"
 #include "tensorstore/driver/driver.h"
 #include "tensorstore/driver/registry.h"
 #include "tensorstore/index_space/dim_expression.h"
@@ -43,8 +44,24 @@
 
 namespace {
 
-mdio::Result<std::string> SetupDataset() {
-  std::string ds_path = "generic_with_coords.mdio";
+/**
+ * @brief Returns a string representation of the Zarr version for naming.
+ */
+std::string ZarrVersionToString(mdio::zarr::ZarrVersion version) {
+  return version == mdio::zarr::ZarrVersion::kV3 ? "V3" : "V2";
+}
+
+/**
+ * @brief Returns the base path for test data based on Zarr version.
+ */
+std::string GetBasePath(mdio::zarr::ZarrVersion version) {
+  return version == mdio::zarr::ZarrVersion::kV3 ? "generic_with_coords_v3.mdio"
+                                                 : "generic_with_coords.mdio";
+}
+
+mdio::Result<std::string> SetupDataset(
+    mdio::zarr::ZarrVersion version = mdio::zarr::ZarrVersion::kV2) {
+  std::string ds_path = GetBasePath(version);
   std::string schema_str = R"(
     {
         "metadata": {
@@ -141,8 +158,8 @@ mdio::Result<std::string> SetupDataset() {
     })";
 
   auto schema = ::nlohmann::json::parse(schema_str);
-  auto dsFut =
-      mdio::Dataset::from_json(schema, ds_path, mdio::constants::kCreate);
+  auto dsFut = mdio::Dataset::from_json(schema, ds_path, version,
+                                        mdio::constants::kCreateClean);
   if (!dsFut.status().ok()) {
     return ds_path;
   }
@@ -210,13 +227,31 @@ mdio::Result<std::string> SetupDataset() {
   return ds_path;
 }
 
-TEST(Intersection, SETUP) {
-  auto pathResult = SetupDataset();
+// ============================================================================
+// Parameterized Coordinate Selector Tests
+// ============================================================================
+
+class CoordinateSelectorTest
+    : public ::testing::TestWithParam<mdio::zarr::ZarrVersion> {
+ protected:
+  void SetUp() override {
+    version_ = GetParam();
+    base_path_ = GetBasePath(version_);
+  }
+
+  void TearDown() override { std::filesystem::remove_all(base_path_); }
+
+  mdio::zarr::ZarrVersion version_;
+  std::string base_path_;
+};
+
+TEST_P(CoordinateSelectorTest, SETUP) {
+  auto pathResult = SetupDataset(version_);
   ASSERT_TRUE(pathResult.status().ok()) << pathResult.status();
 }
 
-TEST(Intersection, constructor) {
-  auto pathResult = SetupDataset();
+TEST_P(CoordinateSelectorTest, constructor) {
+  auto pathResult = SetupDataset(version_);
   ASSERT_TRUE(pathResult.status().ok()) << pathResult.status();
   auto path = pathResult.value();
 
@@ -227,8 +262,8 @@ TEST(Intersection, constructor) {
   mdio::CoordinateSelector cs(ds);
 }
 
-TEST(Intersection, add_selection) {
-  auto pathResult = SetupDataset();
+TEST_P(CoordinateSelectorTest, add_selection) {
+  auto pathResult = SetupDataset(version_);
   ASSERT_TRUE(pathResult.status().ok()) << pathResult.status();
   auto path = pathResult.value();
 
@@ -248,8 +283,8 @@ TEST(Intersection, add_selection) {
   // map but got " << selections.size();
 }
 
-TEST(Intersection, range_descriptors) {
-  auto pathResult = SetupDataset();
+TEST_P(CoordinateSelectorTest, range_descriptors) {
+  auto pathResult = SetupDataset(version_);
   ASSERT_TRUE(pathResult.status().ok()) << pathResult.status();
   auto path = pathResult.value();
 
@@ -285,8 +320,8 @@ TEST(Intersection, range_descriptors) {
   // to have a step of 1";
 }
 
-TEST(Intersection, get_inline_range) {
-  auto pathResult = SetupDataset();
+TEST_P(CoordinateSelectorTest, get_inline_range) {
+  auto pathResult = SetupDataset(version_);
   ASSERT_TRUE(pathResult.status().ok()) << pathResult.status();
   auto path = pathResult.value();
 
@@ -311,8 +346,8 @@ TEST(Intersection, get_inline_range) {
   // }
 }
 
-TEST(Intersection, get_inline_range_dead) {
-  auto pathResult = SetupDataset();
+TEST_P(CoordinateSelectorTest, get_inline_range_dead) {
+  auto pathResult = SetupDataset(version_);
   ASSERT_TRUE(pathResult.status().ok()) << pathResult.status();
   auto path = pathResult.value();
 
@@ -337,5 +372,13 @@ TEST(Intersection, get_inline_range_dead) {
   //     std::endl;
   // }
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    ZarrVersions, CoordinateSelectorTest,
+    ::testing::Values(mdio::zarr::ZarrVersion::kV2,
+                      mdio::zarr::ZarrVersion::kV3),
+    [](const ::testing::TestParamInfo<mdio::zarr::ZarrVersion>& info) {
+      return ZarrVersionToString(info.param);
+    });
 
 }  // namespace

@@ -52,7 +52,7 @@ absl::Status Run(const Descriptors... descriptors) {
       auto dataset,
       mdio::Dataset::Open(std::string(absl::GetFlag(FLAGS_dataset_path)),
                           mdio::constants::kOpen)
-          .result())
+          .result());
 
   if (absl::GetFlag(FLAGS_print_dataset)) {
     std::cout << dataset << std::endl;
@@ -70,7 +70,7 @@ absl::Status Run(const Descriptors... descriptors) {
     return absl::InvalidArgumentError("Seismic data must be 3D");
   }
 
-  MDIO_ASSIGN_OR_RETURN(auto seismic_data, ReadWithProgress(variable).result())
+  MDIO_ASSIGN_OR_RETURN(auto seismic_data, ReadWithProgress(variable).result());
 
   auto seismic_accessor = seismic_data.get_data_accessor();
 

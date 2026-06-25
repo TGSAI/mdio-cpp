@@ -1,0 +1,54 @@
+# Copyright 2026 TGS
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+[project]
+name = "mdio-cpp-dev"
+version = "0.1.0"
+description = "MDIO C++ library development environment"
+requires-python = ">=3.12,<3.13"
+
+# multidimio[cloud] pulls in zarr, xarray, numpy, and cloud storage backends
+dependencies = [
+    "multidimio[cloud]==1.1.4.dev1781540584",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.8",
+    "mypy>=1.5",
+    "cpplint==1.6.1",
+]
+
+[tool.uv]
+package = false
+prerelease = "allow"
+
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+explicit = true
+
+[tool.uv.sources]
+multidimio = { index = "testpypi" }
+
+[tool.ruff]
+line-length = 79
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = []

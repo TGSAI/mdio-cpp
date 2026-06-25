@@ -31,14 +31,18 @@ namespace utils {
  * deletion. This is intended to provide a safe interface to delete MDIO
  * datasets.
  * @param dataset_path The path to the dataset
+ * @param context Optional TensorStore context for credentials/configuration.
  * @return OK result if the dataset was valid and deleted successfully,
  * otherwise an error result
  */
-inline Result<void> DeleteDataset(const std::string dataset_path) {
+inline Result<void> DeleteDataset(
+    const std::string dataset_path,
+    tensorstore::Context context = tensorstore::Context::Default()) {
   // Open the dataset
   // This is to ensure that what is getting deleted by MDIO is a valid MDIO
   // dataset itself.
-  auto dsRes = mdio::Dataset::Open(dataset_path, mdio::constants::kOpen);
+  auto dsRes =
+      mdio::Dataset::Open(dataset_path, mdio::constants::kOpen, context);
   if (!dsRes.status().ok()) {
     return dsRes.status();
   }
@@ -47,8 +51,8 @@ inline Result<void> DeleteDataset(const std::string dataset_path) {
   // Pick the arbitrarially first Variable in the dataset as the base KVStore
   // template
   MDIO_ASSIGN_OR_RETURN(auto var,
-                        ds.variables.at(ds.variables.get_keys().front()))
-  MDIO_ASSIGN_OR_RETURN(auto spec, var.get_spec())
+                        ds.variables.at(ds.variables.get_keys().front()));
+  MDIO_ASSIGN_OR_RETURN(auto spec, var.get_spec());
   nlohmann::json kvs = spec["kvstore"];
 
   // Drop the Variable path from the KVStore path. This is will leave us with
@@ -62,7 +66,7 @@ inline Result<void> DeleteDataset(const std::string dataset_path) {
   }
   kvs["path"] = path;
 
-  auto kvsFuture = tensorstore::kvstore::Open(kvs);
+  auto kvsFuture = tensorstore::kvstore::Open(kvs, context);
   if (!kvsFuture.status().ok()) {
     return kvsFuture.status();
   }

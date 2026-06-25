@@ -493,4 +493,140 @@ TEST(Units, unitsFromJsonString) {
   EXPECT_EQ(ua_json["unitsV1"], "rad");
 }
 
+TEST(HistogramTest, isBindable) {
+  EXPECT_TRUE(getCenterHist()->isBindable());
+  EXPECT_TRUE(getEdgeHist()->isBindable());
+}
+
+TEST(HistogramTest, fromJsonErrorPaths) {
+  nlohmann::json noParent = {{"binCenters", {1.0, 2.0}}, {"counts", {1, 2}}};
+  auto centered = mdio::internal::CenteredBinHistogram<float>({}, {});
+  EXPECT_FALSE(centered.FromJson(noParent).status().ok());
+
+  nlohmann::json noChild = {{"histogram", {{"counts", {1, 2}}}}};
+  EXPECT_FALSE(centered.FromJson(noChild).status().ok());
+
+  nlohmann::json edgeNoParent = {
+      {"binEdges", {0.0, 1.0}}, {"binWidths", {1.0}}, {"counts", {1}}};
+  auto edge = mdio::internal::EdgeDefinedHistogram<float>({}, {}, {});
+  EXPECT_FALSE(edge.FromJson(edgeNoParent).status().ok());
+
+  nlohmann::json edgeNoChild = {
+      {"histogram", {{"binEdges", {0.0, 1.0}}, {"counts", {1}}}}};
+  EXPECT_FALSE(edge.FromJson(edgeNoChild).status().ok());
+}
+
+TEST(SummaryStatsTest, fromJsonEdgeHistogramAndMissingHistogram) {
+  nlohmann::json edgeStats = {{"count", 50},
+                              {"min", -500.0},
+                              {"max", 500.0},
+                              {"sum", 100.0},
+                              {"sumSquares", 5000.0},
+                              {"histogram",
+                               {{"binEdges", {0.0, 1.0, 2.0}},
+                                {"binWidths", {1.0, 1.0}},
+                                {"counts", {10, 20}}}}};
+  auto statsRes = mdio::internal::SummaryStats::FromJson(edgeStats);
+  ASSERT_TRUE(statsRes.status().ok()) << statsRes.status();
+  EXPECT_TRUE(statsRes.value().getBindable()["histogram"].contains("binEdges"));
+
+  nlohmann::json noHist = {{"count", 100},
+                           {"min", 0.0},
+                           {"max", 100.0},
+                           {"sum", 50.0},
+                           {"sumSquares", 500.0}};
+  EXPECT_FALSE(mdio::internal::SummaryStats::FromJson(noHist).status().ok());
+}
+
+TEST(UserAttributesTest, fromVariableJson) {
+  nlohmann::json centered = {
+      {"name", "test"},
+      {"dataType", "float32"},
+      {"metadata",
+       {{"statsV1",
+         {{"count", 100},
+          {"min", -10.0},
+          {"max", 10.0},
+          {"sum", 50.0},
+          {"sumSquares", 500.0},
+          {"histogram",
+           {{"binCenters", {-5.0, 0.0, 5.0}}, {"counts", {30, 40, 30}}}}}}}}};
+  auto centeredRes = mdio::UserAttributes::FromVariableJson(centered);
+  ASSERT_TRUE(centeredRes.status().ok()) << centeredRes.status();
+  EXPECT_EQ(centeredRes.value().ToJson()["statsV1"]["count"], 100);
+
+  nlohmann::json edge = {{"name", "test"},
+                         {"dataType", "float32"},
+                         {"metadata",
+                          {{"statsV1",
+                            {{"count", 200},
+                             {"min", 0.0},
+                             {"max", 100.0},
+                             {"sum", 5000.0},
+                             {"sumSquares", 250000.0},
+                             {"histogram",
+                              {{"binEdges", {0.0, 50.0, 100.0}},
+                               {"binWidths", {50.0, 50.0}},
+                               {"counts", {100, 100}}}}}}}}};
+  auto edgeRes = mdio::UserAttributes::FromVariableJson(edge);
+  ASSERT_TRUE(edgeRes.status().ok()) << edgeRes.status();
+  EXPECT_TRUE(
+      edgeRes.value().ToJson()["statsV1"]["histogram"].contains("binEdges"));
+
+  nlohmann::json noMeta = {{"name", "simple"}, {"dataType", "int32"}};
+  auto noMetaRes = mdio::UserAttributes::FromVariableJson(noMeta);
+  ASSERT_TRUE(noMetaRes.status().ok()) << noMetaRes.status();
+  EXPECT_EQ(noMetaRes.value().ToJson(), nlohmann::json::object());
+}
+
+TEST(UserAttributesTest, accessors) {
+  nlohmann::json full = {
+      {"statsV1",
+       {{"count", 100},
+        {"min", -1000.0},
+        {"max", 1000.0},
+        {"sum", 0.0},
+        {"sumSquares", 0.0},
+        {"histogram", {{"binCenters", {1.0, 2.0}}, {"counts", {50, 50}}}}}},
+      {"unitsV1", {{"length", "m"}, {"time", "s"}}},
+      {"attributes", {{"foo", "bar"}, {"count", 42}}}};
+  auto fullRes = mdio::UserAttributes::FromJson(full);
+  ASSERT_TRUE(fullRes.status().ok()) << fullRes.status();
+  auto attrs = fullRes.value();
+  EXPECT_EQ(attrs.getStatsV1()["count"], 100);
+  EXPECT_EQ(attrs.getUnitsV1().size(), 2);
+  EXPECT_EQ(attrs.getAttrs()["foo"], "bar");
+
+  nlohmann::json empty = nlohmann::json::object();
+  auto emptyRes = mdio::UserAttributes::FromJson(empty);
+  ASSERT_TRUE(emptyRes.status().ok());
+  auto emptyAttrs = emptyRes.value();
+  EXPECT_TRUE(emptyAttrs.getStatsV1().empty());
+  EXPECT_TRUE(emptyAttrs.getUnitsV1().empty());
+  EXPECT_TRUE(emptyAttrs.getAttrs().empty());
+}
+
+TEST(UserAttributesTest, statsV1AsArray) {
+  nlohmann::json arrayStats = {
+      {"name", "test"},
+      {"metadata",
+       {{"statsV1",
+         {{{"count", 10},
+           {"min", 0},
+           {"max", 100},
+           {"sum", 500},
+           {"sumSquares", 25000},
+           {"histogram", {{"binCenters", {1, 2, 3}}, {"counts", {3, 4, 3}}}}},
+          {{"count", 20},
+           {"min", 0},
+           {"max", 200},
+           {"sum", 1000},
+           {"sumSquares", 50000},
+           {"histogram",
+            {{"binCenters", {1, 2, 3}}, {"counts", {6, 8, 6}}}}}}}}}};
+  auto res = mdio::UserAttributes::FromVariableJson(arrayStats);
+  ASSERT_TRUE(res.status().ok()) << res.status();
+  EXPECT_EQ(res.value().ToJson()["statsV1"].size(), 2);
+}
+
 }  // namespace

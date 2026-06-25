@@ -17,7 +17,10 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <filesystem>
 #include <string>
+
+#include "mdio/zarr/zarr.h"
 
 // clang-format off
 #include <nlohmann/json.hpp>  // NOLINT
@@ -28,13 +31,27 @@ namespace {
 // TODO(End user): User should point to their own GCS bucket here.
 /*NOLINT*/ const std::string GCS_PATH = "gs://USER_BUCKET";
 
-/*NOLINT*/ const std::string kTestPath = "zarrs/testing/utils.mdio";
+/**
+ * @brief Returns a string representation of the Zarr version for naming.
+ */
+std::string ZarrVersionToString(mdio::zarr::ZarrVersion version) {
+  return version == mdio::zarr::ZarrVersion::kV3 ? "V3" : "V2";
+}
 
 /**
- * Sets up an inert dataset for testing destructive operations
+ * @brief Returns the base path for test data based on Zarr version.
  */
-mdio::Future<mdio::Dataset> SETUP(const std::string& path) {
-  std::string datasetManifest = R"(
+std::string GetBasePath(mdio::zarr::ZarrVersion version) {
+  return version == mdio::zarr::ZarrVersion::kV3 ? "zarrs/testing/utils_v3.mdio"
+                                                 : "zarrs/testing/utils.mdio";
+}
+
+/**
+ * @brief Returns a manifest exercising both scalar and struct-array variables.
+ * Both V2 and V3 support the struct array (image_headers).
+ */
+std::string GetSimpleManifest() {
+  return R"(
 {
   "metadata": {
     "name": "campos_3d",
@@ -74,7 +91,7 @@ mdio::Future<mdio::Dataset> SETUP(const std::string& path) {
         "attributes": {
           "fizz": "buzz"
         }
-    },
+      },
       "coordinates": ["inline", "crossline", "depth", "cdp-x", "cdp-y"],
       "compressor": {"name": "blosc", "algorithm": "zstd"}
     },
@@ -167,21 +184,23 @@ mdio::Future<mdio::Dataset> SETUP(const std::string& path) {
   ]
 }
 )";
+}
 
-  auto j = nlohmann::json::parse(datasetManifest);
-  auto dsRes = mdio::Dataset::from_json(j, path, mdio::constants::kCreateClean);
+/**
+ * Sets up an inert dataset for testing destructive operations (V2/V3
+ * compatible)
+ */
+mdio::Future<mdio::Dataset> SETUP(
+    const std::string& path,
+    mdio::zarr::ZarrVersion version = mdio::zarr::ZarrVersion::kV2) {
+  auto j = nlohmann::json::parse(GetSimpleManifest());
+  auto dsRes =
+      mdio::Dataset::from_json(j, path, version, mdio::constants::kCreateClean);
   return dsRes;
 }
 
-TEST(DeleteDataset, delLocal) {
-  ASSERT_TRUE(SETUP(kTestPath).status().ok());
-  auto res = mdio::utils::DeleteDataset(kTestPath);
-  ASSERT_TRUE(res.status().ok()) << res.status();
-  auto dsRes = mdio::Dataset::Open(kTestPath, mdio::constants::kOpen);
-  EXPECT_FALSE(dsRes.status().ok()) << dsRes.status();
-}
-
-TEST(DeleteDataset, delGCS) {
+// Remote-storage deletion. Skipped by default; set GCS_PATH to enable.
+TEST(DeleteDatasetGCS, delGCS) {
   if (GCS_PATH == "gs://USER_BUCKET") {
     GTEST_SKIP() << "Skipping GCS deletion test.\nTo enable, please update the "
                     "GCS_PATH variable in the utils_test.cc file.";
@@ -193,5 +212,41 @@ TEST(DeleteDataset, delGCS) {
   auto dsRes = mdio::Dataset::Open(GCS_PATH, mdio::constants::kOpen);
   EXPECT_FALSE(dsRes.status().ok()) << dsRes.status();
 }
+
+// ============================================================================
+// Parameterized Delete Tests for V2/V3
+// ============================================================================
+
+class DeleteDatasetVersionTest
+    : public ::testing::TestWithParam<mdio::zarr::ZarrVersion> {
+ protected:
+  void SetUp() override {
+    version_ = GetParam();
+    base_path_ = GetBasePath(version_);
+    std::filesystem::remove_all(base_path_);
+  }
+
+  void TearDown() override { std::filesystem::remove_all(base_path_); }
+
+  mdio::zarr::ZarrVersion version_;
+  std::string base_path_;
+};
+
+TEST_P(DeleteDatasetVersionTest, delLocal) {
+  auto setupRes = SETUP(base_path_, version_);
+  ASSERT_TRUE(setupRes.status().ok()) << setupRes.status();
+  auto res = mdio::utils::DeleteDataset(base_path_);
+  ASSERT_TRUE(res.status().ok()) << res.status();
+  auto dsRes = mdio::Dataset::Open(base_path_, mdio::constants::kOpen);
+  EXPECT_FALSE(dsRes.status().ok()) << dsRes.status();
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ZarrVersions, DeleteDatasetVersionTest,
+    ::testing::Values(mdio::zarr::ZarrVersion::kV2,
+                      mdio::zarr::ZarrVersion::kV3),
+    [](const ::testing::TestParamInfo<mdio::zarr::ZarrVersion>& info) {
+      return ZarrVersionToString(info.param);
+    });
 
 }  // namespace

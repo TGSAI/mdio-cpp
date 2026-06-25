@@ -1,5 +1,6 @@
 FROM mcr.microsoft.com/devcontainers/cpp:dev-ubuntu24.04
 
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
@@ -12,7 +13,6 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 
 ENV DEBIAN_FRONTEND=noninteractive 
 
-ARG POETRY_VERSION=1.2.2
 ARG CMAKE_MAJOR=3.24
 ARG CMAKE_VERSION=3.24.2
 ARG HYPERFINE=1.15.0
@@ -45,27 +45,22 @@ RUN curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | \
   apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
 RUN apt-get update && apt-get install -y  google-cloud-cli
 
-RUN apt update -y \
-  && apt install software-properties-common -y \
-  && add-apt-repository ppa:deadsnakes/ppa
-
-# Install apt dependencies
+# Install apt dependencies (Python 3.12 is native on Ubuntu 24.04)
 RUN apt update -y \
   && apt install -y --no-install-recommends \
-  python3.10-full \
+  python3-full \
+  python3-pip \
   && rm -rf /var/lib/apt/lists/* \
   && apt clean
 
-RUN mkdir -p /venv
-RUN python3.10 -m venv /venv
+# Create virtual environment and sync dependencies
+RUN uv venv /venv
+ENV UV_PROJECT_ENVIRONMENT=/venv
 ENV PATH="/venv/bin:$PATH"
 
-RUN pip install wheel yapf cpplint==${CPPLINT_VERSION} zarr xarray
-
-RUN pip install \
-  "poetry==$POETRY_VERSION" \
-  && poetry config virtualenvs.create false
-# if poetry doesn't pick up a deps this for some reason pip install here
+RUN mkdir -p /tmp/devcontainer
+COPY .devcontainer/pyproject.toml .devcontainer/uv.lock /tmp/devcontainer/
+RUN uv sync --project /tmp/devcontainer --frozen --all-groups
 
 # if we want the user to be able to do pip install etc.
 RUN chmod -R 777 /venv

@@ -19,12 +19,14 @@
 
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "mdio/dataset_factory.h"
+#include "mdio/zarr/zarr.h"
 #include "tensorstore/driver/driver.h"
 #include "tensorstore/driver/registry.h"
 #include "tensorstore/index_space/dim_expression.h"
@@ -40,6 +42,26 @@
 #include <nlohmann/json.hpp>  // NOLINT
 // clang-format on
 namespace {
+
+/**
+ * @brief Returns a string representation of the Zarr version for naming.
+ */
+std::string ZarrVersionToString(mdio::zarr::ZarrVersion version) {
+  return version == mdio::zarr::ZarrVersion::kV3 ? "V3" : "V2";
+}
+
+/**
+ * @brief Returns the base path for test data based on Zarr version.
+ */
+std::string GetBasePath(mdio::zarr::ZarrVersion version) {
+  return version == mdio::zarr::ZarrVersion::kV3 ? "zarrs/dataset_test_v3"
+                                                 : "zarrs/dataset_test";
+}
+
+/**
+ * @brief Returns a schema exercising both scalar and struct-array variables.
+ * Both V2 and V3 support the struct array (image_headers).
+ */
 ::nlohmann::json GetToyExample() {
   std::string schema = R"(
         {
@@ -486,8 +508,12 @@ TEST(Dataset, iselWithStride) {
       ASSERT_EQ(inlineAccessor[i], i) << "Expected inline value to be " << i
                                       << " but got " << inlineAccessor[i];
     } else {
-      ASSERT_EQ(inlineAccessor[i], 0)
-          << "Expected inline value to be 0 but got " << inlineAccessor[i];
+      // Unwritten (odd) indices hold the fill value, which for uint32 mirrors
+      // mdio-python's type-max convention (4294967295).
+      ASSERT_EQ(inlineAccessor[i], std::numeric_limits<uint32_t>::max())
+          << "Expected inline value to be fill value "
+          << std::numeric_limits<uint32_t>::max() << " but got "
+          << inlineAccessor[i];
     }
   }
 
@@ -1387,6 +1413,282 @@ TEST(Dataset, mockV0) {
   ASSERT_FALSE(reopenedDsFut.status().ok())
       << "Opened a v0 dataset without error!" << std::endl
       << reopenedDsFut.value();
+}
+
+// ============================================================================
+// Parameterized Dataset Tests for V2/V3
+// ============================================================================
+
+class DatasetVersionTest
+    : public ::testing::TestWithParam<mdio::zarr::ZarrVersion> {
+ protected:
+  void SetUp() override {
+    version_ = GetParam();
+    base_path_ = GetBasePath(version_);
+    std::filesystem::remove_all(base_path_);
+  }
+
+  void TearDown() override { std::filesystem::remove_all(base_path_); }
+
+  mdio::zarr::ZarrVersion version_;
+  std::string base_path_;
+};
+
+TEST_P(DatasetVersionTest, fromJson) {
+  auto json_vars = GetToyExample();
+
+  auto dataset = mdio::Dataset::from_json(json_vars, base_path_, version_,
+                                          mdio::constants::kCreateClean);
+
+  ASSERT_TRUE(dataset.status().ok()) << dataset.status();
+
+  auto ds = dataset.value();
+  EXPECT_EQ(ds.getMetadata()["name"], "campos_3d") << ds.getMetadata();
+
+  std::vector<std::string> varList = ds.variables.get_keys();
+  EXPECT_EQ(varList.size(), 9) << "Expected 9 variables";
+}
+
+TEST_P(DatasetVersionTest, fromJsonWithOptionalVersion) {
+  auto json_vars = GetToyExample();
+
+  auto dataset = mdio::Dataset::from_json(
+      json_vars, base_path_, std::optional<mdio::zarr::ZarrVersion>(version_),
+      mdio::constants::kCreateClean);
+
+  ASSERT_TRUE(dataset.status().ok()) << dataset.status();
+  EXPECT_EQ(dataset.value().getMetadata()["name"], "campos_3d");
+}
+
+TEST_P(DatasetVersionTest, readWrite) {
+  auto json_vars = GetToyExample();
+  auto datasetRes = mdio::Dataset::from_json(json_vars, base_path_, version_,
+                                             mdio::constants::kCreateClean);
+  ASSERT_TRUE(datasetRes.status().ok()) << datasetRes.status();
+  auto ds = datasetRes.value();
+
+  // Get the image variable and write some values
+  auto imageVarRes = ds.variables.get<mdio::dtypes::float32_t>("image");
+  ASSERT_TRUE(imageVarRes.status().ok()) << imageVarRes.status();
+  auto imageVar = imageVarRes.value();
+
+  auto imageDataRes = imageVar.Read();
+  ASSERT_TRUE(imageDataRes.status().ok()) << imageDataRes.status();
+  auto imageData = imageDataRes.value();
+
+  auto accessor = imageData.get_data_accessor().data();
+  accessor[0] = 1.5f;
+  accessor[1] = 2.5f;
+  accessor[100] = 42.0f;
+
+  auto writeFut = imageVar.Write(imageData);
+  ASSERT_TRUE(writeFut.status().ok()) << writeFut.status();
+
+  // Re-read and verify
+  auto rereadFut = imageVar.Read();
+  ASSERT_TRUE(rereadFut.status().ok()) << rereadFut.status();
+  auto rereadData = rereadFut.value();
+  auto rereadAccessor = rereadData.get_data_accessor().data();
+
+  EXPECT_FLOAT_EQ(rereadAccessor[0], 1.5f);
+  EXPECT_FLOAT_EQ(rereadAccessor[1], 2.5f);
+  EXPECT_FLOAT_EQ(rereadAccessor[100], 42.0f);
+}
+
+TEST_P(DatasetVersionTest, isel) {
+  auto json_vars = GetToyExample();
+  auto datasetRes = mdio::Dataset::from_json(json_vars, base_path_, version_,
+                                             mdio::constants::kCreateClean);
+  ASSERT_TRUE(datasetRes.status().ok()) << datasetRes.status();
+  auto ds = datasetRes.value();
+
+  mdio::RangeDescriptor<mdio::Index> desc1 = {"inline", 0, 10, 1};
+  mdio::RangeDescriptor<mdio::Index> desc2 = {"crossline", 5, 20, 1};
+  auto sliceRes = ds.isel(desc1, desc2);
+  ASSERT_TRUE(sliceRes.status().ok()) << sliceRes.status();
+
+  auto slice = sliceRes.value();
+  EXPECT_EQ(slice.domain.rank(), 3);
+}
+
+TEST_P(DatasetVersionTest, openExisting) {
+  auto json_vars = GetToyExample();
+  auto datasetRes = mdio::Dataset::from_json(json_vars, base_path_, version_,
+                                             mdio::constants::kCreateClean);
+  ASSERT_TRUE(datasetRes.status().ok()) << datasetRes.status();
+
+  // Close and reopen
+  auto reopenedDs = mdio::Dataset::Open(base_path_, mdio::constants::kOpen);
+  ASSERT_TRUE(reopenedDs.status().ok()) << reopenedDs.status();
+
+  EXPECT_EQ(reopenedDs.value().getMetadata()["name"], "campos_3d");
+}
+
+TEST_P(DatasetVersionTest, coordinates) {
+  auto json_vars = GetToyExample();
+  auto dataset = mdio::Dataset::from_json(json_vars, base_path_, version_,
+                                          mdio::constants::kCreateClean);
+
+  ASSERT_TRUE(dataset.status().ok()) << dataset.status();
+  EXPECT_TRUE(dataset.value().coordinates.size() > 0)
+      << "Dataset expected to have coordinates but none were present!";
+}
+
+TEST_P(DatasetVersionTest, getIntervals) {
+  auto json_vars = GetToyExample();
+  auto datasetFut = mdio::Dataset::from_json(json_vars, base_path_, version_,
+                                             mdio::constants::kCreateClean);
+
+  ASSERT_TRUE(datasetFut.status().ok()) << datasetFut.status();
+  auto dataset = datasetFut.value();
+  auto intervalRes = dataset.get_intervals();
+  ASSERT_TRUE(intervalRes.ok()) << intervalRes.status();
+  auto intervals = intervalRes.value();
+  EXPECT_GE(intervals.size(), 3);
+}
+
+TEST_P(DatasetVersionTest, commitMetadata) {
+  auto json_vars = GetToyExample();
+  auto datasetRes = mdio::Dataset::from_json(json_vars, base_path_, version_,
+                                             mdio::constants::kCreateClean);
+
+  ASSERT_TRUE(datasetRes.status().ok()) << datasetRes.status();
+  auto dataset = datasetRes.value();
+
+  auto imageRes = dataset.variables.at("image");
+  ASSERT_TRUE(imageRes.ok()) << imageRes.status();
+  auto image = imageRes.value();
+
+  auto attrs = image.GetAttributes();
+  attrs["statsV1"]["histogram"]["binCenters"] = {2, 4, 6};
+  attrs["statsV1"]["histogram"]["counts"] = {10, 15, 20};
+  auto attrsUpdateRes = image.UpdateAttributes<float>(attrs);
+  ASSERT_TRUE(attrsUpdateRes.status().ok()) << attrsUpdateRes.status();
+
+  auto commitRes = dataset.CommitMetadata();
+  ASSERT_TRUE(commitRes.status().ok()) << commitRes.status();
+
+  auto newDataset = mdio::Dataset::Open(base_path_, mdio::constants::kOpen);
+  ASSERT_TRUE(newDataset.status().ok()) << newDataset.status();
+
+  auto newImageRes = newDataset.value().variables.at("image");
+  ASSERT_TRUE(newImageRes.ok()) << newImageRes.status();
+
+  nlohmann::json metadata = newImageRes.value().getMetadata();
+  ASSERT_TRUE(metadata.contains("metadata")) << metadata;
+  ASSERT_TRUE(metadata["metadata"].contains("statsV1"))
+      << "Did not find statsV1 in metadata";
+  ASSERT_TRUE(metadata["metadata"]["statsV1"].contains("histogram"))
+      << "Did not find histogram in statsV1";
+  EXPECT_TRUE(metadata["metadata"]["statsV1"]["histogram"]["binCenters"] ==
+              std::vector<float>({2, 4, 6}))
+      << "Expected binCenters to be [2, 4, 6] but got "
+      << metadata["metadata"]["statsV1"]["histogram"]["binCenters"];
+  EXPECT_TRUE(metadata["metadata"]["statsV1"]["histogram"]["counts"] ==
+              std::vector<float>({10, 15, 20}))
+      << "Expected counts to be [10, 15, 20] but got "
+      << metadata["metadata"]["statsV1"]["histogram"]["counts"];
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ZarrVersions, DatasetVersionTest,
+    ::testing::Values(mdio::zarr::ZarrVersion::kV2,
+                      mdio::zarr::ZarrVersion::kV3),
+    [](const ::testing::TestParamInfo<mdio::zarr::ZarrVersion>& info) {
+      return ZarrVersionToString(info.param);
+    });
+
+// Test nullopt version (should default to V2)
+TEST(DatasetVersionNullopt, fromJsonWithNulloptVersion) {
+  std::filesystem::remove_all("zarrs/nullopt_version");
+  auto json_vars = GetToyExample();
+
+  std::optional<mdio::zarr::ZarrVersion> version = std::nullopt;
+  auto dataset =
+      mdio::Dataset::from_json(json_vars, "zarrs/nullopt_version", version,
+                               mdio::constants::kCreateClean);
+
+  ASSERT_TRUE(dataset.status().ok()) << dataset.status();
+  EXPECT_EQ(dataset.value().getMetadata()["name"], "campos_3d");
+
+  std::filesystem::remove_all("zarrs/nullopt_version");
+}
+
+TEST(Dataset, iselWithEmptySlicesVector) {
+  auto json_vars = GetToyExample();
+  auto dataset = mdio::Dataset::from_json(json_vars, "zarrs/acceptance",
+                                          mdio::constants::kCreateClean);
+  ASSERT_TRUE(dataset.status().ok()) << dataset.status();
+  auto ds = dataset.value();
+
+  std::vector<mdio::RangeDescriptor<mdio::Index>> emptySlices;
+  auto sliceRes = ds.isel(emptySlices);
+  ASSERT_FALSE(sliceRes.status().ok());
+  EXPECT_THAT(sliceRes.status().message(),
+              testing::HasSubstr("No slices provided"));
+}
+
+TEST(Dataset, selWithDimensionIndex) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  // Using an index instead of a dimension name should fail
+  // The RangeDescriptor with index 0 instead of "inline"
+  mdio::RangeDescriptor<mdio::dtypes::int32_t> indexDesc = {0, 2, 5, 1};
+
+  auto sliceRes = ds.sel(indexDesc);
+  ASSERT_FALSE(sliceRes.status().ok());
+  EXPECT_THAT(sliceRes.status().message(), testing::HasSubstr("not found"));
+}
+
+TEST(Dataset, selWithRepeatedLabels) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  // Using the same label twice is invalid
+  mdio::ValueDescriptor<mdio::dtypes::int32_t> desc1 = {"inline", 1};
+  mdio::ValueDescriptor<mdio::dtypes::int32_t> desc2 = {"inline", 2};
+
+  auto sliceRes = ds.sel(desc1, desc2);
+  ASSERT_FALSE(sliceRes.status().ok());
+  EXPECT_THAT(sliceRes.status().message(),
+              testing::HasSubstr("not be repeated"));
+}
+
+TEST(Dataset, commitMetadataNoChanges) {
+  const std::string path = "zarrs/acceptance_no_commit";
+  std::filesystem::remove_all(path);
+  auto json_vars = GetToyExample();
+
+  auto datasetRes =
+      mdio::Dataset::from_json(json_vars, path, mdio::constants::kCreateClean);
+  ASSERT_TRUE(datasetRes.status().ok()) << datasetRes.status();
+  auto dataset = datasetRes.value();
+
+  auto commitRes = dataset.CommitMetadata();
+  ASSERT_FALSE(commitRes.status().ok());
+  EXPECT_THAT(commitRes.status().message(),
+              testing::HasSubstr("No variables were modified"));
+
+  std::filesystem::remove_all(path);
+}
+
+TEST(Dataset, selRangeWithSameStartStop) {
+  std::string path = "zarrs/selTester.mdio";
+  auto dsRes = makePopulated(path);
+  ASSERT_TRUE(dsRes.ok()) << dsRes.status();
+  auto ds = dsRes.value();
+
+  mdio::RangeDescriptor<mdio::dtypes::int32_t> rangeDesc = {"inline", 2, 2, 1};
+
+  auto sliceRes = ds.sel(rangeDesc);
+  ASSERT_FALSE(sliceRes.status().ok());
+  EXPECT_THAT(sliceRes.status().message(),
+              testing::HasSubstr("Start and stop values must be different"));
 }
 
 }  // namespace

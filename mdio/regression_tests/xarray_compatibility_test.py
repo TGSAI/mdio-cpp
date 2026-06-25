@@ -1,10 +1,24 @@
+# Copyright 2026 TGS
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import argparse
 import sys
 try:
     import xarray as xr
 except ImportError:
     print("Failed to import xarray.")
-    sys.exit(0xfd) # 64768
+    sys.exit(0xfd)
 
 
 def test_xarray_dataset(file_path, consolidated_metadata):
@@ -13,6 +27,7 @@ def test_xarray_dataset(file_path, consolidated_metadata):
   else:
     consolidated_metadata = False
   try:
+    print(f"Opening dataset: {file_path} with consolidated metadata: {consolidated_metadata}")
     ds = xr.open_zarr(
         file_path,
         consolidated=consolidated_metadata,

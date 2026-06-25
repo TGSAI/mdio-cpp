@@ -27,12 +27,12 @@
 absl::Status Run(std::string dataset_path) {
   MDIO_ASSIGN_OR_RETURN(
       auto dataset,
-      mdio::Dataset::Open(dataset_path, mdio::constants::kOpen).result())
+      mdio::Dataset::Open(dataset_path, mdio::constants::kOpen).result());
 
   MDIO_ASSIGN_OR_RETURN(auto variable,
-                        dataset.variables.get<float32_t>("image"))
+                        dataset.variables.get<float32_t>("image"));
 
-  MDIO_ASSIGN_OR_RETURN(auto variable_data, variable.Read().result())
+  MDIO_ASSIGN_OR_RETURN(auto variable_data, variable.Read().result());
 
   auto image = variable_data.get_data_accessor();
 
