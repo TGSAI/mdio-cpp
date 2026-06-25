@@ -35,7 +35,7 @@ static AbslLogInit absl_log_init;
 // TODO(End user): User should point to their own S3 bucket here.
 // You may find the test dataset at: TODO: Upload the test dataset to a public
 // object store
-/*NOLINT*/ std::string const S3_PATH = "s3://USER_BUCKET/";
+/*NOLINT*/ std::string const S3_PATH = "s3://USER_BUCKET";
 
 /**
  * @brief Returns a string representation of the Zarr version for naming.
@@ -206,7 +206,7 @@ class S3VersionTest : public ::testing::TestWithParam<mdio::zarr::ZarrVersion> {
 };
 
 TEST_P(S3VersionTest, create) {
-  if (S3_PATH == "s3://USER_BUCKET/") {
+  if (S3_PATH == "s3://USER_BUCKET") {
     GTEST_SKIP() << "Please set the S3_PATH to your own bucket in the "
                     "s3_test.cc file.";
   }
@@ -217,7 +217,7 @@ TEST_P(S3VersionTest, create) {
 }
 
 TEST_P(S3VersionTest, open) {
-  if (S3_PATH == "s3://USER_BUCKET/") {
+  if (S3_PATH == "s3://USER_BUCKET") {
     GTEST_SKIP() << "Please set the S3_PATH to your own bucket in the "
                     "s3_test.cc file.";
   }
@@ -233,7 +233,7 @@ TEST_P(S3VersionTest, open) {
 }
 
 TEST_P(S3VersionTest, readWrite) {
-  if (S3_PATH == "s3://USER_BUCKET/") {
+  if (S3_PATH == "s3://USER_BUCKET") {
     GTEST_SKIP() << "Please set the S3_PATH to your own bucket in the "
                     "s3_test.cc file.";
   }
@@ -273,7 +273,7 @@ TEST_P(S3VersionTest, readWrite) {
 }
 
 TEST_P(S3VersionTest, selectField) {
-  if (S3_PATH == "s3://USER_BUCKET/") {
+  if (S3_PATH == "s3://USER_BUCKET") {
     GTEST_SKIP() << "Please set the S3_PATH to your own bucket in the "
                     "s3_test.cc file.";
   }
