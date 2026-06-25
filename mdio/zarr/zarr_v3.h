@@ -229,21 +229,15 @@ inline nlohmann::json BuildVariableSpec(const std::string& driver,
  * @return Result<nlohmann::json> The Zarr V3 dtype specification.
  */
 inline Result<nlohmann::json> ToZarrDtype(const std::string& dtype) {
-  // Zarr V3 uses different dtype specification
-  if (dtype == "int8") return "int8";
-  if (dtype == "int16") return "int16";
-  if (dtype == "int32") return "int32";
-  if (dtype == "int64") return "int64";
-  if (dtype == "uint8") return "uint8";
-  if (dtype == "uint16") return "uint16";
-  if (dtype == "uint32") return "uint32";
-  if (dtype == "uint64") return "uint64";
-  if (dtype == "float16") return "float16";
-  if (dtype == "float32") return "float32";
-  if (dtype == "float64") return "float64";
-  if (dtype == "bool") return "bool";
-  if (dtype == "complex64") return "complex64";
-  if (dtype == "complex128") return "complex128";
+  static const std::unordered_set<std::string> kSupportedDtypes = {
+      "int8",    "int16",    "int32",    "int64",
+      "uint8",   "uint16",   "uint32",   "uint64",
+      "float16", "float32",  "float64",
+      "bool",
+      "complex64", "complex128"};
+  if (kSupportedDtypes.count(dtype) > 0) {
+    return dtype;
+  }
   return absl::InvalidArgumentError("Unknown dtype: " + dtype);
 }
 
