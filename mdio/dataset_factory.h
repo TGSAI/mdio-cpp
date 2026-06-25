@@ -56,6 +56,109 @@ inline tensorstore::Result<nlohmann::json> to_zarr_dtype(
 }
 
 /**
+ * @brief Single source of truth for how a Variable spec differs across Zarr
+ * versions.
+ *
+ * Every version-specific naming and structural decision -- the metadata key
+ * that holds the data type, the JSON spec stub, where the chunk shape lives,
+ * and how compression is encoded -- is captured here so the transform_*
+ * helpers can stay version-agnostic. Supporting a new Zarr version should be a
+ * matter of extending LayoutFor() and the branch in MakeStub() rather than
+ * threading new conditionals through every helper.
+ */
+struct ZarrLayout {
+  mdio::zarr::ZarrVersion version;
+  // Metadata key holding the data type ("dtype" for V2, "data_type" for V3).
+  std::string dtype_key;
+  // True when compression uses a V3 codec pipeline vs a V2 compressor object.
+  bool uses_codec_pipeline;
+
+  /**
+   * @brief Builds the empty Variable spec stub for this version.
+   * @return A JSON stub with version-appropriate driver and metadata skeleton.
+   */
+  nlohmann::json MakeStub() const {
+    if (version == mdio::zarr::ZarrVersion::kV3) {
+      return R"(
+          {
+              "driver": "zarr3",
+              "kvstore": {
+                  "driver": "file",
+                  "path": "VARIABLE_NAME"
+              },
+              "metadata": {
+                  "data_type": "DATA_TYPE",
+                  "shape": [],
+                  "chunk_grid": {
+                      "name": "regular",
+                      "configuration": {
+                          "chunk_shape": []
+                      }
+                  },
+                  "chunk_key_encoding": {
+                      "name": "default",
+                      "configuration": {
+                          "separator": "/"
+                      }
+                  },
+                  "codecs": [{"name": "bytes"}]
+              },
+              "attributes": {}
+          }
+      )"_json;
+    }
+    return R"(
+        {
+            "driver": "zarr",
+            "kvstore": {
+                "driver": "file",
+                "path": "VARIABLE_NAME"
+            },
+            "metadata": {
+                "dtype": "DATA_TYPE",
+                "dimension_separator": "/",
+                "shape": "SHAPE",
+                "chunks": "CHUNKS"
+            },
+            "attributes": {}
+        }
+    )"_json;
+  }
+
+  /**
+   * @brief Writes the chunk shape into the version-appropriate metadata slot.
+   *
+   * V3 stores it under chunk_grid/configuration/chunk_shape; V2 under "chunks".
+   * @param variable A Variable stub (will be modified).
+   * @param chunk_shape The chunk shape array to write.
+   */
+  void SetChunkShape(nlohmann::json& variable /*NOLINT*/,
+                     const nlohmann::json& chunk_shape) const {
+    if (version == mdio::zarr::ZarrVersion::kV3) {
+      variable["metadata"]["chunk_grid"]["configuration"]["chunk_shape"] =
+          chunk_shape;
+    } else {
+      variable["metadata"]["chunks"] = chunk_shape;
+    }
+  }
+};
+
+/**
+ * @brief Returns the layout describing version-specific spec differences.
+ * @param version The Zarr version to target.
+ * @return A ZarrLayout populated for that version.
+ */
+inline ZarrLayout LayoutFor(mdio::zarr::ZarrVersion version) {
+  switch (version) {
+    case mdio::zarr::ZarrVersion::kV3:
+      return ZarrLayout{version, "data_type", true};
+    case mdio::zarr::ZarrVersion::kV2:
+    default:
+      return ZarrLayout{version, "dtype", false};
+  }
+}
+
+/**
  * @brief Modifies a Variable spec to use proper Zarr dtype
  * This function is intended to be an internal helper function for formatting
  * Variable specs It will modify with side-effect on "input"
@@ -68,26 +171,21 @@ inline tensorstore::Result<nlohmann::json> to_zarr_dtype(
 inline absl::Status transform_dtype(
     nlohmann::json& input /*NOLINT*/, nlohmann::json& variable /*NOLINT*/,
     mdio::zarr::ZarrVersion version = mdio::zarr::ZarrVersion::kV2) {
-  std::string dtype_key =
-      (version == mdio::zarr::ZarrVersion::kV3) ? "data_type" : "dtype";
+  const ZarrLayout layout = LayoutFor(version);
 
   if (input["dataType"].contains("fields")) {
     // Structured dtypes are supported in both V2 and V3
     nlohmann::json dtypeFields = nlohmann::json::array();
     for (const auto& field : input["dataType"]["fields"]) {
-      auto dtype = to_zarr_dtype(field["format"], version);
-      if (!dtype.status().ok()) {
-        return dtype.status();
-      }
-      dtypeFields.emplace_back(nlohmann::json{field["name"], dtype.value()});
+      MDIO_ASSIGN_OR_RETURN(auto dtype,
+                            to_zarr_dtype(field["format"], version));
+      dtypeFields.emplace_back(nlohmann::json{field["name"], dtype});
     }
-    variable["metadata"][dtype_key] = dtypeFields;
+    variable["metadata"][layout.dtype_key] = dtypeFields;
   } else {
-    auto dtype = to_zarr_dtype(input["dataType"], version);
-    if (!dtype.status().ok()) {
-      return dtype.status();
-    }
-    variable["metadata"][dtype_key] = dtype.value();
+    MDIO_ASSIGN_OR_RETURN(auto dtype,
+                          to_zarr_dtype(input["dataType"], version));
+    variable["metadata"][layout.dtype_key] = dtype;
   }
   return absl::OkStatus();
 }
@@ -178,6 +276,97 @@ inline nlohmann::json resolve_blosc_blocksize(
 }
 
 /**
+ * @brief Applies the Blosc compressor to a V3 codec pipeline.
+ *
+ * When no compressor is supplied the stub's default "bytes" codec is left
+ * untouched. Otherwise a [bytes, blosc] codec array is emitted.
+ * @param input A MDIO Variable spec
+ * @param variable A Variable stub (will be modified)
+ * @return OkStatus if successful, InvalidArgumentError if the compressor is not
+ * a supported Blosc compressor.
+ */
+inline absl::Status apply_v3_codecs(nlohmann::json& input /*NOLINT*/,
+                                    nlohmann::json& variable /*NOLINT*/) {
+  if (!input.contains("compressor")) {
+    // If no compressor, use default bytes codec (already in stub)
+    return absl::OkStatus();
+  }
+  if (!input["compressor"].contains("name") ||
+      input["compressor"]["name"] != "blosc") {
+    return absl::InvalidArgumentError("Only blosc compressor is supported");
+  }
+
+  nlohmann::json blosc_codec = {{"name", "blosc"}};
+  blosc_codec["configuration"] = nlohmann::json::object();
+  blosc_codec["configuration"]["cname"] =
+      resolve_blosc_cname(input["compressor"]);
+
+  MDIO_ASSIGN_OR_RETURN(auto clevel, resolve_blosc_clevel(input["compressor"]));
+  blosc_codec["configuration"]["clevel"] = clevel;
+
+  // V3 blosc codec expects shuffle as a string enum. Accept the schema's
+  // string form as well as the legacy integer form (0/1/2).
+  if (input["compressor"].contains("shuffle") &&
+      !input["compressor"]["shuffle"].is_null()) {
+    blosc_codec["configuration"]["shuffle"] =
+        blosc_shuffle_to_string(input["compressor"]["shuffle"]);
+  } else {
+    blosc_codec["configuration"]["shuffle"] = "shuffle";
+  }
+
+  blosc_codec["configuration"]["blocksize"] =
+      resolve_blosc_blocksize(input["compressor"]);
+
+  // V3 uses a codec array: bytes first, then compression
+  variable["metadata"]["codecs"] =
+      nlohmann::json::array({{{"name", "bytes"}}, blosc_codec});
+  return absl::OkStatus();
+}
+
+/**
+ * @brief Applies the Blosc compressor to a V2 compressor object.
+ *
+ * When no compressor is supplied the compressor metadata is set to null.
+ * @param input A MDIO Variable spec
+ * @param variable A Variable stub (will be modified)
+ * @return OkStatus if successful, InvalidArgumentError if the compressor is not
+ * a supported Blosc compressor.
+ */
+inline absl::Status apply_v2_compressor(nlohmann::json& input /*NOLINT*/,
+                                        nlohmann::json& variable /*NOLINT*/) {
+  if (!input.contains("compressor")) {
+    variable["metadata"]["compressor"] = nullptr;
+    return absl::OkStatus();
+  }
+  if (!input["compressor"].contains("name")) {
+    return absl::InvalidArgumentError("Compressor name must be specified");
+  }
+  if (input["compressor"]["name"] != "blosc") {
+    return absl::InvalidArgumentError("Only blosc compressor is supported");
+  }
+
+  nlohmann::json& compressor = variable["metadata"]["compressor"];
+  compressor["id"] = input["compressor"]["name"];
+  compressor["cname"] = resolve_blosc_cname(input["compressor"]);
+
+  MDIO_ASSIGN_OR_RETURN(auto clevel, resolve_blosc_clevel(input["compressor"]));
+  compressor["clevel"] = clevel;
+
+  // V2 (numcodecs) blosc expects shuffle as an integer. Accept the schema's
+  // string enum as well as the legacy integer form.
+  if (input["compressor"].contains("shuffle") &&
+      !input["compressor"]["shuffle"].is_null()) {
+    compressor["shuffle"] =
+        blosc_shuffle_to_int(input["compressor"]["shuffle"]);
+  } else {
+    compressor["shuffle"] = 1;
+  }
+
+  compressor["blocksize"] = resolve_blosc_blocksize(input["compressor"]);
+  return absl::OkStatus();
+}
+
+/**
  * @brief Modifies a Variable spec to use proper Zarr compressor
  * This function is intended to be an internal helper function for formatting
  * Variable specs It will modify with side-effect on "input"
@@ -190,83 +379,10 @@ inline nlohmann::json resolve_blosc_blocksize(
 inline absl::Status transform_compressor(
     nlohmann::json& input /*NOLINT*/, nlohmann::json& variable /*NOLINT*/,
     mdio::zarr::ZarrVersion version = mdio::zarr::ZarrVersion::kV2) {
-  if (version == mdio::zarr::ZarrVersion::kV3) {
-    // V3 uses codec pipeline
-    if (input.contains("compressor")) {
-      if (!input["compressor"].contains("name") ||
-          input["compressor"]["name"] != "blosc") {
-        return absl::InvalidArgumentError("Only blosc compressor is supported");
-      }
-
-      nlohmann::json blosc_codec = {{"name", "blosc"}};
-      blosc_codec["configuration"] = nlohmann::json::object();
-
-      blosc_codec["configuration"]["cname"] =
-          resolve_blosc_cname(input["compressor"]);
-
-      auto clevel = resolve_blosc_clevel(input["compressor"]);
-      if (!clevel.ok()) {
-        return clevel.status();
-      }
-      blosc_codec["configuration"]["clevel"] = clevel.value();
-
-      // V3 blosc codec expects shuffle as a string enum. Accept the schema's
-      // string form as well as the legacy integer form (0/1/2).
-      if (input["compressor"].contains("shuffle") &&
-          !input["compressor"]["shuffle"].is_null()) {
-        blosc_codec["configuration"]["shuffle"] =
-            blosc_shuffle_to_string(input["compressor"]["shuffle"]);
-      } else {
-        blosc_codec["configuration"]["shuffle"] = "shuffle";
-      }
-
-      blosc_codec["configuration"]["blocksize"] =
-          resolve_blosc_blocksize(input["compressor"]);
-
-      // V3 uses a codec array: bytes first, then compression
-      variable["metadata"]["codecs"] =
-          nlohmann::json::array({{{"name", "bytes"}}, blosc_codec});
-    }
-    // If no compressor, use default bytes codec (already in stub)
-  } else {
-    // V2 uses compressor object
-    if (input.contains("compressor")) {
-      if (input["compressor"].contains("name")) {
-        if (input["compressor"]["name"] != "blosc") {
-          return absl::InvalidArgumentError(
-              "Only blosc compressor is supported");
-        }
-        variable["metadata"]["compressor"]["id"] = input["compressor"]["name"];
-      } else {
-        return absl::InvalidArgumentError("Compressor name must be specified");
-      }
-
-      variable["metadata"]["compressor"]["cname"] =
-          resolve_blosc_cname(input["compressor"]);
-
-      auto clevel = resolve_blosc_clevel(input["compressor"]);
-      if (!clevel.ok()) {
-        return clevel.status();
-      }
-      variable["metadata"]["compressor"]["clevel"] = clevel.value();
-
-      // V2 (numcodecs) blosc expects shuffle as an integer. Accept the schema's
-      // string enum as well as the legacy integer form.
-      if (input["compressor"].contains("shuffle") &&
-          !input["compressor"]["shuffle"].is_null()) {
-        variable["metadata"]["compressor"]["shuffle"] =
-            blosc_shuffle_to_int(input["compressor"]["shuffle"]);
-      } else {
-        variable["metadata"]["compressor"]["shuffle"] = 1;
-      }
-
-      variable["metadata"]["compressor"]["blocksize"] =
-          resolve_blosc_blocksize(input["compressor"]);
-    } else {
-      variable["metadata"]["compressor"] = nullptr;
-    }
+  if (LayoutFor(version).uses_codec_pipeline) {
+    return apply_v3_codecs(input, variable);
   }
-  return absl::OkStatus();
+  return apply_v2_compressor(input, variable);
 }
 
 /**
@@ -276,15 +392,13 @@ inline absl::Status transform_compressor(
  * @param input A MDIO Variable spec
  * @param variable A Variable stub (Will be modified)
  * @param dimensionMap A map of dimension names to sizes
- * @param version The Zarr version to target (defaults to V2)
  * @return void -- Can only be successful because validation must always pass
  * before this step This presumes that the user does not attempt to use these
  * functions directly
  */
 inline void transform_shape(
     nlohmann::json& input /*NOLINT*/, nlohmann::json& variable /*NOLINT*/,
-    std::unordered_map<std::string, uint64_t>& dimensionMap /*NOLINT*/,
-    mdio::zarr::ZarrVersion version = mdio::zarr::ZarrVersion::kV2) {
+    std::unordered_map<std::string, uint64_t>& dimensionMap /*NOLINT*/) {
   nlohmann::json shape = nlohmann::json::array();
   if (input["dimensions"][0].is_object()) {
     for (auto& dimension : input["dimensions"]) {
@@ -420,14 +534,95 @@ inline void set_fill_value(const nlohmann::json& json,
   } else {
     // Structured dtypes for both V2 and V3 use zero-initialized bytes, matching
     // mdio-python's np.void zero fill. Sum the byte size of every field.
-    const std::string dtype_key =
-        version == mdio::zarr::ZarrVersion::kV3 ? "data_type" : "dtype";
+    const std::string dtype_key = LayoutFor(version).dtype_key;
     uint16_t num_bytes = 0;
     for (const auto& field : variable["metadata"][dtype_key]) {
       num_bytes += zarr_dtype_byte_size(field[1].get<std::string>(), version);
     }
     variable["metadata"]["fill_value"] =
         encode_base64(std::string(num_bytes, '\0'));
+  }
+}
+
+/**
+ * @brief Sets the chunk shape on a Variable stub.
+ *
+ * Uses the explicit chunkGrid from the spec's "metadata" block when present,
+ * otherwise falls back to the full array shape (a single chunk per array). The
+ * shape metadata must already be populated via transform_shape.
+ *
+ * @param json A MDIO Dataset Variable list element
+ * @param variable A Variable stub (will be modified)
+ * @param layout The version layout describing where the chunk shape lives
+ */
+inline void transform_chunks(const nlohmann::json& json,
+                             nlohmann::json& variable /*NOLINT*/,
+                             const ZarrLayout& layout) {
+  nlohmann::json chunk_shape = variable["metadata"]["shape"];
+  if (json.contains("metadata") && json["metadata"].contains("chunkGrid")) {
+    chunk_shape = json["metadata"]["chunkGrid"]["configuration"]["chunkShape"];
+  }
+  layout.SetChunkShape(variable, chunk_shape);
+}
+
+/**
+ * @brief Populates the version-agnostic "attributes" block of a Variable stub.
+ *
+ * Copies through any user metadata, resolves the optional long name, derives
+ * dimension names (supporting both the object and string dimension forms), and
+ * serializes non-dimension coordinates as a space-separated string. None of
+ * this differs between Zarr versions.
+ *
+ * @param json A MDIO Dataset Variable list element
+ * @param variable A Variable stub (will be modified)
+ */
+inline void transform_attributes(const nlohmann::json& json,
+                                 nlohmann::json& variable /*NOLINT*/) {
+  if (json.contains("metadata")) {
+    variable["attributes"]["metadata"] = json["metadata"];
+  }
+
+  // The longName field should be optional for a Variable, but defaulting it to
+  // an empty string keeps the spec valid.
+  if (json.contains("longName")) {
+    variable["attributes"]["long_name"] = json["longName"];
+  } else {
+    variable["attributes"]["long_name"] = "";
+  }
+
+  nlohmann::json dimension_names = nlohmann::json::array();
+  if (!json.contains("dimensions")) {
+    dimension_names.emplace_back(json["name"]);
+  } else if (json["dimensions"][0].is_object()) {
+    for (const auto& dimension : json["dimensions"]) {
+      dimension_names.emplace_back(dimension["name"]);
+    }
+  } else {
+    dimension_names = json["dimensions"];
+  }
+  variable["attributes"]["dimension_names"] = dimension_names;
+
+  // We do not want to serialize "dimension coordinates"
+  std::set<std::string> dims;
+  for (const auto& dim : dimension_names) {
+    dims.insert(dim.get<std::string>());
+  }
+
+  if (json.contains("coordinates")) {
+    // This appears to need to be a space separated string, not a list
+    std::string coordinates;
+    std::size_t coords_size = json["coordinates"].size();
+    for (size_t i = 0; i < coords_size; ++i) {
+      std::string coord = json["coordinates"][i].get<std::string>();
+      if (dims.count(coord) > 0) {
+        continue;
+      }
+      coordinates += coord;
+      if (i != coords_size - 1) {
+        coordinates += " ";
+      }
+    }
+    variable["attributes"]["coordinates"] = coordinates;
   }
 }
 
@@ -446,152 +641,24 @@ inline tensorstore::Result<nlohmann::json> from_json_to_spec(
     std::unordered_map<std::string, uint64_t>& dimensionMap /*NOLINT*/,
     const std::string& path,
     mdio::zarr::ZarrVersion version = mdio::zarr::ZarrVersion::kV2) {
-  nlohmann::json variableStub;
+  const ZarrLayout layout = LayoutFor(version);
 
-  if (version == mdio::zarr::ZarrVersion::kV3) {
-    // Zarr V3 spec structure
-    variableStub = R"(
-        {
-            "driver": "zarr3",
-            "kvstore": {
-                "driver": "file",
-                "path": "VARIABLE_NAME"
-            },
-            "metadata": {
-                "data_type": "DATA_TYPE",
-                "shape": [],
-                "chunk_grid": {
-                    "name": "regular",
-                    "configuration": {
-                        "chunk_shape": []
-                    }
-                },
-                "chunk_key_encoding": {
-                    "name": "default",
-                    "configuration": {
-                        "separator": "/"
-                    }
-                },
-                "codecs": [{"name": "bytes"}]
-            },
-            "attributes": {}
-        }
-    )"_json;
-  } else {
-    // Zarr V2 spec structure
-    variableStub = R"(
-        {
-            "driver": "zarr",
-            "kvstore": {
-                "driver": "file",
-                "path": "VARIABLE_NAME"
-            },
-            "metadata": {
-                "dtype": "DATA_TYPE",
-                "dimension_separator": "/",
-                "shape": "SHAPE",
-                "chunks": "CHUNKS"
-            },
-            "attributes": {}
-        }
-    )"_json;
-  }
+  nlohmann::json variableStub = layout.MakeStub();
   variableStub["kvstore"]["path"] = json["name"];
 
-  auto transformStatus = transform_dtype(json, variableStub, version);
-  if (!transformStatus.ok()) {
-    return transformStatus;
-  }
-
-  auto compressorStatus = transform_compressor(json, variableStub, version);
-  if (!compressorStatus.ok()) {
-    return compressorStatus;
-  }
-
-  transform_shape(json, variableStub, dimensionMap, version);
-
-  if (json.contains("metadata")) {
-    nlohmann::json chunkShape;
-    if (json["metadata"].contains("chunkGrid")) {
-      chunkShape = json["metadata"]["chunkGrid"]["configuration"]["chunkShape"];
-    } else {
-      chunkShape = variableStub["metadata"]["shape"];
-    }
-
-    if (version == mdio::zarr::ZarrVersion::kV3) {
-      // V3 uses chunk_grid
-      variableStub["metadata"]["chunk_grid"]["configuration"]["chunk_shape"] =
-          chunkShape;
-    } else {
-      // V2 uses chunks
-      variableStub["metadata"]["chunks"] = chunkShape;
-    }
-
-    variableStub["attributes"]["metadata"] = json["metadata"];
-  } else {
-    // No metadata supplied means no chunkGrid
-    if (version == mdio::zarr::ZarrVersion::kV3) {
-      variableStub["metadata"]["chunk_grid"]["configuration"]["chunk_shape"] =
-          variableStub["metadata"]["shape"];
-    } else {
-      variableStub["metadata"]["chunks"] = variableStub["metadata"]["shape"];
-    }
-  }
+  MDIO_RETURN_IF_ERROR(transform_dtype(json, variableStub, version));
+  MDIO_RETURN_IF_ERROR(transform_compressor(json, variableStub, version));
+  transform_shape(json, variableStub, dimensionMap);
+  transform_chunks(json, variableStub, layout);
 
   // Fill values depend only on the data type, so they must be set for every
   // Variable (including dimension coordinates that omit a "metadata" block) to
   // stay aligned with mdio-python.
   set_fill_value(json, variableStub, version);
 
-  auto transform_result = transform_metadata(path, variableStub);
-  if (!transform_result.ok()) {
-    return transform_result;
-  }
+  MDIO_RETURN_IF_ERROR(transform_metadata(path, variableStub));
 
-  // I think the longName field should be optional for a Variable but this
-  // ensures the spec is valid.
-  if (json.contains("longName")) {
-    variableStub["attributes"]["long_name"] = json["longName"];
-  } else {
-    variableStub["attributes"]["long_name"] = "";
-  }
-
-  if (!json.contains("dimensions")) {
-    nlohmann::json dimension_names = nlohmann::json::array();
-    dimension_names.emplace_back(json["name"]);
-    variableStub["attributes"]["dimension_names"] = dimension_names;
-  } else if (json["dimensions"][0].is_object()) {
-    nlohmann::json dimension_names = nlohmann::json::array();
-    for (size_t i = 0; i < json["dimensions"].size(); ++i) {
-      dimension_names.emplace_back(json["dimensions"][i]["name"]);
-    }
-    variableStub["attributes"]["dimension_names"] = dimension_names;
-  } else {
-    variableStub["attributes"]["dimension_names"] = json["dimensions"];
-  }
-
-  // We do not want to seralize "dimension coordinates"
-  std::set<std::string> dims;
-  for (auto& dim : variableStub["attributes"]["dimension_names"]) {
-    dims.insert(dim.get<std::string>());
-  }
-
-  if (json.contains("coordinates")) {
-    // This appears to need to be a space separated string, not a list
-    std::string coordinates;
-    std::size_t coords_size = json["coordinates"].size();
-    for (size_t i = 0; i < coords_size; ++i) {
-      std::string coord = json["coordinates"][i].get<std::string>();
-      if (dims.count(coord) > 0) {
-        continue;
-      }
-      coordinates += coord;
-      if (i != coords_size - 1) {
-        coordinates += " ";
-      }
-    }
-    variableStub["attributes"]["coordinates"] = coordinates;
-  }
+  transform_attributes(json, variableStub);
 
   return variableStub;
 }
