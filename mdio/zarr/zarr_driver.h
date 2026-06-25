@@ -326,6 +326,22 @@ inline nlohmann::json GetJsonObject(const nlohmann::json& json,
 }
 
 /**
+ * @brief Safely gets a JSON value with a default fallback.
+ * @param json The JSON object.
+ * @param key The key to look up.
+ * @param default_value The default if key doesn't exist.
+ * @return The value at key, or default_value.
+ */
+inline nlohmann::json GetJsonValue(const nlohmann::json& json,
+                                   const std::string& key,
+                                   nlohmann::json default_value) {
+  if (json.contains(key)) {
+    return json[key];
+  }
+  return default_value;
+}
+
+/**
  * @brief Extracts the variable name from a key path (e.g., "varname/.zarray").
  * @param key The full key path.
  * @return The variable name portion.

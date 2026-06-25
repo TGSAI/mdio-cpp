@@ -341,6 +341,19 @@ TEST(ZarrDriver, GetJsonObject_NonObjectValue) {
   EXPECT_TRUE(obj.empty());
 }
 
+TEST(ZarrDriver, GetJsonValue_ExistingKey) {
+  nlohmann::json json = {{"count", 42}, {"tags", {"a", "b"}}};
+  EXPECT_EQ(mdio::zarr::GetJsonValue(json, "count", 0), 42);
+  EXPECT_EQ(mdio::zarr::GetJsonValue(json, "tags", nlohmann::json::array()),
+            (nlohmann::json{"a", "b"}));
+}
+
+TEST(ZarrDriver, GetJsonValue_MissingKey) {
+  nlohmann::json json = {{"name", "test"}};
+  EXPECT_TRUE(mdio::zarr::GetJsonValue(json, "missing", nullptr).is_null());
+  EXPECT_EQ(mdio::zarr::GetJsonValue(json, "missing", 2), 2);
+}
+
 TEST(ZarrDriver, ExtractVariableName_WithSlash) {
   EXPECT_EQ(mdio::zarr::ExtractVariableName("myvar/.zarray"), "myvar");
   EXPECT_EQ(mdio::zarr::ExtractVariableName("data/zarr.json"), "data");

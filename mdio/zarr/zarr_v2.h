@@ -66,57 +66,28 @@ constexpr int kConsolidatedFormat = 1;
  */
 inline Result<nlohmann::json> GetZarray(const ::nlohmann::json& metadata) {
   auto json = metadata;
-  nlohmann::json zarray;
   if (!json.contains("metadata")) {
     json["metadata"] = nlohmann::json::object();
     json["metadata"]["attributes"] = nlohmann::json::object();
   }
 
-  // These fields can have defaults:
-  if (!json["metadata"].contains("order")) {
-    zarray["order"] = "C";
-  } else {
-    zarray["order"] = json["metadata"]["order"];
-  }
-  if (!json["metadata"].contains("filters")) {
-    zarray["filters"] = nullptr;
-  } else {
-    zarray["filters"] = json["metadata"]["filters"];
-  }
+  auto& meta = json["metadata"];
+  nlohmann::json zarray;
 
-  if (!json["metadata"].contains("fill_value")) {
-    zarray["fill_value"] = nullptr;
+  zarray["order"] = GetJsonString(meta, "order", "C");
+  zarray["filters"] = GetJsonValue(meta, "filters", nullptr);
+  zarray["fill_value"] = GetJsonValue(meta, "fill_value", nullptr);
+  zarray["zarr_format"] = GetJsonValue(meta, "zarr_format", kZarrFormat);
+  if (!meta.contains("chunks") && meta.contains("shape")) {
+    zarray["chunks"] = meta["shape"];
   } else {
-    zarray["fill_value"] = json["metadata"]["fill_value"];
+    zarray["chunks"] = GetJsonValue(meta, "chunks", nullptr);
   }
-
-  if (!json["metadata"].contains("zarr_format")) {
-    zarray["zarr_format"] = kZarrFormat;
-  } else {
-    zarray["zarr_format"] = json["metadata"]["zarr_format"];
-  }
-
-  if (!json["metadata"].contains("chunks") &&
-      json["metadata"].contains("shape")) {
-    zarray["chunks"] = json["metadata"]["shape"];
-  } else {
-    zarray["chunks"] = json["metadata"]["chunks"];
-  }
-
-  if (!json["metadata"].contains("compressor")) {
-    zarray["compressor"] = nullptr;
-  } else {
-    zarray["compressor"] = json["metadata"]["compressor"];
-  }
-
-  if (!json["metadata"].contains("dimension_separator")) {
-    zarray["dimension_separator"] = "/";
-  } else {
-    zarray["dimension_separator"] = json["metadata"]["dimension_separator"];
-  }
-
-  zarray["shape"] = json["metadata"]["shape"];
-  zarray["dtype"] = json["metadata"]["dtype"];
+  zarray["compressor"] = GetJsonValue(meta, "compressor", nullptr);
+  zarray["dimension_separator"] =
+      GetJsonString(meta, "dimension_separator", "/");
+  zarray["shape"] = meta["shape"];
+  zarray["dtype"] = meta["dtype"];
 
   MDIO_ASSIGN_OR_RETURN(
       auto zarr_metadata,
