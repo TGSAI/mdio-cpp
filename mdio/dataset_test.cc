@@ -1688,6 +1688,18 @@ TEST_P(DatasetVersionTest, commitMetadata) {
 
   nlohmann::json metadata = newImageRes.value().getMetadata();
   ASSERT_TRUE(metadata.contains("metadata")) << metadata;
+  ASSERT_TRUE(metadata["metadata"].contains("statsV1"))
+      << "Did not find statsV1 in metadata";
+  ASSERT_TRUE(metadata["metadata"]["statsV1"].contains("histogram"))
+      << "Did not find histogram in statsV1";
+  EXPECT_TRUE(metadata["metadata"]["statsV1"]["histogram"]["binCenters"] ==
+              std::vector<float>({2, 4, 6}))
+      << "Expected binCenters to be [2, 4, 6] but got "
+      << metadata["metadata"]["statsV1"]["histogram"]["binCenters"];
+  EXPECT_TRUE(metadata["metadata"]["statsV1"]["histogram"]["counts"] ==
+              std::vector<float>({10, 15, 20}))
+      << "Expected counts to be [10, 15, 20] but got "
+      << metadata["metadata"]["statsV1"]["histogram"]["counts"];
 }
 
 INSTANTIATE_TEST_SUITE_P(

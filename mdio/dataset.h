@@ -330,7 +330,7 @@ class Dataset {
    * @param json_schema The JSON schema to validate.
    * @param path The path to create/open the dataset.
    * @param zarr_version Optional Zarr format version. If not specified,
-   *        auto-detects from the schema or defaults to V2.
+   *        auto-detects from the schema or defaults to V3.
    * @param options Variadic options for dataset creation/opening.
    * @details \b Usage
    *
@@ -344,7 +344,7 @@ class Dataset {
    *   mdio::constants::kCreate
    * );
    *
-   * // Without version (use std::nullopt for auto-detection or default to V2)
+   * // Without version (use std::nullopt for auto-detection or default to V3)
    * std::optional<mdio::zarr::ZarrVersion> version = std::nullopt;
    * auto dataset_future = mdio::Dataset::from_json(
    *   json_spec,

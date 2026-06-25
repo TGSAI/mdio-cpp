@@ -720,6 +720,12 @@ TEST_P(DatasetTest, open) {
 }
 
 TEST_P(DatasetTest, condensed) {
+  // This is the only test that opens by path, which triggers Zarr version
+  // auto-detection. Start from a clean directory so any dataset left behind by
+  // a different-version test (which shares this base path) cannot confuse
+  // detection. We never switch the version of an existing dataset in practice.
+  std::filesystem::remove_all(base_path_);
+
   // First create the dataset
   nlohmann::json j = nlohmann::json::parse(dataset_manifest_);
   auto construct = Construct(j, base_path_, version_);

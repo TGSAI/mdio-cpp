@@ -652,7 +652,7 @@ get_dimensions(nlohmann::json& spec /*NOLINT*/) {
  * @param spec A Dataset spec
  * @param path The path for the dataset
  * @param version Optional Zarr version to use. If not specified, auto-detects
- *                from spec's "zarr_version" field, defaulting to V2.
+ *                from spec's "zarr_version" field, defaulting to V3.
  * @return A vector of Variable specs or an error if the Dataset spec is invalid
  */
 inline tensorstore::Result<
@@ -660,7 +660,7 @@ inline tensorstore::Result<
 Construct(nlohmann::json& spec /*NOLINT*/, const std::string& path,
           std::optional<mdio::zarr::ZarrVersion> version = std::nullopt) {
   // Determine the version to use
-  mdio::zarr::ZarrVersion zarr_version = mdio::zarr::ZarrVersion::kV2;
+  mdio::zarr::ZarrVersion zarr_version = mdio::zarr::ZarrVersion::kV3;
   if (version.has_value()) {
     zarr_version = version.value();
   } else if (spec.contains("zarr_version")) {

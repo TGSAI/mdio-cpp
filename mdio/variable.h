@@ -1507,75 +1507,109 @@ class Variable : public VariableBase {
   }
 
   /**
-   * @brief Publishes new ".zattrs" metadata to the Variable's durable storage.
+   * @brief Publishes updated attribute metadata to the Variable's durable
+   * storage.
+   * For Zarr V2 the attributes are written to a standalone `.zattrs` file. For
+   * Zarr V3 the attributes live inside the array's `zarr.json`, so the existing
+   * `zarr.json` is read, its `attributes` object is replaced, and the full
+   * document is written back (read-modify-write) to preserve the array's other
+   * metadata (codecs, shape, fill value, etc).
    * This method should not be called independantly as it will result in a
    * mismatch between the Variable metadata and Dataset metadata
    * @return A future representing the timestamped storage generation of the
    * updated Variable.
    */
   Future<tensorstore::TimestampedStorageGeneration> PublishMetadata() {
-    auto publish = [](const ::nlohmann::json& json_var, bool isCloudStore,
-                      const tensorstore::TensorStore<T, R, M>& store)
-        -> Future<tensorstore::TimestampedStorageGeneration> {
-      auto output_json = json_var;
-
-      output_json["attributes"]["_ARRAY_DIMENSIONS"] =
-          output_json["dimension_names"];
-      output_json.erase("dimension_names");
-      if (output_json.contains("long_name")) {
-        output_json["attributes"]["long_name"] = output_json["long_name"];
-        output_json.erase("long_name");
-      }
-      if (output_json.contains("coordinates")) {
-        output_json["attributes"]["coordinates"] = output_json["coordinates"];
-        output_json.erase("coordinates");
-      }
-      // std::string outpath = "/.zattrs";
-      std::string outpath = ".zattrs";
-      if (isCloudStore) {
-        outpath = ".zattrs";
-      }
-
-      if (output_json.contains("metadata")) {
-        output_json["attributes"]["metadata"] = output_json["metadata"];
-        output_json.erase("metadata");
-      }
-
-      return tensorstore::kvstore::Write(
-          store.kvstore(), outpath,
-          absl::Cord(output_json["attributes"].dump(4)));
-    };
-
-    bool isCloudStore = false;
-    // TODO(BrianMichell): Make more error tolerant
     auto json_spec = store.spec().value().ToJson(IncludeDefaults{}).value();
-    auto driver = json_spec["kvstore"]["driver"];
-    if (driver == "gcs" || driver == "s3") {
-      isCloudStore = true;
+    zarr::ZarrVersion zarr_version = zarr::GetVersionFromSpec(json_spec);
+
+    // Build the attributes object from the in-memory variable metadata. The
+    // on-disk layout differs by Zarr version: V2 nests the mdio metadata under
+    // an "metadata" key, while V3 flattens those fields directly under
+    // "attributes" (chunkGrid is represented natively as "chunk_grid").
+    ::nlohmann::json output_json = this->getMetadata();
+    output_json["attributes"]["_ARRAY_DIMENSIONS"] =
+        output_json["dimension_names"];
+    output_json.erase("dimension_names");
+    if (output_json.contains("long_name")) {
+      output_json["attributes"]["long_name"] = output_json["long_name"];
+      output_json.erase("long_name");
     }
-    auto isCloudStoreRF = tensorstore::MakeReadyFuture<bool>(isCloudStore);
-    auto metadataRF =
-        tensorstore::MakeReadyFuture<::nlohmann::json>(this->getMetadata());
-    auto storeRF =
-        tensorstore::MakeReadyFuture<tensorstore::TensorStore<T, R, M>>(store);
-    auto write_metadata_future =
-        tensorstore::MapFutureValue(tensorstore::InlineExecutor{}, publish,
-                                    metadataRF, isCloudStoreRF, storeRF);
+    if (output_json.contains("coordinates")) {
+      output_json["attributes"]["coordinates"] = output_json["coordinates"];
+      output_json.erase("coordinates");
+    }
+    if (output_json.contains("metadata")) {
+      if (zarr_version == zarr::ZarrVersion::kV3) {
+        for (auto& item : output_json["metadata"].items()) {
+          if (item.key() == "chunkGrid") {
+            continue;  // Represented natively as zarr.json "chunk_grid".
+          }
+          output_json["attributes"][item.key()] = item.value();
+        }
+      } else {
+        output_json["attributes"]["metadata"] = output_json["metadata"];
+      }
+      output_json.erase("metadata");
+    }
+    ::nlohmann::json attributes = output_json["attributes"];
+
     auto pair = tensorstore::PromiseFuturePair<
         tensorstore::TimestampedStorageGeneration>::Make();
-    write_metadata_future.ExecuteWhenReady(
-        [this, promise = std::move(pair.promise)](
-            tensorstore::ReadyFuture<tensorstore::TimestampedStorageGeneration>
-                readyFut) {
-          auto ready_result = readyFut.result();
-          if (!ready_result.ok()) {
-            promise.SetResult(ready_result.status());
-          } else {
-            _dataset_only_callback_committed();
-            promise.SetResult(ready_result.value());
-          }
-        });
-    // return write_metadata_future;
+
+    if (zarr_version == zarr::ZarrVersion::kV3) {
+      auto kvstore = store.kvstore();
+      auto read_future = tensorstore::kvstore::Read(kvstore, "zarr.json");
+      read_future.ExecuteWhenReady(
+          [this, kvstore, attributes, promise = std::move(pair.promise)](
+              tensorstore::ReadyFuture<tensorstore::kvstore::ReadResult>
+                  readyRead) mutable {
+            auto read_result = readyRead.result();
+            if (!read_result.ok()) {
+              promise.SetResult(read_result.status());
+              return;
+            }
+            ::nlohmann::json zarr_json = ::nlohmann::json::parse(
+                std::string(read_result.value().value), nullptr, false);
+            if (zarr_json.is_discarded()) {
+              promise.SetResult(absl::InternalError(
+                  "Failed to parse zarr.json while publishing metadata."));
+              return;
+            }
+            zarr_json["attributes"] = attributes;
+            auto write_future = tensorstore::kvstore::Write(
+                kvstore, "zarr.json", absl::Cord(zarr_json.dump(4)));
+            write_future.ExecuteWhenReady(
+                [this, promise = std::move(promise)](
+                    tensorstore::ReadyFuture<
+                        tensorstore::TimestampedStorageGeneration>
+                        readyWrite) mutable {
+                  auto write_result = readyWrite.result();
+                  if (!write_result.ok()) {
+                    promise.SetResult(write_result.status());
+                  } else {
+                    _dataset_only_callback_committed();
+                    promise.SetResult(write_result.value());
+                  }
+                });
+          });
+    } else {
+      auto write_future = tensorstore::kvstore::Write(
+          store.kvstore(), ".zattrs", absl::Cord(attributes.dump(4)));
+      write_future.ExecuteWhenReady(
+          [this, promise = std::move(pair.promise)](
+              tensorstore::ReadyFuture<
+                  tensorstore::TimestampedStorageGeneration>
+                  readyWrite) mutable {
+            auto write_result = readyWrite.result();
+            if (!write_result.ok()) {
+              promise.SetResult(write_result.status());
+            } else {
+              _dataset_only_callback_committed();
+              promise.SetResult(write_result.value());
+            }
+          });
+    }
     return pair.future;
   }
 
