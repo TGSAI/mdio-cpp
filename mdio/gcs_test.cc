@@ -23,7 +23,7 @@ namespace {
 // TODO(End user): User should point to their own GCS bucket here.
 // You may find the test dataset at: TODO: Upload the test dataset to a public
 // object store
-/*NOLINT*/ std::string const GCS_PATH = "gs://USER_BUCKET/mdio_cpp_testing";
+/*NOLINT*/ std::string const GCS_PATH = "gs://USER_BUCKET/";
 
 /**
  * @brief Returns a string representation of the Zarr version for naming.
@@ -195,7 +195,7 @@ class GCSVersionTest
 };
 
 TEST_P(GCSVersionTest, create) {
-  if (GCS_PATH == "gs://USER_BUCKET/mdio_cpp_testing") {
+  if (GCS_PATH == "gs://USER_BUCKET/") {
     GTEST_SKIP() << "Please set the GCS_PATH to your own bucket in the "
                     "gcs_test.cc file.";
   }
@@ -206,7 +206,7 @@ TEST_P(GCSVersionTest, create) {
 }
 
 TEST_P(GCSVersionTest, open) {
-  if (GCS_PATH == "gs://USER_BUCKET/mdio_cpp_testing") {
+  if (GCS_PATH == "gs://USER_BUCKET/") {
     GTEST_SKIP() << "Please set the GCS_PATH to your own bucket in the "
                     "gcs_test.cc file.";
   }
@@ -222,7 +222,7 @@ TEST_P(GCSVersionTest, open) {
 }
 
 TEST_P(GCSVersionTest, readWrite) {
-  if (GCS_PATH == "gs://USER_BUCKET/mdio_cpp_testing") {
+  if (GCS_PATH == "gs://USER_BUCKET/") {
     GTEST_SKIP() << "Please set the GCS_PATH to your own bucket in the "
                     "gcs_test.cc file.";
   }
@@ -262,7 +262,7 @@ TEST_P(GCSVersionTest, readWrite) {
 }
 
 TEST_P(GCSVersionTest, selectField) {
-  if (GCS_PATH == "gs://USER_BUCKET/mdio_cpp_testing") {
+  if (GCS_PATH == "gs://USER_BUCKET/") {
     GTEST_SKIP() << "Please set the GCS_PATH to your own bucket in the "
                     "gcs_test.cc file.";
   }
