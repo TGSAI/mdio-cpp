@@ -445,8 +445,8 @@ inline Future<void> WriteMetadata(
   std::vector<tensorstore::AnyFuture> write_futures;
   write_futures.push_back(root_future);
 
-  // TensorStore writes numeric arrays, but metadata-only arrays are never opened
-  // through TensorStore. Persist their child zarr.json files explicitly.
+  // TensorStore writes numeric arrays, but metadata-only arrays are never
+  // opened through TensorStore. Persist their child zarr.json files explicitly.
   for (const auto& json : json_variables) {
     if (!json.contains("_mdio_header_only") ||
         !json["_mdio_header_only"].get<bool>()) {
