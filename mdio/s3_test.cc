@@ -246,30 +246,96 @@ TEST_P(S3VersionTest, readWrite) {
   ASSERT_TRUE(dataset.status().ok()) << dataset.status();
 
   auto ds = dataset.value();
+  std::vector<std::string> names = ds.variables.get_keys();
 
-  // Read and write to the image variable
-  auto imageVarRes = ds.variables.get<mdio::dtypes::float32_t>("image");
-  ASSERT_TRUE(imageVarRes.status().ok()) << imageVarRes.status();
-  auto imageVar = imageVarRes.value();
+  // Construct a vector of Variables to work with
+  std::vector<mdio::Variable<>> openVariables;
+  for (auto& key : names) {
+    auto var = ds.get_variable(key);
+    openVariables.emplace_back(var.value());
+  }
 
-  auto imageDataRes = imageVar.Read();
-  ASSERT_TRUE(imageDataRes.status().ok()) << imageDataRes.status();
-  auto imageData = imageDataRes.value();
+  // Now we can start opening all the Variables
+  std::vector<mdio::Future<mdio::VariableData<>>> readVariablesFutures;
+  for (auto& v : openVariables) {
+    auto read = v.Read();
+    readVariablesFutures.emplace_back(read);
+  }
 
-  auto accessor = imageData.get_data_accessor().data();
-  accessor[0] = 3.14f;
-  accessor[1] = 2.71f;
+  // Now we make sure all the reads were successful
+  std::vector<mdio::VariableData<>> readVariables;
+  for (auto& v : readVariablesFutures) {
+    ASSERT_TRUE(v.status().ok()) << v.status();
+    readVariables.emplace_back(v.value());
+  }
 
-  auto writeFut = imageVar.Write(imageData);
-  ASSERT_TRUE(writeFut.status().ok()) << writeFut.status();
+  for (auto variable : readVariables) {
+    std::string name = variable.variableName;
+    mdio::DataType dtype = variable.dtype();
+    if (dtype == mdio::constants::kFloat32 && name == "image") {
+      auto data = reinterpret_cast<mdio::dtypes::float32_t*>(
+          variable.get_data_accessor().data());
+      data[0] = 3.14f;
+    } else if (dtype == mdio::constants::kFloat64 && name == "velocity") {
+      auto data = reinterpret_cast<mdio::dtypes::float64_t*>(
+          variable.get_data_accessor().data());
+      data[0] = 2.71828;
+    } else if (dtype == mdio::constants::kInt16 && name == "image_inline") {
+      auto data = reinterpret_cast<mdio::dtypes::int16_t*>(
+          variable.get_data_accessor().data());
+      data[0] = 0xff;
+    } else if (dtype == mdio::constants::kByte && name == "image_headers") {
+      auto data = reinterpret_cast<mdio::dtypes::byte_t*>(
+          variable.get_data_accessor().data());
+      for (int i = 0; i < 12; i++) {
+        data[i] = std::byte(0xff);
+      }
+    } else if (name == "inline") {
+      auto data = reinterpret_cast<mdio::dtypes::uint32_t*>(
+          variable.get_data_accessor().data());
+      for (uint32_t i = 0; i < 256; ++i) {
+        data[i] = i;
+      }
+    } else if (name == "crossline") {
+      auto data = reinterpret_cast<mdio::dtypes::uint32_t*>(
+          variable.get_data_accessor().data());
+      for (uint32_t i = 0; i < 512; ++i) {
+        data[i] = i;
+      }
+    } else if (name == "depth") {
+      auto data = reinterpret_cast<mdio::dtypes::uint32_t*>(
+          variable.get_data_accessor().data());
+      for (uint32_t i = 0; i < 384; ++i) {
+        data[i] = i;
+      }
+    }
+  }
 
-  // Re-read and verify
-  auto rereadRes = imageVar.Read();
-  ASSERT_TRUE(rereadRes.status().ok()) << rereadRes.status();
-  auto rereadAccessor = rereadRes.value().get_data_accessor().data();
+  // Pair the Variables to the VariableData objects via name matching so we can
+  // write them out correctly This makes an assumption that the vectors are 1-1
+  std::map<std::size_t, std::size_t> variableIdxPair;
+  for (std::size_t i = 0; i < openVariables.size(); i++) {
+    for (std::size_t j = 0; j < readVariables.size(); j++) {
+      if (openVariables[i].get_variable_name() ==
+          readVariables[j].variableName) {
+        variableIdxPair[i] = j;
+        break;
+      }
+    }
+  }
 
-  EXPECT_FLOAT_EQ(rereadAccessor[0], 3.14f);
-  EXPECT_FLOAT_EQ(rereadAccessor[1], 2.71f);
+  // Now we can write the Variables back to the store
+  std::vector<mdio::WriteFutures> writeFutures;
+  for (auto& idxPair : variableIdxPair) {
+    auto write =
+        openVariables[idxPair.second].Write(readVariables[idxPair.first]);
+    writeFutures.emplace_back(write);
+  }
+
+  // Now we make sure all the writes were successful
+  for (auto& w : writeFutures) {
+    ASSERT_TRUE(w.status().ok()) << w.status();
+  }
 }
 
 TEST_P(S3VersionTest, selectField) {
@@ -286,6 +352,11 @@ TEST_P(S3VersionTest, selectField) {
   ASSERT_TRUE(dataset.status().ok()) << dataset.status();
   auto ds = dataset.value();
 
+  for (auto& kv : ds.coordinates) {
+    std::string key = kv.first;
+    auto var = ds.get_variable(key);
+    ASSERT_TRUE(var.status().ok()) << var.status();
+  }
   auto future = ds.SelectField("image_headers", "cdp-x");
   ASSERT_TRUE(future.status().ok()) << future.status();
 }
