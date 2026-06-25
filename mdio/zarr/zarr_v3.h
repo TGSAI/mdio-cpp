@@ -142,9 +142,8 @@ inline std::string GetDataTypeName(const nlohmann::json& data_type) {
   if (data_type.is_string()) {
     return data_type.get<std::string>();
   }
-  if (data_type.is_object() && data_type.contains("name") &&
-      data_type["name"].is_string()) {
-    return data_type["name"].get<std::string>();
+  if (data_type.is_object()) {
+    return GetJsonString(data_type, "name");
   }
   return "";
 }
@@ -442,8 +441,7 @@ inline Future<void> WriteMetadata(
   // TensorStore writes numeric arrays, but metadata-only arrays are never
   // opened through TensorStore. Persist their child zarr.json files explicitly.
   for (const auto& json : json_variables) {
-    if (!json.contains("_mdio_header_only") ||
-        !json["_mdio_header_only"].get<bool>()) {
+    if (!GetJsonValue(json, "_mdio_header_only", false).get<bool>()) {
       continue;
     }
 
@@ -713,10 +711,8 @@ Future<tensorstore::TimestampedStorageGeneration> WriteVariableAttributes(
     }
 
     // Extract dimension_names before preparing attributes (goes at root level)
-    nlohmann::json dimension_names;
-    if (json_var.contains("dimension_names")) {
-      dimension_names = json_var["dimension_names"];
-    }
+    nlohmann::json dimension_names =
+        GetJsonValue(json_var, "dimension_names", nullptr);
 
     // Prepare and update attributes
     auto attrs =
