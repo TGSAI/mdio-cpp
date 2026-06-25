@@ -79,6 +79,17 @@ std::string GetSimpleManifest() {
         "chunkGrid": {
           "name": "regular",
           "configuration": { "chunkShape": [128, 128, 128] }
+        },
+        "statsV1": {
+          "count": 100,
+          "sum": 1215.1,
+          "sumSquares": 125.12,
+          "min": 5.61,
+          "max": 10.84,
+          "histogram": {"binCenters":  [1, 2], "counts":  [10, 15]}
+        },
+        "attributes": {
+          "fizz": "buzz"
         }
       },
       "coordinates": ["inline", "crossline", "depth", "cdp-x", "cdp-y"],
