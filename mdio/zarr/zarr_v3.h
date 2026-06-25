@@ -229,11 +229,9 @@ inline nlohmann::json BuildVariableSpec(const std::string& driver,
  */
 inline Result<nlohmann::json> ToZarrDtype(const std::string& dtype) {
   static const std::unordered_set<std::string> kSupportedDtypes = {
-      "int8",    "int16",    "int32",    "int64",
-      "uint8",   "uint16",   "uint32",   "uint64",
-      "float16", "float32",  "float64",
-      "bool",
-      "complex64", "complex128"};
+      "int8",    "int16",  "int32",     "int64",     "uint8",
+      "uint16",  "uint32", "uint64",    "float16",   "float32",
+      "float64", "bool",   "complex64", "complex128"};
   if (kSupportedDtypes.count(dtype) > 0) {
     return dtype;
   }
