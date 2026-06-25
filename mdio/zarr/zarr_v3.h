@@ -373,6 +373,20 @@ inline nlohmann::json PrepareVariableAttributes(const nlohmann::json& json) {
   return attrs;
 }
 
+inline tensorstore::Result<nlohmann::json> BuildHeaderOnlyArrayMetadata(
+    const nlohmann::json& json) {
+  if (!json.contains("_mdio_array_metadata")) {
+    return absl::InvalidArgumentError(
+        "V3 header-only variable is missing _mdio_array_metadata.");
+  }
+
+  nlohmann::json array_metadata = json["_mdio_array_metadata"];
+  if (json.contains("attributes")) {
+    array_metadata["attributes"] = PrepareVariableAttributes(json);
+  }
+  return array_metadata;
+}
+
 /**
  * @brief Writes metadata for a Zarr V3 dataset (NO consolidated metadata).
  *
@@ -431,9 +445,34 @@ inline Future<void> WriteMetadata(
   std::vector<tensorstore::AnyFuture> write_futures;
   write_futures.push_back(root_future);
 
-  // Note: Individual array zarr.json files are written by TensorStore
-  // when the variable is created, so we don't need to write them here.
-  // We only write the root group metadata.
+  // TensorStore writes numeric arrays, but metadata-only arrays are never opened
+  // through TensorStore. Persist their child zarr.json files explicitly.
+  for (const auto& json : json_variables) {
+    if (!json.contains("_mdio_header_only") ||
+        !json["_mdio_header_only"].get<bool>()) {
+      continue;
+    }
+
+    auto array_metadata = BuildHeaderOnlyArrayMetadata(json);
+    if (!array_metadata.ok()) {
+      return array_metadata.status();
+    }
+
+    std::string path = json["kvstore"]["path"].get<std::string>();
+    std::vector<std::string> path_parts = absl::StrSplit(path, '/');
+    std::string var_name = path_parts.back();
+    std::string zarr_json_key = var_name + "/zarr.json";
+
+    auto header_future = tensorstore::MapFutureValue(
+        tensorstore::InlineExecutor{},
+        [array_metadata = array_metadata.value(),
+         zarr_json_key](const tensorstore::KvStore& kvs) {
+          return tensorstore::kvstore::Write(
+              kvs, zarr_json_key, absl::Cord(array_metadata.dump(4)));
+        },
+        kvs_future);
+    write_futures.push_back(header_future);
+  }
 
   return tensorstore::WaitAllFuture(write_futures);
 }
