@@ -132,6 +132,51 @@ inline nlohmann::json blosc_shuffle_to_string(const nlohmann::json& shuffle) {
 }
 
 /**
+ * @brief Resolves the Blosc compressor name (cname).
+ * Accepts the schema key "cname" and the legacy MDIO-cpp key "algorithm" for
+ * backward compatibility, defaulting to "lz4" when neither is present.
+ */
+inline nlohmann::json resolve_blosc_cname(const nlohmann::json& compressor) {
+  if (compressor.contains("cname")) {
+    return compressor["cname"];
+  }
+  if (compressor.contains("algorithm")) {
+    return compressor["algorithm"];
+  }
+  return "lz4";
+}
+
+/**
+ * @brief Resolves and validates the Blosc compression level (clevel).
+ * Accepts the schema key "clevel" and the legacy key "level", defaulting to 5
+ * when neither is present.
+ * @return The clevel value, or InvalidArgumentError if outside [0, 9].
+ */
+inline tensorstore::Result<nlohmann::json> resolve_blosc_clevel(
+    const nlohmann::json& compressor) {
+  if (compressor.contains("clevel") || compressor.contains("level")) {
+    auto clevel = compressor.contains("clevel") ? compressor["clevel"]
+                                                : compressor["level"];
+    if (clevel > 9 || clevel < 0) {
+      return absl::InvalidArgumentError(
+          "Compressor level must be between 0 and 9");
+    }
+    return clevel;
+  }
+  return nlohmann::json(5);
+}
+
+/**
+ * @brief Resolves the Blosc blocksize, defaulting to 0 when not present.
+ */
+inline nlohmann::json resolve_blosc_blocksize(const nlohmann::json& compressor) {
+  if (compressor.contains("blocksize")) {
+    return compressor["blocksize"];
+  }
+  return nlohmann::json(0);
+}
+
+/**
  * @brief Modifies a Variable spec to use proper Zarr compressor
  * This function is intended to be an internal helper function for formatting
  * Variable specs It will modify with side-effect on "input"
@@ -155,31 +200,14 @@ inline absl::Status transform_compressor(
       nlohmann::json blosc_codec = {{"name", "blosc"}};
       blosc_codec["configuration"] = nlohmann::json::object();
 
-      // Accept both the schema key "cname" and the legacy MDIO-cpp key
-      // "algorithm" for backward compatibility.
-      if (input["compressor"].contains("cname")) {
-        blosc_codec["configuration"]["cname"] = input["compressor"]["cname"];
-      } else if (input["compressor"].contains("algorithm")) {
-        blosc_codec["configuration"]["cname"] =
-            input["compressor"]["algorithm"];
-      } else {
-        blosc_codec["configuration"]["cname"] = "lz4";
-      }
+      blosc_codec["configuration"]["cname"] =
+          resolve_blosc_cname(input["compressor"]);
 
-      // Accept both the schema key "clevel" and the legacy key "level".
-      if (input["compressor"].contains("clevel") ||
-          input["compressor"].contains("level")) {
-        auto clevel = input["compressor"].contains("clevel")
-                          ? input["compressor"]["clevel"]
-                          : input["compressor"]["level"];
-        if (clevel > 9 || clevel < 0) {
-          return absl::InvalidArgumentError(
-              "Compressor level must be between 0 and 9");
-        }
-        blosc_codec["configuration"]["clevel"] = clevel;
-      } else {
-        blosc_codec["configuration"]["clevel"] = 5;
+      auto clevel = resolve_blosc_clevel(input["compressor"]);
+      if (!clevel.ok()) {
+        return clevel.status();
       }
+      blosc_codec["configuration"]["clevel"] = clevel.value();
 
       // V3 blosc codec expects shuffle as a string enum. Accept the schema's
       // string form as well as the legacy integer form (0/1/2).
@@ -191,12 +219,8 @@ inline absl::Status transform_compressor(
         blosc_codec["configuration"]["shuffle"] = "shuffle";
       }
 
-      if (input["compressor"].contains("blocksize")) {
-        blosc_codec["configuration"]["blocksize"] =
-            input["compressor"]["blocksize"];
-      } else {
-        blosc_codec["configuration"]["blocksize"] = 0;
-      }
+      blosc_codec["configuration"]["blocksize"] =
+          resolve_blosc_blocksize(input["compressor"]);
 
       // V3 uses a codec array: bytes first, then compression
       variable["metadata"]["codecs"] =
@@ -216,31 +240,15 @@ inline absl::Status transform_compressor(
         return absl::InvalidArgumentError("Compressor name must be specified");
       }
 
-      // Accept both the schema key "cname" and the legacy MDIO-cpp key
-      // "algorithm" for backward compatibility.
-      if (input["compressor"].contains("cname")) {
-        variable["metadata"]["compressor"]["cname"] =
-            input["compressor"]["cname"];
-      } else if (input["compressor"].contains("algorithm")) {
-        variable["metadata"]["compressor"]["cname"] =
-            input["compressor"]["algorithm"];
-      } else {
-        variable["metadata"]["compressor"]["cname"] = "lz4";
+      variable["metadata"]["compressor"]["cname"] =
+          resolve_blosc_cname(input["compressor"]);
+
+      auto clevel = resolve_blosc_clevel(input["compressor"]);
+      if (!clevel.ok()) {
+        return clevel.status();
       }
-      // Accept both the schema key "clevel" and the legacy key "level".
-      if (input["compressor"].contains("clevel") ||
-          input["compressor"].contains("level")) {
-        auto clevel = input["compressor"].contains("clevel")
-                          ? input["compressor"]["clevel"]
-                          : input["compressor"]["level"];
-        if (clevel > 9 || clevel < 0) {
-          return absl::InvalidArgumentError(
-              "Compressor level must be between 0 and 9");
-        }
-        variable["metadata"]["compressor"]["clevel"] = clevel;
-      } else {
-        variable["metadata"]["compressor"]["clevel"] = 5;
-      }
+      variable["metadata"]["compressor"]["clevel"] = clevel.value();
+
       // V2 (numcodecs) blosc expects shuffle as an integer. Accept the schema's
       // string enum as well as the legacy integer form.
       if (input["compressor"].contains("shuffle") &&
@@ -250,12 +258,9 @@ inline absl::Status transform_compressor(
       } else {
         variable["metadata"]["compressor"]["shuffle"] = 1;
       }
-      if (input["compressor"].contains("blocksize")) {
-        variable["metadata"]["compressor"]["blocksize"] =
-            input["compressor"]["blocksize"];
-      } else {
-        variable["metadata"]["compressor"]["blocksize"] = 0;
-      }
+
+      variable["metadata"]["compressor"]["blocksize"] =
+          resolve_blosc_blocksize(input["compressor"]);
     } else {
       variable["metadata"]["compressor"] = nullptr;
     }
