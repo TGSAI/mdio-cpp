@@ -1008,4 +1008,127 @@ TEST(Construct, explicitV2Version) {
   }
 }
 
+TEST(ZarrLayout, v2Facts) {
+  const ZarrLayout layout = LayoutFor(mdio::zarr::ZarrVersion::kV2);
+  EXPECT_EQ(layout.version, mdio::zarr::ZarrVersion::kV2);
+  EXPECT_EQ(layout.dtype_key, "dtype");
+  EXPECT_FALSE(layout.uses_codec_pipeline);
+}
+
+TEST(ZarrLayout, v3Facts) {
+  const ZarrLayout layout = LayoutFor(mdio::zarr::ZarrVersion::kV3);
+  EXPECT_EQ(layout.version, mdio::zarr::ZarrVersion::kV3);
+  EXPECT_EQ(layout.dtype_key, "data_type");
+  EXPECT_TRUE(layout.uses_codec_pipeline);
+}
+
+TEST(ZarrLayout, makeStubV2) {
+  auto stub = LayoutFor(mdio::zarr::ZarrVersion::kV2).MakeStub();
+  EXPECT_EQ(stub["driver"], "zarr");
+  EXPECT_TRUE(stub["metadata"].contains("dtype"));
+  EXPECT_TRUE(stub["metadata"].contains("chunks"));
+  EXPECT_FALSE(stub["metadata"].contains("chunk_grid"));
+}
+
+TEST(ZarrLayout, makeStubV3) {
+  auto stub = LayoutFor(mdio::zarr::ZarrVersion::kV3).MakeStub();
+  EXPECT_EQ(stub["driver"], "zarr3");
+  EXPECT_TRUE(stub["metadata"].contains("data_type"));
+  EXPECT_TRUE(stub["metadata"].contains("chunk_grid"));
+  EXPECT_EQ(stub["metadata"]["codecs"][0]["name"], "bytes");
+}
+
+TEST(ZarrLayout, setChunkShapeV2) {
+  nlohmann::json variable = {{"metadata", nlohmann::json::object()}};
+  LayoutFor(mdio::zarr::ZarrVersion::kV2)
+      .SetChunkShape(variable, nlohmann::json::array({10, 20}));
+  EXPECT_EQ(variable["metadata"]["chunks"], (nlohmann::json::array({10, 20})));
+}
+
+TEST(ZarrLayout, setChunkShapeV3) {
+  nlohmann::json variable = {
+      {"metadata",
+       {{"chunk_grid", {{"configuration", nlohmann::json::object()}}}}}};
+  LayoutFor(mdio::zarr::ZarrVersion::kV3)
+      .SetChunkShape(variable, nlohmann::json::array({10, 20}));
+  EXPECT_EQ(variable["metadata"]["chunk_grid"]["configuration"]["chunk_shape"],
+            (nlohmann::json::array({10, 20})));
+}
+
+TEST(TransformChunks, usesExplicitChunkGrid) {
+  nlohmann::json json = {
+      {"metadata",
+       {{"chunkGrid", {{"configuration", {{"chunkShape", {4, 8}}}}}}}}};
+  nlohmann::json variable = {{"metadata", {{"shape", {16, 32}}}}};
+  transform_chunks(json, variable, LayoutFor(mdio::zarr::ZarrVersion::kV2));
+  EXPECT_EQ(variable["metadata"]["chunks"], (nlohmann::json::array({4, 8})));
+}
+
+TEST(TransformChunks, fallsBackToShapeWhenNoMetadata) {
+  nlohmann::json json = nlohmann::json::object();
+  nlohmann::json variable = {{"metadata", {{"shape", {16, 32}}}}};
+  transform_chunks(json, variable, LayoutFor(mdio::zarr::ZarrVersion::kV2));
+  EXPECT_EQ(variable["metadata"]["chunks"], (nlohmann::json::array({16, 32})));
+}
+
+TEST(TransformChunks, fallsBackToShapeWhenMetadataLacksChunkGrid) {
+  nlohmann::json json = {{"metadata", {{"statsV1", nlohmann::json::object()}}}};
+  nlohmann::json variable = {{"metadata", {{"shape", {16, 32}}}}};
+  transform_chunks(json, variable, LayoutFor(mdio::zarr::ZarrVersion::kV3));
+  EXPECT_EQ(variable["metadata"]["chunk_grid"]["configuration"]["chunk_shape"],
+            (nlohmann::json::array({16, 32})));
+}
+
+TEST(TransformAttributes, longNameDefaultsToEmpty) {
+  nlohmann::json json = {{"name", "x"}};
+  nlohmann::json variable = {{"attributes", nlohmann::json::object()}};
+  transform_attributes(json, variable);
+  EXPECT_EQ(variable["attributes"]["long_name"], "");
+}
+
+TEST(TransformAttributes, longNamePassesThrough) {
+  nlohmann::json json = {{"name", "x"}, {"longName", "Inline"}};
+  nlohmann::json variable = {{"attributes", nlohmann::json::object()}};
+  transform_attributes(json, variable);
+  EXPECT_EQ(variable["attributes"]["long_name"], "Inline");
+}
+
+TEST(TransformAttributes, dimensionNamesFromObjectForm) {
+  nlohmann::json json = {
+      {"name", "image"},
+      {"dimensions", {{{"name", "inline"}}, {{"name", "crossline"}}}}};
+  nlohmann::json variable = {{"attributes", nlohmann::json::object()}};
+  transform_attributes(json, variable);
+  EXPECT_EQ(variable["attributes"]["dimension_names"],
+            (nlohmann::json::array({"inline", "crossline"})));
+}
+
+TEST(TransformAttributes, dimensionNamesFromStringForm) {
+  nlohmann::json json = {{"name", "image"},
+                         {"dimensions", {"inline", "depth"}}};
+  nlohmann::json variable = {{"attributes", nlohmann::json::object()}};
+  transform_attributes(json, variable);
+  EXPECT_EQ(variable["attributes"]["dimension_names"],
+            (nlohmann::json::array({"inline", "depth"})));
+}
+
+TEST(TransformAttributes, dimensionNamesDefaultToVariableName) {
+  // A dimension coordinate omits "dimensions"; it names itself.
+  nlohmann::json json = {{"name", "inline"}};
+  nlohmann::json variable = {{"attributes", nlohmann::json::object()}};
+  transform_attributes(json, variable);
+  EXPECT_EQ(variable["attributes"]["dimension_names"],
+            (nlohmann::json::array({"inline"})));
+}
+
+TEST(TransformAttributes, coordinatesExcludeDimensions) {
+  // "inline" is also a dimension, so it must be dropped from coordinates.
+  nlohmann::json json = {{"name", "image"},
+                         {"dimensions", {"inline", "crossline"}},
+                         {"coordinates", {"inline", "cdp_x", "cdp_y"}}};
+  nlohmann::json variable = {{"attributes", nlohmann::json::object()}};
+  transform_attributes(json, variable);
+  EXPECT_EQ(variable["attributes"]["coordinates"], "cdp_x cdp_y");
+}
+
 }  // namespace
