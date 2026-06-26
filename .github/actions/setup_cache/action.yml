@@ -10,12 +10,11 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Cache
-      uses: actions/cache@v3
+    - name: Cache FetchContent dependencies
+      uses: actions/cache@v4
       with:
-        # You might want to add .ccache to your cache configuration?
         path: |
           build/_deps
-        key: ${{ inputs.os }}-${{ inputs.compiler }}
+        key: ${{ inputs.os }}-${{ inputs.compiler }}-deps-${{ hashFiles('cmake/FindEXT_TENSORSTORE.cmake', 'cmake/Findnlohmann_json_schema_validator.cmake') }}
         restore-keys: |
-          ${{ inputs.os }}-${{ inputs.compiler }}
+          ${{ inputs.os }}-${{ inputs.compiler }}-deps-

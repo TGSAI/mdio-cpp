@@ -2,13 +2,25 @@ name: C/C++ build
 
 on: [push, pull_request]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  cmake_build:
+  unix_build:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04] # [ubuntu-latest, macos-latest]
-        compiler: [g++, clang++]
+        include:
+          - os: ubuntu-24.04
+            compiler: g++
+            c_compiler: gcc
+          - os: ubuntu-24.04
+            compiler: clang++
+            c_compiler: clang
+          - os: ubuntu-24.04-arm
+            compiler: g++
+            c_compiler: gcc
     runs-on: ${{ matrix.os }}
     permissions:
       actions: read
@@ -19,25 +31,35 @@ jobs:
         uses: ilammy/setup-nasm@v1
       - name: Checkout
         uses: actions/checkout@v4.1.7
-      - name: Setup Cache
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Setup dependency cache
         uses: ./.github/actions/setup_cache
         with:
           compiler: ${{ matrix.compiler }}
           os: ${{ matrix.os }}
-      - name: Configure and Build Project
-        uses: threeal/cmake-action@main
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
         with:
-          cxx-compiler: ${{ matrix.compiler }}
-      - name: Build tests
-        run: cd build && pwd && make -j
+          key: ${{ matrix.os }}-${{ matrix.compiler }}
+          max-size: 2G
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_C_COMPILER=${{ matrix.c_compiler }} \
+            -DCMAKE_CXX_COMPILER=${{ matrix.compiler }} \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+      - name: Build
+        run: cmake --build build --parallel
+      - name: ccache stats
+        run: ccache -s
       - name: Install UV
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.local/bin" >> $GITHUB_PATH
       - name: Install test dependencies
-        run: |
-          uv sync --project .devcontainer --frozen
-        # No system python environment bypass! uv will automatically handle creating a local .venv in .devcontainer folder.
+        run: uv sync --project .devcontainer --frozen
       - name: Run tests
         run: |
           source .devcontainer/.venv/bin/activate
@@ -56,3 +78,62 @@ jobs:
           && ./mdio_zarr_test \
           && ./mdio_gcs_test \
           && ./mdio_s3_test
+
+  windows_build:
+    runs-on: windows-2022
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Setup NASM
+        uses: ilammy/setup-nasm@v1
+      - name: Checkout
+        uses: actions/checkout@v4.1.7
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Setup dependency cache
+        uses: ./.github/actions/setup_cache
+        with:
+          compiler: msvc
+          os: windows-2022
+      - name: Setup sccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          variant: sccache
+          key: windows-2022-msvc
+          max-size: 2G
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja `
+            -DCMAKE_C_COMPILER=cl `
+            -DCMAKE_CXX_COMPILER=cl `
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache `
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+      - name: Build
+        run: cmake --build build --parallel
+      - name: sccache stats
+        run: sccache --show-stats
+      - name: Run core tests
+        shell: pwsh
+        run: |
+          $tests = @(
+            "mdio_variable_test",
+            "mdio_dataset_test",
+            "mdio_dataset_factory_test",
+            "mdio_dataset_validator_test",
+            "mdio_stats_test",
+            "mdio_utils_trim_test",
+            "mdio_utils_delete_test",
+            "mdio_variable_collection_test",
+            "mdio_coordinate_selector_test",
+            "mdio_header_variable_test",
+            "mdio_zarr_test"
+          )
+          Push-Location build/mdio
+          foreach ($test in $tests) {
+            Write-Host "Running $test"
+            & ".\$test.exe"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          Pop-Location
