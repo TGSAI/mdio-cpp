@@ -110,6 +110,145 @@ install(EXPORT mdioTargets
 
 # ============ End installable library ============
 
+# ============ Optional monolithic shared library ============
+#
+# By default mdio is consumed as a header-only INTERFACE target and each
+# consumer statically links its own copy of tensorstore + Abseil. That is fine
+# for a single executable, but a process that dynamically loads more than one
+# such consumer (e.g. several plugins via dlopen) ends up with multiple copies
+# of Abseil's global state and aborts at runtime ("ODR violation in Cord").
+#
+# When MDIO_BUILD_MONOLITHIC_SHARED is enabled we additionally emit a single
+# shared object that bundles tensorstore (and its vendored Abseil) once.
+# Consumers that need ODR-safe co-loading link `mdio::monolith` instead of
+# `mdio` + the tensorstore::* internal deps, so the dynamic linker maps
+# tensorstore/Abseil exactly once per process.
+option(MDIO_BUILD_MONOLITHIC_SHARED
+  "Also build libmdio_monolith.so bundling tensorstore+Abseil for ODR-safe co-loading of multiple mdio-linked plugins in one process"
+  OFF)
+
+# Recursively walk the link closure of the given targets and collect every
+# concrete STATIC_LIBRARY target. The tensorstore::* entries are INTERFACE
+# aggregators, so $<LINK_LIBRARY:WHOLE_ARCHIVE,...> applied to them is a no-op;
+# we need the real archives underneath so that explicit template instantiations
+# (e.g. the tensorstore Spec / Zarr metadata JSON binders) and the driver
+# self-registration objects are all force-included into the shared object.
+# Dependency entries can be plain names, namespaced aliases (foo::bar), or
+# genex-wrapped libraries such as
+# $<LINK_LIBRARY:WHOLE_ARCHIVE,tensorstore_driver_zarr_driver>; we tokenize on
+# genex punctuation (protecting :: in namespaced names) and keep whatever
+# resolves to a real target.
+function(_mdio_collect_static_archives outvar)
+  set(_result "")
+  set(_seen "")
+  set(_stack ${ARGN})
+  while(_stack)
+    list(POP_FRONT _stack _t)
+    if(NOT TARGET ${_t})
+      continue()
+    endif()
+    if(_t IN_LIST _seen)
+      continue()
+    endif()
+    list(APPEND _seen ${_t})
+    get_target_property(_type ${_t} TYPE)
+    if(_type STREQUAL "STATIC_LIBRARY")
+      list(APPEND _result ${_t})
+    endif()
+    set(_deps "")
+    get_target_property(_il ${_t} INTERFACE_LINK_LIBRARIES)
+    if(_il)
+      list(APPEND _deps ${_il})
+    endif()
+    if(NOT _type STREQUAL "INTERFACE_LIBRARY")
+      get_target_property(_ll ${_t} LINK_LIBRARIES)
+      if(_ll)
+        list(APPEND _deps ${_ll})
+      endif()
+    endif()
+    foreach(_d ${_deps})
+      string(REPLACE "::" "@@NS@@" _d "${_d}")
+      string(REGEX REPLACE "[$<>:,]" ";" _toks "${_d}")
+      foreach(_tok ${_toks})
+        string(REPLACE "@@NS@@" "::" _tok "${_tok}")
+        if(_tok AND TARGET ${_tok})
+          list(APPEND _stack "${_tok}")
+        endif()
+      endforeach()
+    endforeach()
+  endwhile()
+  list(REMOVE_DUPLICATES _result)
+  set(${outvar} ${_result} PARENT_SCOPE)
+endfunction()
+
+if(MDIO_BUILD_MONOLITHIC_SHARED)
+  # The tensorstore drivers self-register through static initializers, so they
+  # must be whole-archived into the shared object or the registrations get
+  # stripped (and zarr/s3/gcs stores fail to open at runtime). The remaining
+  # Abseil objects are pulled in transitively by normal symbol resolution, so
+  # they only appear once -- which is the whole point.
+  set(mdio_MONOLITH_DEPS
+    tensorstore::driver_array
+    tensorstore::driver_zarr
+    tensorstore::driver_zarr3
+    tensorstore::driver_json
+    tensorstore::kvstore_file
+    tensorstore::kvstore_s3
+    tensorstore::kvstore_gcs
+    tensorstore::stack
+    tensorstore::tensorstore
+    tensorstore::index_space_dim_expression
+    tensorstore::index_space_index_transform
+    tensorstore::util_status_testutil
+    nlohmann_json_schema_validator::nlohmann_json_schema_validator
+  )
+
+  add_library(mdio_monolith SHARED ${CMAKE_CURRENT_SOURCE_DIR}/monolith.cc)
+  set_target_properties(mdio_monolith PROPERTIES
+    OUTPUT_NAME mdio_monolith
+    POSITION_INDEPENDENT_CODE ON
+  )
+  # Resolve the interface deps down to the concrete static archives and
+  # whole-archive every one of them so the shared object is self-contained.
+  _mdio_collect_static_archives(mdio_MONOLITH_ARCHIVES ${mdio_MONOLITH_DEPS})
+  list(LENGTH mdio_MONOLITH_ARCHIVES _n_arch)
+  message(STATUS "MDIO monolith: whole-archiving ${_n_arch} static archive(s)")
+
+  # The archives are whole-archived into this .so (PRIVATE link) so it is
+  # self-contained. The interface deps are ALSO re-exposed to consumers as
+  # COMPILE_ONLY usage requirements ($<COMPILE_ONLY:...> requires CMake >= 3.27):
+  # this propagates the transitive tensorstore/Abseil/nlohmann include
+  # directories and compile definitions to anything linking mdio::monolith,
+  # WITHOUT pulling the static archives back into the consumer (which would
+  # re-duplicate Abseil globals and defeat the purpose).
+  target_link_libraries(mdio_monolith
+    PRIVATE
+      "$<LINK_LIBRARY:WHOLE_ARCHIVE,${mdio_MONOLITH_ARCHIVES}>"
+    PUBLIC
+      "$<COMPILE_ONLY:${mdio_MONOLITH_DEPS}>"
+  )
+  target_include_directories(mdio_monolith PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>
+    $<INSTALL_INTERFACE:include>
+    ${TENSORSTORE_INCLUDE_DIRS}
+  )
+  target_compile_definitions(mdio_monolith PUBLIC MAX_NUM_SLICES=${MAX_NUM_SLICES})
+  target_compile_features(mdio_monolith PUBLIC cxx_std_17)
+
+  # mdio::monolith is the public alias consumers link against.
+  add_library(mdio::monolith ALIAS mdio_monolith)
+
+  install(TARGETS mdio_monolith EXPORT mdioTargets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  )
+
+  message(STATUS "MDIO monolithic shared library enabled --> mdio::monolith")
+endif()
+
+# ============ End optional monolithic shared library ============
+
 
 mdio_cc_test(
   NAME
