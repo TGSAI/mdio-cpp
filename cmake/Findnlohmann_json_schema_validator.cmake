@@ -28,6 +28,12 @@ if (NOT TARGET nlohmann_json_schema_validator)
   target_link_libraries(nlohmann_json_schema_validator INTERFACE nlohmann_json::nlohmann_json)
 
   # Install the validator target
+  # The validator sets PUBLIC_HEADER to a path relative to its own source tree.
+  # We re-install the target only to add it to the mdioTargets export set; we must
+  # NOT re-copy its public header (the validator installs it itself, to
+  # include/nlohmann/). Clearing the property stops install(TARGETS) from resolving
+  # the relative header path against this directory and failing.
+  set_target_properties(nlohmann_json_schema_validator PROPERTIES PUBLIC_HEADER "")
   install(TARGETS nlohmann_json_schema_validator
     EXPORT mdioTargets
   )
