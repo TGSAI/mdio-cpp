@@ -79,7 +79,14 @@ jobs:
           && ./mdio_gcs_test \
           && ./mdio_s3_test
 
+  # Windows build is a work in progress and is disabled for now.
+  # Blockers found so far:
+  #   1. sccache + MSVC /Zi PDB contention (fixed via CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded).
+  #   2. mdio_DEFAULT_COPTS / mdio_TEST_COPTS pass GCC/Clang-only flags (e.g. -Wno-deprecated-declarations)
+  #      that MSVC rejects (D8021). Needs an if(NOT MSVC) guard in CMakeLists.txt, plus likely more
+  #      MSVC source fixes after that. Re-enable by removing `if: false` once the build is clean.
   windows_build:
+    if: false
     runs-on: windows-2022
     permissions:
       actions: read
