@@ -610,6 +610,14 @@ would prematurely terminate a bare R"( )" literal. Keep the JSON delimiter.
                },
                "title": "Chunkshape",
                "type": "array"
+            },
+            "shardShape": {
+               "description": "Optional Zarr v3 shard (storage object) shape. When present, chunkShape becomes the inner read chunk and shardShape the storage object, packed via the sharding_indexed codec. Must be an integer multiple of chunkShape on every axis.",
+               "items": {
+                  "type": "integer"
+               },
+               "title": "Shardshape",
+               "type": "array"
             }
          },
          "required": [
