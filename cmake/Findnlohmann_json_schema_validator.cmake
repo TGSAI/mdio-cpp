@@ -27,9 +27,22 @@ if (NOT TARGET nlohmann_json_schema_validator)
 
   target_link_libraries(nlohmann_json_schema_validator INTERFACE nlohmann_json::nlohmann_json)
 
+  # The upstream target carries a PUBLIC_HEADER property set to the relative
+  # path "nlohmann/json-schema.hpp". When we call install(TARGETS ...) from the
+  # mdio subdirectory, CMake resolves that relative path against the mdio source
+  # dir (.../mdio/nlohmann/json-schema.hpp, which does not exist) and would also
+  # flatten it to include/json-schema.hpp, breaking #include <nlohmann/...>.
+  # Clear it and install the header explicitly, preserving the nlohmann/ prefix.
+  set_target_properties(nlohmann_json_schema_validator PROPERTIES PUBLIC_HEADER "")
+
   # Install the validator target
   install(TARGETS nlohmann_json_schema_validator
     EXPORT mdioTargets
+  )
+
+  install(FILES
+    "${nlohmann_json_schema_validator_SOURCE_DIR}/src/nlohmann/json-schema.hpp"
+    DESTINATION include/nlohmann
   )
 
   message(STATUS "Found json schema validator library")
