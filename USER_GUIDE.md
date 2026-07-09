@@ -8,6 +8,10 @@ The goal of this user guide is to provide an introduction on how you may want to
 - [Linking](#linking)
 - [How to compile](#how-to-compile)
   - [What a full compile might look like for Hello, World!](#what-a-full-compile-might-look-like-for-hello-world)
+- [Building and installing MDIO](#building-and-installing-mdio)
+  - [Standard install](#standard-install)
+  - [Monolithic shared library install](#monolithic-shared-library-install)
+  - [Consuming the installed package](#consuming-the-installed-package)
 - [Concepts](#concepts)
   - [Result based returns](#result-based-returns)
   - [Open options](#open-options)
@@ -126,6 +130,56 @@ $ cmake ..
 $ make -j$(nproc) hello_mdio
 $ ./hello_mdio
 ```
+
+## Building and installing MDIO
+The sections above cover consuming **MDIO** with `FetchContent`, which re-fetches and rebuilds **MDIO** (and Tensorstore/Abseil) as part of every consuming project. If you want to build **MDIO** once and reuse it across multiple projects or container images, you can install it instead and consume it with `find_package(mdio)`.
+
+There are two installable forms:
+- **Standard install** - the header-only `mdio::mdio` interface target, matching what `FetchContent` gives you in-tree.
+- **Monolithic shared library install** - a single self-contained `libmdio_monolith.so` that bundles Tensorstore and Abseil, exposed as `mdio::monolith`. This is the recommended way to consume an installed **MDIO** from outside the `mdio-cpp` build tree, because it vendors the third-party headers it needs and requires no `FetchContent` network access at consume time.
+
+### Standard install
+```BASH
+$ mkdir build-install && cd build-install
+$ cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/mdio
+$ cmake --build . -j$(nproc) --target install
+```
+This installs the **MDIO** headers, the `mdio::mdio` interface target, and a CMake package config under `/opt/mdio/lib/cmake/mdio`. Because `mdio::mdio` is header-only, a consumer still needs to independently provide the same Tensorstore driver targets **MDIO** was built against (as described in [Linking](#linking)), so this form is best suited to projects that already vendor Tensorstore themselves.
+
+### Monolithic shared library install
+The monolithic build requires CMake 3.27 *or better*.
+```BASH
+$ cmake -S . -B build-monolith \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX="$PWD/install" \
+    -DMDIO_BUILD_MONOLITHIC_SHARED=ON
+$ cmake --build build-monolith --target install -j"$(nproc)"
+```
+This installs:
+- `lib/libmdio_monolith.so` - a single shared object with Tensorstore, Abseil, and the Zarr/file/S3/GCS drivers whole-archived in. Consumers link only this one library, so a process that loads more than one **MDIO**-linked plugin (e.g. via `dlopen`) still gets exactly one copy of Abseil's global state instead of aborting with an ODR violation.
+- `include/mdio` - the **MDIO** headers.
+- `include/{tensorstore,absl,riegeli,nlohmann_json,half}-src/...` - the third-party headers **MDIO**'s public headers depend on, vendored so consumers don't need their own copies or network access.
+- `lib/cmake/mdio` - the CMake package config, including the `mdio::monolith` target.
+
+The maximum number of slices (`MAX_NUM_SLICES`, see [Slicing](#slicing)) is baked into the installed package at install time. Pass `-DMAX_NUM_SLICES=64` (or whatever value you need) to the first `cmake` invocation above if the default of 32 isn't enough; consumers pick it up automatically and do not need to redefine it.
+
+### Consuming the installed package
+Point `CMAKE_PREFIX_PATH` at your install directory (skip this if you installed to a standard system prefix), then `find_package(mdio)` and link `mdio::monolith`:
+```Cmake
+cmake_minimum_required(VERSION 3.27)
+project(hello_mdio_installed VERSION 1.0.0 LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+
+find_package(mdio REQUIRED)
+
+add_executable(hello_mdio src/hello_mdio.cc)
+target_link_libraries(hello_mdio PRIVATE mdio::monolith)
+```
+```BASH
+$ cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/mdio/install
+$ cmake --build build -j$(nproc)
+```
+No manual `-I` include paths, `MAX_NUM_SLICES` defines, or Tensorstore driver targets are needed; `mdio::monolith` carries all of it as usage requirements.
 
 ## Concepts
 ### Result based returns
