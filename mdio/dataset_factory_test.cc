@@ -1131,4 +1131,65 @@ TEST(TransformAttributes, coordinatesExcludeDimensions) {
   EXPECT_EQ(variable["attributes"]["coordinates"], "cdp_x cdp_y");
 }
 
+nlohmann::json V3StubWithInnerChunk(const nlohmann::json& chunk_shape) {
+  return {{"metadata",
+           {{"chunk_grid", {{"configuration", {{"chunk_shape", chunk_shape}}}}},
+            {"codecs",
+             nlohmann::json::array(
+                 {{{"name", "bytes"},
+                   {"configuration", {{"endian", "little"}}}}})}}}};
+}
+
+TEST(ApplyV3Sharding, noOpWhenShardShapeAbsent) {
+  nlohmann::json input = {
+      {"metadata",
+       {{"chunkGrid", {{"configuration", {{"chunkShape", {4, 8}}}}}}}}};
+  nlohmann::json variable = V3StubWithInnerChunk({4, 8});
+  const nlohmann::json before = variable;
+  ASSERT_TRUE(apply_v3_sharding(input, variable).ok());
+  EXPECT_EQ(variable, before);
+}
+
+TEST(ApplyV3Sharding, wrapsCodecsAndPromotesShardToChunkGrid) {
+  nlohmann::json input = {{"metadata",
+                           {{"chunkGrid",
+                             {{"configuration",
+                               {{"chunkShape", {4, 8}},
+                                {"shardShape", {16, 24}}}}}}}}};
+  nlohmann::json variable = V3StubWithInnerChunk({4, 8});
+  ASSERT_TRUE(apply_v3_sharding(input, variable).ok());
+  EXPECT_EQ(variable["metadata"]["chunk_grid"]["configuration"]["chunk_shape"],
+            (nlohmann::json::array({16, 24})));
+  ASSERT_EQ(variable["metadata"]["codecs"].size(), 1);
+  EXPECT_EQ(variable["metadata"]["codecs"][0]["name"], "sharding_indexed");
+  const auto& cfg = variable["metadata"]["codecs"][0]["configuration"];
+  EXPECT_EQ(cfg["chunk_shape"], (nlohmann::json::array({4, 8})));
+  EXPECT_EQ(cfg["index_location"], "end");
+  EXPECT_EQ(cfg["codecs"][0]["name"], "bytes");
+}
+
+TEST(ApplyV3Sharding, rejectsNonMultiple) {
+  nlohmann::json input = {{"metadata",
+                           {{"chunkGrid",
+                             {{"configuration",
+                               {{"chunkShape", {4, 8}},
+                                {"shardShape", {16, 20}}}}}}}}};
+  nlohmann::json variable = V3StubWithInnerChunk({4, 8});
+  auto status = apply_v3_sharding(input, variable);
+  ASSERT_FALSE(status.ok());
+  EXPECT_THAT(status.message(), testing::HasSubstr("multiple of chunkShape"));
+}
+
+TEST(ApplyV3Sharding, rejectsRankMismatch) {
+  nlohmann::json input = {{"metadata",
+                           {{"chunkGrid",
+                             {{"configuration",
+                               {{"chunkShape", {4, 8}},
+                                {"shardShape", {16, 24, 2}}}}}}}}};
+  nlohmann::json variable = V3StubWithInnerChunk({4, 8});
+  auto status = apply_v3_sharding(input, variable);
+  ASSERT_FALSE(status.ok());
+  EXPECT_THAT(status.message(), testing::HasSubstr("matching the rank"));
+}
+
 }  // namespace
