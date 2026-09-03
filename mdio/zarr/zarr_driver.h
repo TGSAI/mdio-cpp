@@ -223,10 +223,8 @@ inline std::string GetConsolidatedMetadataFileName() { return ".zmetadata"; }
  * @return The driver name ("file", "gcs", or "s3").
  */
 inline std::string InferDriverFromPath(const std::string& path) {
-  if (path.length() > 5) {
-    if (path.substr(0, 5) == "gs://") return "gcs";
-    if (path.substr(0, 5) == "s3://") return "s3";
-  }
+  if (path.compare(0, 5, "gs://") == 0) return "gcs";
+  if (path.compare(0, 5, "s3://") == 0) return "s3";
   return "file";
 }
 
@@ -244,15 +242,21 @@ inline std::string NormalizePath(const std::string& path) {
 }
 
 /**
- * @brief Normalizes a path by ensuring it has a trailing slash.
+ * @brief Normalizes a path so it ends in exactly one trailing slash.
+ *
+ * Repeated trailing slashes are collapsed. Cloud object keys are not path
+ * normalized by the store, so "a//var" and "a/var" are distinct objects.
+ *
  * @param path The input path.
- * @return The normalized path with a trailing slash.
+ * @return The normalized path with a single trailing slash.
  */
 inline std::string NormalizePathWithSlash(const std::string& path) {
-  std::string result = path;
-  if (!result.empty() && result.back() != '/') {
-    result.push_back('/');
+  std::string result = NormalizePath(path);
+  if (result.empty()) {
+    // Preserve an empty path, and collapse a root-only path back to "/".
+    return path.empty() ? path : "/";
   }
+  result.push_back('/');
   return result;
 }
 
@@ -271,6 +275,76 @@ inline std::pair<std::string, std::string> ExtractCloudPath(
   }
   return {without_scheme.substr(0, bucket_end),
           without_scheme.substr(bucket_end + 1)};
+}
+
+/**
+ * @brief Resolved TensorStore kvstore location for a dataset path.
+ *
+ * Cloud URLs (`gs://`, `s3://`) are split into `bucket` plus a bucket-relative
+ * `path`. File paths keep the original path. `path` has a trailing slash when
+ * non-empty so a child name can be appended.
+ */
+struct KvStoreLocation {
+  std::string driver;
+  std::string bucket;
+  std::string path;
+};
+
+/**
+ * @brief Splits a dataset path into TensorStore kvstore fields.
+ *
+ * This is the single place that maps a user path onto `driver` / `bucket` /
+ * `path`.
+ *
+ * @param dataset_path Local path or `gs://` / `s3://` URI.
+ * @return The resolved location, or InvalidArgument for a missing cloud bucket.
+ */
+inline Result<KvStoreLocation> ResolveKvStoreLocation(
+    const std::string& dataset_path) {
+  std::string driver = InferDriverFromPath(dataset_path);
+  if (driver == "file") {
+    return KvStoreLocation{driver, "", NormalizePathWithSlash(dataset_path)};
+  }
+
+  auto [bucket, path] = ExtractCloudPath(dataset_path);
+  if (bucket.empty()) {
+    return absl::InvalidArgumentError(
+        "Cloud path requires [gs/s3]://[bucket]/[path to file]");
+  }
+  return KvStoreLocation{driver, bucket, NormalizePathWithSlash(path)};
+}
+
+/**
+ * @brief Builds a TensorStore kvstore JSON spec from a resolved location.
+ *
+ * For non-file drivers, `bucket` is always set. `child` is appended to `path`
+ * (typically a variable / array name).
+ *
+ * @param loc The resolved dataset location.
+ * @param child Optional child key appended to `path`.
+ * @return The kvstore JSON object.
+ */
+inline nlohmann::json BuildKvStoreSpec(const KvStoreLocation& loc,
+                                       const std::string& child = "") {
+  nlohmann::json kvstore = {{"driver", loc.driver}, {"path", loc.path + child}};
+  if (loc.driver != "file") {
+    kvstore["bucket"] = loc.bucket;
+  }
+  return kvstore;
+}
+
+/**
+ * @brief Builds a TensorStore Variable open spec (zarr/zarr3 + kvstore).
+ * @param zarr_driver TensorStore array driver (`zarr` or `zarr3`).
+ * @param loc The resolved dataset location.
+ * @param var_name Variable / array name appended to the kvstore path.
+ * @return The Variable spec JSON object.
+ */
+inline nlohmann::json BuildVariableSpec(const std::string& zarr_driver,
+                                        const KvStoreLocation& loc,
+                                        const std::string& var_name) {
+  return {{"driver", zarr_driver},
+          {"kvstore", BuildKvStoreSpec(loc, var_name)}};
 }
 
 // ============================================================================

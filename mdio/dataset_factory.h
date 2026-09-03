@@ -487,28 +487,9 @@ inline void transform_shape(
  */
 inline absl::Status transform_metadata(const std::string& path,
                                        nlohmann::json& variable /*NOLINT*/) {
-  // Use shared utilities for driver inference and path handling
-  std::string driver = mdio::zarr::InferDriverFromPath(path);
   std::string var_name = variable["kvstore"]["path"].get<std::string>();
-
-  variable["kvstore"]["driver"] = driver;
-
-  if (driver == "file") {
-    // Local filesystem - normalize path with trailing slash
-    variable["kvstore"]["path"] =
-        mdio::zarr::NormalizePathWithSlash(path) + var_name;
-  } else {
-    // Cloud storage (GCS or S3) - extract bucket and path
-    auto [bucket, cloud_path] = mdio::zarr::ExtractCloudPath(path);
-    if (bucket.empty()) {
-      return absl::InvalidArgumentError(
-          "Cloud path requires [gs/s3]://[bucket]/[path to file] name");
-    }
-    variable["kvstore"]["bucket"] = bucket;
-    variable["kvstore"]["path"] =
-        mdio::zarr::NormalizePathWithSlash(cloud_path) + var_name;
-  }
-
+  MDIO_ASSIGN_OR_RETURN(auto loc, mdio::zarr::ResolveKvStoreLocation(path));
+  variable["kvstore"] = mdio::zarr::BuildKvStoreSpec(loc, var_name);
   return absl::OkStatus();
 }
 

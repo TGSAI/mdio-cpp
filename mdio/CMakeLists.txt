@@ -57,8 +57,12 @@ target_link_libraries(mdio INTERFACE
 # Install the mdio target
 install(TARGETS mdio EXPORT mdioTargets)
 
-# Install include directories
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/ DESTINATION include/mdio)
+# Install include directories (headers only -- skip test .cc, .py, CMake files)
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/ DESTINATION include/mdio
+  FILES_MATCHING
+    PATTERN "*.h"
+    PATTERN "*.hpp"
+)
 
 # Ensure the original nlohmann_json target is part of the export set
 if (TARGET nlohmann_json)
@@ -109,6 +113,37 @@ install(EXPORT mdioTargets
 )
 
 # ============ End installable library ============
+
+# ============ Optional monolithic shared library ============
+#
+# By default mdio is consumed as a header-only INTERFACE target and each
+# consumer statically links its own copy of tensorstore + Abseil. That is fine
+# for a single executable, but a process that dynamically loads more than one
+# such consumer (e.g. several plugins via dlopen) ends up with multiple copies
+# of Abseil's global state and aborts at runtime ("ODR violation in Cord").
+#
+# When MDIO_BUILD_MONOLITHIC_SHARED is enabled we additionally emit a single
+# shared object that bundles tensorstore (and its vendored Abseil) once.
+# Consumers that need ODR-safe co-loading link `mdio::monolith` instead of
+# `mdio` + the tensorstore::* internal deps, so the dynamic linker maps
+# tensorstore/Abseil exactly once per process.
+#
+# Implementation lives in cmake/MdioMonolithicShared.cmake and requires
+# CMake 3.27+ ($<COMPILE_ONLY:...> link propagation).
+option(MDIO_BUILD_MONOLITHIC_SHARED
+  "Also build libmdio_monolith.so bundling tensorstore+Abseil for ODR-safe co-loading of multiple mdio-linked plugins in one process (requires CMake 3.27+)"
+  OFF)
+
+if(MDIO_BUILD_MONOLITHIC_SHARED)
+  if(CMAKE_VERSION VERSION_LESS "3.27")
+    message(FATAL_ERROR
+      "MDIO_BUILD_MONOLITHIC_SHARED requires CMake 3.27 or later "
+      "(uses $<COMPILE_ONLY:...> link feature).")
+  endif()
+  include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/MdioMonolithicShared.cmake)
+endif()
+
+# ============ End optional monolithic shared library ============
 
 
 mdio_cc_test(

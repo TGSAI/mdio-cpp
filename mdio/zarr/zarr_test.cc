@@ -266,10 +266,13 @@ TEST(ZarrDriver, NormalizePathWithSlash_AddsTrailingSlash) {
 TEST(ZarrDriver, NormalizePathWithSlash_AlreadyHasSlash) {
   EXPECT_EQ(mdio::zarr::NormalizePathWithSlash("/path/to/data/"),
             "/path/to/data/");
+  EXPECT_EQ(mdio::zarr::NormalizePathWithSlash("/path/to/data///"),
+            "/path/to/data/");
 }
 
 TEST(ZarrDriver, NormalizePathWithSlash_EmptyPath) {
   EXPECT_EQ(mdio::zarr::NormalizePathWithSlash(""), "");
+  EXPECT_EQ(mdio::zarr::NormalizePathWithSlash("///"), "/");
 }
 
 TEST(ZarrDriver, ExtractCloudPath_GCS) {
@@ -296,6 +299,69 @@ TEST(ZarrDriver, ExtractCloudPath_ShortUrl) {
   auto [bucket, path] = mdio::zarr::ExtractCloudPath("gs:/");
   EXPECT_EQ(bucket, "");
   EXPECT_EQ(path, "");
+}
+
+TEST(ZarrDriver, ResolveKvStoreLocation_LocalFile) {
+  auto loc = mdio::zarr::ResolveKvStoreLocation("/path/to/data");
+  ASSERT_TRUE(loc.ok()) << loc.status();
+  EXPECT_EQ(loc->driver, "file");
+  EXPECT_EQ(loc->bucket, "");
+  EXPECT_EQ(loc->path, "/path/to/data/");
+}
+
+TEST(ZarrDriver, ResolveKvStoreLocation_GCS) {
+  auto loc = mdio::zarr::ResolveKvStoreLocation("gs://bucket/path");
+  ASSERT_TRUE(loc.ok()) << loc.status();
+  EXPECT_EQ(loc->driver, "gcs");
+  EXPECT_EQ(loc->bucket, "bucket");
+  EXPECT_EQ(loc->path, "path/");
+}
+
+TEST(ZarrDriver, ResolveKvStoreLocation_S3) {
+  auto loc =
+      mdio::zarr::ResolveKvStoreLocation("s3://my-bucket/nested/path/volume");
+  ASSERT_TRUE(loc.ok()) << loc.status();
+  EXPECT_EQ(loc->driver, "s3");
+  EXPECT_EQ(loc->bucket, "my-bucket");
+  EXPECT_EQ(loc->path, "nested/path/volume/");
+}
+
+TEST(ZarrDriver, ResolveKvStoreLocation_CollapsesTrailingSlashes) {
+  auto loc = mdio::zarr::ResolveKvStoreLocation("s3://my-bucket/nested/path//");
+  ASSERT_TRUE(loc.ok()) << loc.status();
+  EXPECT_EQ(loc->path, "nested/path/");
+}
+
+TEST(ZarrDriver, ResolveKvStoreLocation_RejectsMissingBucket) {
+  EXPECT_FALSE(mdio::zarr::ResolveKvStoreLocation("gs://").ok());
+  EXPECT_FALSE(mdio::zarr::ResolveKvStoreLocation("s3:///path").ok());
+}
+
+TEST(ZarrDriver, BuildKvStoreSpec_LocalFile) {
+  auto loc = mdio::zarr::ResolveKvStoreLocation("/path/to/dataset");
+  ASSERT_TRUE(loc.ok()) << loc.status();
+  auto spec = mdio::zarr::BuildKvStoreSpec(loc.value(), "myvar");
+  EXPECT_EQ(spec["driver"], "file");
+  EXPECT_EQ(spec["path"], "/path/to/dataset/myvar");
+  EXPECT_FALSE(spec.contains("bucket"));
+}
+
+TEST(ZarrDriver, BuildKvStoreSpec_GCS) {
+  auto loc = mdio::zarr::ResolveKvStoreLocation("gs://bucket/path");
+  ASSERT_TRUE(loc.ok()) << loc.status();
+  auto spec = mdio::zarr::BuildKvStoreSpec(loc.value(), "myvar");
+  EXPECT_EQ(spec["driver"], "gcs");
+  EXPECT_EQ(spec["bucket"], "bucket");
+  EXPECT_EQ(spec["path"], "path/myvar");
+}
+
+TEST(ZarrDriver, BuildKvStoreSpec_S3) {
+  auto loc = mdio::zarr::ResolveKvStoreLocation("s3://my-bucket/nested/path");
+  ASSERT_TRUE(loc.ok()) << loc.status();
+  auto spec = mdio::zarr::BuildKvStoreSpec(loc.value(), "amplitude");
+  EXPECT_EQ(spec["driver"], "s3");
+  EXPECT_EQ(spec["bucket"], "my-bucket");
+  EXPECT_EQ(spec["path"], "nested/path/amplitude");
 }
 
 // =============================================================================
@@ -895,20 +961,36 @@ TEST(ZarrV3, ExtractChildArrayCandidates_Empty) {
 }
 
 TEST(ZarrV3, BuildVariableSpec_LocalFile) {
-  auto spec =
-      mdio::zarr::v3::BuildVariableSpec("file", "/path/to/dataset", "myvar");
+  auto loc = mdio::zarr::ResolveKvStoreLocation("/path/to/dataset");
+  ASSERT_TRUE(loc.ok()) << loc.status();
+  auto spec = mdio::zarr::BuildVariableSpec("zarr3", loc.value(), "myvar");
 
   EXPECT_EQ(spec["driver"], "zarr3");
   EXPECT_EQ(spec["kvstore"]["driver"], "file");
   EXPECT_EQ(spec["kvstore"]["path"], "/path/to/dataset/myvar");
+  EXPECT_FALSE(spec["kvstore"].contains("bucket"));
 }
 
 TEST(ZarrV3, BuildVariableSpec_GCS) {
-  auto spec = mdio::zarr::v3::BuildVariableSpec("gcs", "bucket/path", "myvar");
+  auto loc = mdio::zarr::ResolveKvStoreLocation("gs://bucket/path");
+  ASSERT_TRUE(loc.ok()) << loc.status();
+  auto spec = mdio::zarr::BuildVariableSpec("zarr3", loc.value(), "myvar");
 
   EXPECT_EQ(spec["driver"], "zarr3");
   EXPECT_EQ(spec["kvstore"]["driver"], "gcs");
-  EXPECT_EQ(spec["kvstore"]["path"], "bucket/path/myvar");
+  EXPECT_EQ(spec["kvstore"]["bucket"], "bucket");
+  EXPECT_EQ(spec["kvstore"]["path"], "path/myvar");
+}
+
+TEST(ZarrV3, BuildVariableSpec_S3) {
+  auto loc = mdio::zarr::ResolveKvStoreLocation("s3://my-bucket/nested/path");
+  ASSERT_TRUE(loc.ok()) << loc.status();
+  auto spec = mdio::zarr::BuildVariableSpec("zarr3", loc.value(), "amplitude");
+
+  EXPECT_EQ(spec["driver"], "zarr3");
+  EXPECT_EQ(spec["kvstore"]["driver"], "s3");
+  EXPECT_EQ(spec["kvstore"]["bucket"], "my-bucket");
+  EXPECT_EQ(spec["kvstore"]["path"], "nested/path/amplitude");
 }
 
 }  // namespace ZarrV3Tests

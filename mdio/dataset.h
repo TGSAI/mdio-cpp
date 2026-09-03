@@ -101,29 +101,8 @@ inline Future<void> write_zmetadata(
 inline Future<tensorstore::KvStore> dataset_kvs_store(
     const std::string& dataset_path,
     tensorstore::Context context = tensorstore::Context::Default()) {
-  ::nlohmann::json kvstore;
-
-  // Use shared utility to infer driver from path prefix
-  std::string driver = zarr::InferDriverFromPath(dataset_path);
-  kvstore["driver"] = driver;
-
-  if (driver == "file") {
-    // Local file system - just normalize with trailing slash
-    kvstore["path"] = zarr::NormalizePathWithSlash(dataset_path);
-    return tensorstore::kvstore::Open(kvstore, context);
-  }
-
-  // Cloud storage (GCS or S3) - extract bucket and path
-  auto [bucket, path] = zarr::ExtractCloudPath(dataset_path);
-  if (bucket.empty()) {
-    return absl::InvalidArgumentError(
-        "gcs/s3 drivers requires [s3/gs]://[bucket]/[path_to_file]");
-  }
-
-  kvstore["bucket"] = bucket;
-  kvstore["path"] = zarr::NormalizePathWithSlash(path);
-
-  return tensorstore::kvstore::Open(kvstore, context);
+  MDIO_ASSIGN_OR_RETURN(auto loc, zarr::ResolveKvStoreLocation(dataset_path));
+  return tensorstore::kvstore::Open(zarr::BuildKvStoreSpec(loc), context);
 }
 
 /**

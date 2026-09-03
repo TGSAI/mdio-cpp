@@ -200,21 +200,6 @@ inline std::vector<std::string> ExtractChildArrayCandidates(
   return candidates;
 }
 
-/**
- * @brief Builds a variable spec for a Zarr V3 array.
- * @param driver The kvstore driver name.
- * @param base_path The base dataset path.
- * @param var_name The variable/array name.
- * @return The JSON spec for opening this variable.
- */
-inline nlohmann::json BuildVariableSpec(const std::string& driver,
-                                        const std::string& base_path,
-                                        const std::string& var_name) {
-  return {
-      {"driver", std::string(kDriverName)},
-      {"kvstore", {{"driver", driver}, {"path", base_path + "/" + var_name}}}};
-}
-
 // ============================================================================
 // Dtype Conversion
 // ============================================================================
@@ -487,17 +472,12 @@ struct V3MetadataState {
   PromiseType promise;
   tensorstore::KvStore kvs;
   nlohmann::json dataset_metadata;
-  std::string dataset_path;
-  std::string driver;
-  std::string normalized_path;
+  KvStoreLocation location;
   std::vector<std::string> candidates;
   std::shared_ptr<std::vector<ReadFuture>> read_futures;
 
-  explicit V3MetadataState(PromiseType p, const std::string& path)
-      : promise(std::move(p)),
-        dataset_path(path),
-        driver(InferDriverFromPath(path)),
-        normalized_path(NormalizePath(path)) {}
+  V3MetadataState(PromiseType p, KvStoreLocation loc)
+      : promise(std::move(p)), location(std::move(loc)) {}
 
   /// Completes with an error status.
   void Fail(absl::Status status) { promise.SetResult(std::move(status)); }
@@ -509,7 +489,7 @@ struct V3MetadataState {
 
   /// Builds a variable spec for the given variable name.
   nlohmann::json MakeVariableSpec(const std::string& var_name) const {
-    return BuildVariableSpec(driver, normalized_path, var_name);
+    return BuildVariableSpec(std::string(kDriverName), location, var_name);
   }
 
   /// Filters read results to build variable specs for arrays only.
@@ -638,11 +618,13 @@ inline void OnV3KvStoreReady(
 inline Future<std::tuple<::nlohmann::json, std::vector<::nlohmann::json>>>
 ReadMetadata(const std::string& dataset_path,
              tensorstore::Future<tensorstore::KvStore> kvs_future) {
+  MDIO_ASSIGN_OR_RETURN(auto location, ResolveKvStoreLocation(dataset_path));
+
   auto pair = tensorstore::PromiseFuturePair<
       std::tuple<::nlohmann::json, std::vector<::nlohmann::json>>>::Make();
 
   auto state = std::make_shared<internal::V3MetadataState>(
-      std::move(pair.promise), dataset_path);
+      std::move(pair.promise), std::move(location));
 
   kvs_future.ExecuteWhenReady(
       [state](tensorstore::ReadyFuture<tensorstore::KvStore> ready) {

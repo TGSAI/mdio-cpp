@@ -326,22 +326,12 @@ struct V2MetadataState {
   PromiseType promise;
   tensorstore::KvStore kvs;
   std::string dataset_path;
-  std::string normalized_path;
-  std::string driver;
-  std::string bucket;
-  std::string cloud_path;
+  KvStoreLocation location;
 
-  explicit V2MetadataState(PromiseType p, const std::string& path)
+  V2MetadataState(PromiseType p, std::string path, KvStoreLocation loc)
       : promise(std::move(p)),
-        dataset_path(path),
-        normalized_path(NormalizePathWithSlash(path)),
-        driver(InferDriverFromPath(path)) {
-    if (driver != "file") {
-      auto cloud_parts = ExtractCloudPath(path);
-      bucket = cloud_parts.first;
-      cloud_path = NormalizePathWithSlash(cloud_parts.second);
-    }
-  }
+        dataset_path(std::move(path)),
+        location(std::move(loc)) {}
 
   /// Completes with an error status.
   void Fail(absl::Status status) { promise.SetResult(std::move(status)); }
@@ -352,16 +342,8 @@ struct V2MetadataState {
   }
 
   /// Builds a variable spec for the given variable name.
-  nlohmann::json BuildVariableSpec(const std::string& var_name) const {
-    nlohmann::json spec = {{"driver", std::string(kDriverName)},
-                           {"kvstore", {{"driver", driver}}}};
-    if (driver != "file") {
-      spec["kvstore"]["bucket"] = bucket;
-      spec["kvstore"]["path"] = cloud_path + var_name;
-    } else {
-      spec["kvstore"]["path"] = normalized_path + var_name;
-    }
-    return spec;
+  nlohmann::json MakeVariableSpec(const std::string& var_name) const {
+    return BuildVariableSpec(std::string(kDriverName), location, var_name);
   }
 };
 
@@ -413,7 +395,7 @@ inline void OnZmetadataRead(
     if (element.value().contains("dtype") &&
         IsMetadataOnlyDataType(element.value()["dtype"])) {
       std::string var_name = ExtractVariableName(key);
-      auto spec = state->BuildVariableSpec(var_name);
+      auto spec = state->MakeVariableSpec(var_name);
       spec["_mdio_header_only"] = true;
       spec["_mdio_zarray"] = element.value();
       const std::string zattrs_key = var_name + "/.zattrs";
@@ -426,7 +408,7 @@ inline void OnZmetadataRead(
       continue;
     }
     std::string var_name = ExtractVariableName(key);
-    json_vars.push_back(state->BuildVariableSpec(var_name));
+    json_vars.push_back(state->MakeVariableSpec(var_name));
   }
 
   if (json_vars.empty()) {
@@ -467,11 +449,13 @@ inline void OnV2KvStoreReady(
 inline Future<std::tuple<::nlohmann::json, std::vector<::nlohmann::json>>>
 ReadConsolidatedMetadata(const std::string& dataset_path,
                          tensorstore::Future<tensorstore::KvStore> kvs_future) {
+  MDIO_ASSIGN_OR_RETURN(auto location, ResolveKvStoreLocation(dataset_path));
+
   auto pair = tensorstore::PromiseFuturePair<
       std::tuple<::nlohmann::json, std::vector<::nlohmann::json>>>::Make();
 
   auto state = std::make_shared<internal::V2MetadataState>(
-      std::move(pair.promise), dataset_path);
+      std::move(pair.promise), dataset_path, std::move(location));
 
   kvs_future.ExecuteWhenReady(
       [state](tensorstore::ReadyFuture<tensorstore::KvStore> ready) {

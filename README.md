@@ -20,6 +20,9 @@ Welcome to **MDIO** - a descriptive format for energy data that is intended to r
 
 **MDIO** schema definitions [here.](https://mdio-python.readthedocs.io/en/v1-new-schema/data_models/version_1.html)
 
+# Recommended tools
+- CMake 3.27 *or better*
+
 # Requied tools
 - CMake 3.24 *or better*
 - A C++17 compiler
@@ -63,6 +66,8 @@ $ make -j32 mdio_variable_test
 $ make -j32 mdio_dataset_test
 ```
 Each **MDIO** library will provide an associated cmake alias, e.g. mdio::mdio which can be use to link against **MDIO** in your project.
+
+If you'd rather build **MDIO** once and reuse it across multiple projects via `find_package(mdio)` instead of `FetchContent`, see [Building and installing MDIO](USER_GUIDE.md#building-and-installing-mdio) in the User Guide.
 
 ## API Documentation
 
