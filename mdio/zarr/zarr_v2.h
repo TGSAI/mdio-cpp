@@ -124,8 +124,8 @@ inline std::vector<std::string> GetStructFieldNames(
  * Mirrors the Zarr V3 behavior: Python `mdio` stores some variables (e.g. the
  * SEG-Y file header) using string/bytes/datetime dtypes whose content lives in
  * the variable attributes rather than in chunk data. TensorStore's zarr driver
- * cannot open these, so they are treated as metadata-only and skipped during
- * discovery instead of failing the whole dataset open.
+ * cannot open these, so they are treated as metadata-only header variables
+ * during discovery instead of failing the whole dataset open.
  *
  * Zarr V2 dtypes are numpy typestrings such as "<f4", "|b1", "<U40", "|S8",
  * "|O" or "<M8[ns]". The numpy "kind" character identifies the metadata-only
