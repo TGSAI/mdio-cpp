@@ -17,6 +17,7 @@
 #define MDIO_API_VERSION "1.0.0"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <fstream>
 #include <limits>
@@ -26,12 +27,15 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include "absl/log/log.h"
+#include "absl/strings/str_join.h"
 #include "mdio/dataset_factory.h"
 #include "mdio/header_variable.h"
 #include "mdio/variable.h"
@@ -156,6 +160,51 @@ from_zmetadata(const std::string& dataset_path,
       });
 
   return pair.future;
+}
+
+/**
+ * @brief Dataset metadata fields that are purely informational.
+ *
+ * mdio-python 1.x `to_mdio` writes none of them, so the read path tolerates
+ * their absence (with a warning) instead of rejecting the store. The create
+ * path (`from_json` -> `Construct` -> `validate_dataset`) keeps requiring
+ * them, and stores written by mdio-cpp always carry them.
+ */
+inline constexpr std::array<std::string_view, 3> kInformationalDatasetFields =
+    {"name", "apiVersion", "createdOn"};
+
+/**
+ * @brief Warns when an opened store is missing informational dataset metadata.
+ *
+ * The fields above do not affect how data is read, so an open store missing
+ * them is still usable; this only reports the gap. Stores carrying the v0
+ * marker (`api_version`) are skipped -- they are rejected downstream with a
+ * dedicated v0 error and would only produce a misleading warning here.
+ *
+ * @param metadata The dataset metadata read from the store.
+ * @param dataset_path The path the store was opened from.
+ */
+inline void WarnOnMissingDatasetMetadata(const ::nlohmann::json& metadata,
+                                         const std::string& dataset_path) {
+  if (metadata.contains("api_version")) {
+    // v0 store; rejected downstream with its own error message.
+    return;
+  }
+  std::vector<std::string_view> missing;
+  for (const auto field : kInformationalDatasetFields) {
+    if (!metadata.contains(field)) {
+      missing.push_back(field);
+    }
+  }
+  if (missing.empty()) {
+    return;
+  }
+  ABSL_LOG(WARNING)
+      << "Dataset '" << dataset_path
+      << "' is missing dataset metadata field(s): "
+      << absl::StrJoin(missing, ", ")
+      << ". Continuing without them; these fields are informational and are "
+         "not written by mdio-python 1.x.";
 }
 }  // namespace internal
 
@@ -939,6 +988,11 @@ class Dataset {
         auto params_from_zmetadata,
         mdio::internal::from_zmetadata(dataset_path, context).result());
     auto [dataset_metadata, json_vars] = params_from_zmetadata;
+
+    // The read path tolerates stores without the informational dataset
+    // metadata fields (e.g. written by mdio-python 1.x); warn about the gap.
+    // Creation specs keep going through `Construct`'s strict validation.
+    internal::WarnOnMissingDatasetMetadata(dataset_metadata, dataset_path);
 
     return mdio::Dataset::Open(dataset_metadata, json_vars,
                                std::forward<Option>(options)...);

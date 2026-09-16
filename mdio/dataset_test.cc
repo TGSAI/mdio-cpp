@@ -25,6 +25,9 @@
 #include <utility>
 #include <vector>
 
+#include "absl/log/initialize.h"
+#include "absl/log/internal/log_sink_set.h"
+#include "absl/log/log_sink.h"
 #include "mdio/dataset_factory.h"
 #include "mdio/zarr/zarr.h"
 #include "tensorstore/driver/driver.h"
@@ -42,6 +45,14 @@
 #include <nlohmann/json.hpp>  // NOLINT
 // clang-format on
 namespace {
+
+// Initialize Abseil logging before tests run: before InitializeLog() is
+// called, log messages are directed only to stderr and registered LogSinks
+// capture nothing (same pattern as gcs_test.cc).
+struct AbslLogInit {
+  AbslLogInit() { absl::InitializeLog(); }
+};
+static AbslLogInit absl_log_init;
 
 /**
  * @brief Returns a string representation of the Zarr version for naming.
@@ -1377,6 +1388,114 @@ TEST(Dataset, openNonExistentPathReportsMissingStore) {
   EXPECT_THAT(datasetRes.status().message(), testing::HasSubstr(path));
   EXPECT_THAT(datasetRes.status().message(),
               testing::Not(testing::HasSubstr(".zmetadata")));
+}
+
+// Rewrites the root zarr.json of a v3 store the way mdio-python 1.x leaves it
+// after a fresh `to_mdio` write: `attributes` is an empty object and none of
+// the dataset metadata fields (name/apiVersion/createdOn) are present.
+void RewriteRootAsPythonWritten(const std::string& path) {
+  nlohmann::json root = {{"zarr_format", 3},
+                         {"node_type", "group"},
+                         {"attributes", nlohmann::json::object()}};
+  std::ofstream root_file(path + "/zarr.json");
+  root_file << root.dump(4);
+}
+
+// Captures absl log messages while registered, so tests can assert on
+// warnings emitted by the library.
+class CapturingLogSink : public absl::LogSink {
+ public:
+  void Send(const absl::LogEntry& entry) override {
+    if (entry.log_severity() >= absl::LogSeverity::kWarning) {
+      warnings_.emplace_back(entry.text_message());
+    }
+  }
+
+  // True when some captured WARNING-or-worse message contains `needle`.
+  bool HasWarningContaining(const std::string& needle) const {
+    for (const auto& message : warnings_) {
+      if (message.find(needle) != std::string::npos) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+ private:
+  std::vector<std::string> warnings_;
+};
+
+// mdio-python 1.x `to_mdio` writes no name/apiVersion/createdOn in the root
+// metadata. Opening such a store must succeed (lenient read path) and warn
+// about the missing informational fields.
+TEST(Dataset, openV3WithoutDatasetMetadata) {
+  std::string path = "zarrs/py_written_v3";
+  std::filesystem::remove_all(path);
+
+  auto json_vars = GetToyExample();
+  auto created = mdio::Dataset::from_json(
+      json_vars, path, mdio::zarr::ZarrVersion::kV3,
+      mdio::constants::kCreateClean);
+  ASSERT_TRUE(created.status().ok()) << created.status();
+
+  RewriteRootAsPythonWritten(path);
+
+  CapturingLogSink sink;
+  absl::log_internal::AddLogSink(&sink);
+  auto reopened = mdio::Dataset::Open(path, mdio::constants::kOpen).result();
+  absl::log_internal::RemoveLogSink(&sink);
+
+  ASSERT_TRUE(reopened.status().ok()) << reopened.status();
+  EXPECT_TRUE(sink.HasWarningContaining("missing dataset metadata"))
+      << "expected a warning about the missing dataset metadata fields";
+  EXPECT_TRUE(sink.HasWarningContaining(path));
+  for (const auto& field : {"name", "apiVersion", "createdOn"}) {
+    EXPECT_TRUE(sink.HasWarningContaining(field))
+        << "warning should name the missing field '" << field << "'";
+  }
+
+  std::filesystem::remove_all(path);
+}
+
+// A store written by mdio-cpp carries the full dataset metadata; opening it
+// must keep succeeding without the missing-metadata warning.
+TEST(Dataset, openV3WithDatasetMetadata) {
+  std::string path = "zarrs/cpp_written_v3";
+  std::filesystem::remove_all(path);
+
+  auto json_vars = GetToyExample();
+  auto created = mdio::Dataset::from_json(
+      json_vars, path, mdio::zarr::ZarrVersion::kV3,
+      mdio::constants::kCreateClean);
+  ASSERT_TRUE(created.status().ok()) << created.status();
+
+  CapturingLogSink sink;
+  absl::log_internal::AddLogSink(&sink);
+  auto reopened = mdio::Dataset::Open(path, mdio::constants::kOpen).result();
+  absl::log_internal::RemoveLogSink(&sink);
+
+  ASSERT_TRUE(reopened.status().ok()) << reopened.status();
+  EXPECT_FALSE(sink.HasWarningContaining("missing dataset metadata"))
+      << "store has full metadata; no warning expected";
+
+  std::filesystem::remove_all(path);
+}
+
+// The create path stays strict: a creation spec without the dataset metadata
+// fields is rejected by `Construct`'s schema validation, as before.
+TEST(Dataset, createSpecWithoutDatasetMetadataIsRejected) {
+  auto json_vars = GetToyExample();
+  json_vars["metadata"].erase("name");
+  json_vars["metadata"].erase("apiVersion");
+  json_vars["metadata"].erase("createdOn");
+
+  auto created = mdio::Dataset::from_json(
+      json_vars, "zarrs/creation_no_metadata", mdio::zarr::ZarrVersion::kV3,
+      mdio::constants::kCreateClean);
+  ASSERT_FALSE(created.status().ok())
+      << "creation spec without dataset metadata must be rejected";
+  EXPECT_THAT(created.status().message(),
+              testing::HasSubstr("required property 'name' not found"));
 }
 
 TEST(Dataset, kCreateOverExisting) {
