@@ -1691,4 +1691,187 @@ TEST(Dataset, selRangeWithSameStartStop) {
               testing::HasSubstr("Start and stop values must be different"));
 }
 
+// ============================================================================
+// Dataset::to_json — creation-schema serialization
+// ============================================================================
+
+/**
+ * @brief Returns the variable entry with the given name from a creation JSON,
+ * or a null JSON when absent.
+ */
+nlohmann::json FindVariableEntry(const nlohmann::json& creation_json,
+                                 const std::string& name) {
+  for (const auto& entry : creation_json.at("variables")) {
+    if (entry.at("name") == name) {
+      return entry;
+    }
+  }
+  return nlohmann::json();
+}
+
+TEST_P(DatasetVersionTest, toJsonRoundTrip) {
+  auto json_vars = GetToyExample();
+  auto datasetRes = mdio::Dataset::from_json(json_vars, base_path_, version_,
+                                             mdio::constants::kCreateClean);
+  ASSERT_TRUE(datasetRes.status().ok()) << datasetRes.status();
+  auto ds = datasetRes.value();
+
+  auto jsonRes = ds.to_json();
+  ASSERT_TRUE(jsonRes.status().ok()) << jsonRes.status();
+  nlohmann::json creation_json = jsonRes.value();
+
+  // --- Sampling of the serialized logical schema. ---
+  EXPECT_EQ(creation_json.at("metadata").at("name"), "campos_3d");
+  EXPECT_TRUE(
+      creation_json.at("metadata").at("attributes").contains("textHeader"));
+
+  ASSERT_EQ(creation_json.at("variables").size(), 9);
+
+  const nlohmann::json image = FindVariableEntry(creation_json, "image");
+  ASSERT_FALSE(image.is_null());
+  EXPECT_EQ(image.at("dataType"), "float32");
+  EXPECT_EQ(image.at("dimensions"),
+            nlohmann::json({"inline", "crossline", "depth"}));
+  EXPECT_EQ(
+      image.at("metadata").at("chunkGrid").at("configuration").at("chunkShape"),
+      nlohmann::json({128, 128, 128}));
+  EXPECT_EQ(image.at("compressor").at("cname"), "zstd");
+  EXPECT_EQ(image.at("metadata").at("statsV1").at("count"), 100);
+  EXPECT_EQ(image.at("metadata").at("attributes").at("fizz"), "buzz");
+  EXPECT_EQ(image.at("coordinates"), nlohmann::json({"cdp-x", "cdp-y"}));
+
+  const nlohmann::json velocity = FindVariableEntry(creation_json, "velocity");
+  ASSERT_FALSE(velocity.is_null());
+  EXPECT_EQ(velocity.at("dataType"), "float16");
+  // unitsV1 must keep the stored object form; the in-memory flattened form
+  // ("m/s") is rejected by the creation schema.
+  EXPECT_EQ(velocity.at("metadata").at("unitsV1"),
+            nlohmann::json({{"speed", "m/s"}}));
+
+  const nlohmann::json image_inline =
+      FindVariableEntry(creation_json, "image_inline");
+  ASSERT_FALSE(image_inline.is_null());
+  EXPECT_EQ(image_inline.at("longName"),
+            "inline optimized version of 3d_stack");
+
+  const nlohmann::json image_headers =
+      FindVariableEntry(creation_json, "image_headers");
+  ASSERT_FALSE(image_headers.is_null());
+  EXPECT_EQ(image_headers.at("dimensions"),
+            nlohmann::json({"inline", "crossline"}));
+  const nlohmann::json fields = image_headers.at("dataType").at("fields");
+  ASSERT_EQ(fields.size(), 4);
+  EXPECT_EQ(fields.at(0).at("name"), "cdp-x");
+  EXPECT_EQ(fields.at(0).at("format"), "int32");
+  EXPECT_EQ(fields.at(3).at("name"), "some_scalar");
+  EXPECT_EQ(fields.at(3).at("format"), "float16");
+
+  const nlohmann::json inline_var = FindVariableEntry(creation_json, "inline");
+  ASSERT_FALSE(inline_var.is_null());
+  // Dimension coordinates use the object form so the create path registers
+  // the dimension.
+  const nlohmann::json inline_dimension = {{"name", "inline"}, {"size", 256}};
+  EXPECT_EQ(inline_var.at("dimensions"),
+            nlohmann::json::array({inline_dimension}));
+
+  const nlohmann::json depth = FindVariableEntry(creation_json, "depth");
+  ASSERT_FALSE(depth.is_null());
+  EXPECT_EQ(depth.at("metadata").at("unitsV1"),
+            nlohmann::json({{"length", "m"}}));
+
+  // --- Round-trip: re-create the dataset from the serialized form. ---
+  const std::string copy_path = base_path_ + "_to_json_roundtrip";
+  std::filesystem::remove_all(copy_path);
+  {
+    auto copyRes = mdio::Dataset::from_json(creation_json, copy_path, version_,
+                                            mdio::constants::kCreateClean);
+    ASSERT_TRUE(copyRes.status().ok()) << copyRes.status();
+    auto copy = copyRes.value();
+
+    // get_iterable_accessor() is sorted; get_keys() order is unspecified.
+    EXPECT_EQ(ds.variables.get_iterable_accessor(),
+              copy.variables.get_iterable_accessor());
+
+    // The copy serializes to the same creation JSON: the logical schema
+    // survives the round-trip unchanged.
+    auto copyJsonRes = copy.to_json();
+    ASSERT_TRUE(copyJsonRes.status().ok()) << copyJsonRes.status();
+    EXPECT_EQ(copyJsonRes.value(), creation_json);
+  }
+  // The copy is destroyed here so the kvstore releases its files before the
+  // directory cleanup (NFS silly-rename otherwise keeps them busy).
+  std::filesystem::remove_all(copy_path);
+}
+
+TEST_P(DatasetVersionTest, toJsonOutputPassesSchemaValidation) {
+  auto json_vars = GetToyExample();
+  auto datasetRes = mdio::Dataset::from_json(json_vars, base_path_, version_,
+                                             mdio::constants::kCreateClean);
+  ASSERT_TRUE(datasetRes.status().ok()) << datasetRes.status();
+
+  auto jsonRes = datasetRes.value().to_json();
+  ASSERT_TRUE(jsonRes.status().ok()) << jsonRes.status();
+
+  // to_json() validates internally; pin the contract explicitly against the
+  // creation schema, the same check from_json() runs.
+  nlohmann::json creation_json = jsonRes.value();
+  auto validation = validate_schema(creation_json);
+  EXPECT_TRUE(validation.ok()) << validation;
+}
+
+TEST_P(DatasetVersionTest, toJsonStructArrayRoundTrip) {
+  GTEST_SKIP()
+      << "Prerequisite-gated (api-gap-plan M1): the structured-array write "
+         "dialect ('struct' vs 'structured', zarr-python #2134) and the spec "
+         "dtype derivation for structured variables must land first.";
+}
+
+TEST(Dataset, toJsonRejectsHeaderVariablesLoudly) {
+  // Header variables can only be built through Dataset::Open with a
+  // header-only spec; from_json() has no creation representation for them.
+  const nlohmann::json metadata = {
+      {"name", "header_only"},
+      {"apiVersion", "1.0.0"},
+      {"createdOn", "2023-12-12T15:02:06.413469-06:00"}};
+  const nlohmann::json header_spec = nlohmann::json::parse(R"({
+    "_mdio_header_only": true,
+    "driver": "zarr3",
+    "kvstore": {
+      "driver": "file",
+      "path": "zarrs/to_json_header_only/segy_file_header"
+    },
+    "_mdio_array_metadata": {
+      "shape": [],
+      "data_type": {
+        "name": "fixed_length_utf32",
+        "configuration": {"length_bytes": 4}
+      },
+      "attributes": {
+        "textHeader": "C01 EXAMPLE"
+      }
+    }
+  })");
+
+  auto dsRes =
+      mdio::Dataset::Open(metadata, {header_spec}, mdio::constants::kOpen);
+  ASSERT_TRUE(dsRes.status().ok()) << dsRes.status();
+  auto ds = dsRes.value();
+  ASSERT_EQ(ds.header_variables.get_iterable_accessor().size(), 1);
+
+  auto jsonRes = ds.to_json();
+  ASSERT_FALSE(jsonRes.status().ok());
+  EXPECT_EQ(jsonRes.status().code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_THAT(jsonRes.status().message(),
+              testing::HasSubstr("header variables"));
+}
+
+TEST(Dataset, toJsonHeaderVariableRoundTripPreservation) {
+  GTEST_SKIP()
+      << "Prerequisite-gated (api-gap-plan M1): from_json()/Construct "
+         "rejects header-variable entries because the creation schema has no "
+         "representation for them. Creation-side header variable support "
+         "must land before the round-trip can preserve them; until then "
+         "to_json() fails loudly instead of silently dropping them.";
+}
+
 }  // namespace
