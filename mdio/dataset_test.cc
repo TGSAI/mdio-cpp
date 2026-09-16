@@ -1363,6 +1363,22 @@ TEST(Dataset, openNonExistent) {
       << "Opened a non-existent dataset without error!";
 }
 
+// Opening a path with no store markers (zarr.json and .zgroup both absent)
+// must report the missing store itself, not a .zmetadata parse error from
+// the V2 fallback.
+TEST(Dataset, openNonExistentPathReportsMissingStore) {
+  std::string path = "zarrs/missing_store_test";
+  auto datasetRes = mdio::Dataset::Open(path, mdio::constants::kOpen);
+  ASSERT_FALSE(datasetRes.status().ok())
+      << "Opened a non-existent dataset without error!";
+
+  EXPECT_THAT(datasetRes.status().message(),
+              testing::HasSubstr("not an MDIO store"));
+  EXPECT_THAT(datasetRes.status().message(), testing::HasSubstr(path));
+  EXPECT_THAT(datasetRes.status().message(),
+              testing::Not(testing::HasSubstr(".zmetadata")));
+}
+
 TEST(Dataset, kCreateOverExisting) {
   auto json_vars = GetToyExample();
 

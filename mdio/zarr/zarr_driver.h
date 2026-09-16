@@ -91,8 +91,9 @@ inline Result<ZarrVersion> ParseVersion(const nlohmann::json& version_spec) {
  * @brief Detects the Zarr version from an existing store by examining metadata
  * files.
  * @param kvstore The KvStore to examine.
- * @return Future<ZarrVersion> The detected version or an error if unable to
- * determine.
+ * @return Future<ZarrVersion> The detected version, or an error if the store
+ * has no version markers at all (neither `zarr.json` nor `.zgroup`), which
+ * means the path is not an MDIO store or does not exist.
  */
 inline Future<ZarrVersion> DetectVersion(const tensorstore::KvStore& kvstore) {
   // Check for zarr.json first (V3 indicator)
@@ -112,14 +113,18 @@ inline Future<ZarrVersion> DetectVersion(const tensorstore::KvStore& kvstore) {
         // Check for .zgroup or .zmetadata (V2 indicators)
         auto v2_check = tensorstore::kvstore::Read(kvstore, ".zgroup");
         v2_check.ExecuteWhenReady(
-            [promise = std::move(promise)](
+            [promise = std::move(promise),
+             store_path = kvstore.path](
                 tensorstore::ReadyFuture<tensorstore::kvstore::ReadResult>
                     v2_result) mutable {
               if (v2_result.result().ok() && v2_result.value().has_value()) {
                 promise.SetResult(ZarrVersion::kV2);
               } else {
-                // Default to V2 if we can't determine
-                promise.SetResult(ZarrVersion::kV2);
+                // No version markers at all. Defaulting to V2 here would
+                // surface downstream as a confusing .zmetadata parse error.
+                promise.SetResult(absl::InvalidArgumentError(
+                    "not an MDIO store or path does not exist: " +
+                    store_path));
               }
             });
       });

@@ -136,10 +136,13 @@ from_zmetadata(const std::string& dataset_path,
             [promise = std::move(promise), dataset_path,
              kvs = ready_kvs.value()](
                 tensorstore::ReadyFuture<zarr::ZarrVersion> version_ready) {
-              zarr::ZarrVersion version = zarr::ZarrVersion::kV2;
-              if (version_ready.result().ok()) {
-                version = version_ready.value();
+              // A version detection failure means the path has no store
+              // markers; propagate it instead of falling back to V2.
+              if (!version_ready.result().ok()) {
+                promise.SetResult(version_ready.result().status());
+                return;
               }
+              zarr::ZarrVersion version = version_ready.value();
               auto result_future = zarr::ReadDatasetMetadata(
                   version, dataset_path,
                   tensorstore::MakeReadyFuture<tensorstore::KvStore>(kvs));
