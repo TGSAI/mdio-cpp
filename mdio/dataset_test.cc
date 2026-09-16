@@ -1819,12 +1819,12 @@ TEST_P(DatasetVersionTest, toJsonOutputPassesSchemaValidation) {
   EXPECT_TRUE(validation.ok()) << validation;
 }
 
-TEST_P(DatasetVersionTest, toJsonStructArrayRoundTrip) {
-  GTEST_SKIP()
-      << "Prerequisite-gated (api-gap-plan M1): the structured-array write "
-         "dialect ('struct' vs 'structured', zarr-python #2134) and the spec "
-         "dtype derivation for structured variables must land first.";
-}
+// Struct-array round-trip is covered by toJsonRoundTrip above (field-level
+// assertions + creation-JSON equality). The plan's original gate premise
+// ("spec derivation yields 'byte'") was refuted by the implementation:
+// to_json derives dataType from the zarr dtype metadata, not the top-level
+// spec. The remaining struct limitation is cross-tool (zarr-python write
+// dialect, Issue 01) — not mdio-cpp round-trip.
 
 TEST(Dataset, toJsonRejectsHeaderVariablesLoudly) {
   // Header variables can only be built through Dataset::Open with a
