@@ -170,8 +170,8 @@ from_zmetadata(const std::string& dataset_path,
  * path (`from_json` -> `Construct` -> `validate_dataset`) keeps requiring
  * them, and stores written by mdio-cpp always carry them.
  */
-inline constexpr std::array<std::string_view, 3> kInformationalDatasetFields =
-    {"name", "apiVersion", "createdOn"};
+inline constexpr std::array<std::string_view, 3> kInformationalDatasetFields = {
+    "name", "apiVersion", "createdOn"};
 
 /**
  * @brief Warns when an opened store is missing informational dataset metadata.

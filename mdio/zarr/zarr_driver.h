@@ -113,8 +113,7 @@ inline Future<ZarrVersion> DetectVersion(const tensorstore::KvStore& kvstore) {
         // Check for .zgroup or .zmetadata (V2 indicators)
         auto v2_check = tensorstore::kvstore::Read(kvstore, ".zgroup");
         v2_check.ExecuteWhenReady(
-            [promise = std::move(promise),
-             store_path = kvstore.path](
+            [promise = std::move(promise), store_path = kvstore.path](
                 tensorstore::ReadyFuture<tensorstore::kvstore::ReadResult>
                     v2_result) mutable {
               if (v2_result.result().ok() && v2_result.value().has_value()) {
@@ -123,8 +122,7 @@ inline Future<ZarrVersion> DetectVersion(const tensorstore::KvStore& kvstore) {
                 // No version markers at all. Defaulting to V2 here would
                 // surface downstream as a confusing .zmetadata parse error.
                 promise.SetResult(absl::InvalidArgumentError(
-                    "not an MDIO store or path does not exist: " +
-                    store_path));
+                    "not an MDIO store or path does not exist: " + store_path));
               }
             });
       });

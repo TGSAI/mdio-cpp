@@ -1433,9 +1433,9 @@ TEST(Dataset, openV3WithoutDatasetMetadata) {
   std::filesystem::remove_all(path);
 
   auto json_vars = GetToyExample();
-  auto created = mdio::Dataset::from_json(
-      json_vars, path, mdio::zarr::ZarrVersion::kV3,
-      mdio::constants::kCreateClean);
+  auto created =
+      mdio::Dataset::from_json(json_vars, path, mdio::zarr::ZarrVersion::kV3,
+                               mdio::constants::kCreateClean);
   ASSERT_TRUE(created.status().ok()) << created.status();
 
   RewriteRootAsPythonWritten(path);
@@ -1464,9 +1464,9 @@ TEST(Dataset, openV3WithDatasetMetadata) {
   std::filesystem::remove_all(path);
 
   auto json_vars = GetToyExample();
-  auto created = mdio::Dataset::from_json(
-      json_vars, path, mdio::zarr::ZarrVersion::kV3,
-      mdio::constants::kCreateClean);
+  auto created =
+      mdio::Dataset::from_json(json_vars, path, mdio::zarr::ZarrVersion::kV3,
+                               mdio::constants::kCreateClean);
   ASSERT_TRUE(created.status().ok()) << created.status();
 
   CapturingLogSink sink;
