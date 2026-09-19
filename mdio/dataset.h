@@ -165,8 +165,8 @@ from_zmetadata(const std::string& dataset_path,
 /**
  * @brief Dataset metadata fields that are purely informational.
  *
- * mdio-python 1.x `to_mdio` writes none of them, so the read path tolerates
- * their absence (with a warning) instead of rejecting the store. The create
+ * They do not affect how data is read, so the read path tolerates their
+ * absence (with a warning) instead of rejecting the store. The create
  * path (`from_json` -> `Construct` -> `validate_dataset`) keeps requiring
  * them, and stores written by mdio-cpp always carry them.
  */
@@ -203,8 +203,8 @@ inline void WarnOnMissingDatasetMetadata(const ::nlohmann::json& metadata,
       << "Dataset '" << dataset_path
       << "' is missing dataset metadata field(s): "
       << absl::StrJoin(missing, ", ")
-      << ". Continuing without them; these fields are informational and are "
-         "not written by mdio-python 1.x.";
+      << ". Continuing without them; these fields are informational and do "
+         "not affect how the dataset is read.";
 }
 }  // namespace internal
 
@@ -990,8 +990,8 @@ class Dataset {
     auto [dataset_metadata, json_vars] = params_from_zmetadata;
 
     // The read path tolerates stores without the informational dataset
-    // metadata fields (e.g. written by mdio-python 1.x); warn about the gap.
-    // Creation specs keep going through `Construct`'s strict validation.
+    // metadata fields; warn about the gap. Creation specs keep going
+    // through `Construct`'s strict validation.
     internal::WarnOnMissingDatasetMetadata(dataset_metadata, dataset_path);
 
     return mdio::Dataset::Open(dataset_metadata, json_vars,
