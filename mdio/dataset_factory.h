@@ -30,6 +30,7 @@
 #include "absl/strings/str_split.h"
 #include "mdio/dataset_validator.h"
 #include "mdio/impl.h"
+#include "mdio/variable.h"
 #include "mdio/zarr/zarr.h"
 
 /**
@@ -736,5 +737,387 @@ Construct(nlohmann::json& spec /*NOLINT*/, const std::string& path,
   }
   return std::make_tuple(spec["metadata"], datasetSpec);
 }
+
+namespace mdio {
+namespace internal {
+
+// ==========================================================================
+// Creation-JSON serialization helpers (Dataset::to_json)
+// ==========================================================================
+
+/**
+ * @brief Reverse of zarr::v2::ToZarrDtype: maps a numpy-style dtype string to
+ * the MDIO scalar name.
+ *
+ * One-byte dtypes accept both the "<" and "|" byte-order prefixes (numpy
+ * emits "|" for types that carry no endianness).
+ * @param dtype The numpy-style dtype string (e.g. "<i4").
+ * @return The MDIO scalar name (e.g. "int32"), or InvalidArgumentError for an
+ * unknown dtype.
+ */
+inline Result<std::string> FromZarrV2Dtype(const std::string& dtype) {
+  if (dtype == "<i1" || dtype == "|i1") return "int8";
+  if (dtype == "<i2") return "int16";
+  if (dtype == "<i4") return "int32";
+  if (dtype == "<i8") return "int64";
+  if (dtype == "<u1" || dtype == "|u1") return "uint8";
+  if (dtype == "<u2") return "uint16";
+  if (dtype == "<u4") return "uint32";
+  if (dtype == "<u8") return "uint64";
+  if (dtype == "<f2") return "float16";
+  if (dtype == "<f4") return "float32";
+  if (dtype == "<f8") return "float64";
+  if (dtype == "|b1") return "bool";
+  if (dtype == "<c8") return "complex64";
+  if (dtype == "<c16") return "complex128";
+  return absl::InvalidArgumentError("Unknown Zarr V2 dtype: " + dtype);
+}
+
+/**
+ * @brief Reads the stored user attributes of a Variable from its kvstore.
+ *
+ * V2 stores keep them in "<variable>/.zattrs" and V3 stores in
+ * "<variable>/zarr.json" under "attributes". The stored form is authoritative
+ * for "statsV1"/"unitsV1"/"attributes" because the in-memory UserAttributes
+ * flatten unitsV1 objects (e.g. {"speed": "m/s"} becomes "m/s"), a form the
+ * creation schema rejects.
+ * @param var The Variable to read from.
+ * @param version The Zarr version of the underlying store.
+ * @return The stored attributes object; a missing attribute file yields an
+ * empty object. Read and parse errors are propagated.
+ */
+inline Result<nlohmann::json> ReadStoredAttributes(
+    const Variable<>& var, const zarr::ZarrVersion version) {
+  const tensorstore::KvStore kvstore = var.get_store().kvstore();
+  // The store's kvstore path keeps its trailing slash on local file systems;
+  // joining it with a leading-slash key would form an invalid "//" path.
+  const char* attribute_file =
+      version == zarr::ZarrVersion::kV3 ? "zarr.json" : ".zattrs";
+  const std::string separator =
+      kvstore.path.empty() || kvstore.path.back() == '/' ? "" : "/";
+  auto read_result =
+      tensorstore::kvstore::Read(kvstore, separator + attribute_file).result();
+  if (!read_result.ok()) {
+    return read_result.status();
+  }
+  if (!read_result->has_value()) {
+    return nlohmann::json::object();
+  }
+  const auto parsed =
+      nlohmann::json::parse(std::string(read_result->value), nullptr, false);
+  if (parsed.is_discarded()) {
+    return absl::InvalidArgumentError(
+        "Failed to parse stored attributes of variable '" +
+        var.get_variable_name() + "'.");
+  }
+  if (version == zarr::ZarrVersion::kV3) {
+    if (!parsed.contains("attributes")) {
+      return nlohmann::json::object();
+    }
+    return parsed.at("attributes");
+  }
+  return parsed;
+}
+
+/**
+ * @brief Builds the creation-schema struct fields from a V2 numpy-style dtype
+ * array (e.g. [["cdp-x", "<i4"], ["cdp-y", "<i4"]]).
+ */
+inline Result<nlohmann::json> StructFieldsFromV2Dtype(
+    const nlohmann::json& dtype, const std::string& variable_name) {
+  nlohmann::json fields = nlohmann::json::array();
+  for (const nlohmann::json& pair : dtype) {
+    if (!pair.is_array() || pair.size() != 2 || !pair.at(0).is_string() ||
+        !pair.at(1).is_string()) {
+      return absl::InvalidArgumentError(
+          "Variable '" + variable_name +
+          "' has a malformed V2 struct dtype entry.");
+    }
+    MDIO_ASSIGN_OR_RETURN(const std::string format,
+                          FromZarrV2Dtype(pair.at(1).get<std::string>()));
+    fields.push_back({{"name", pair.at(0)}, {"format", format}});
+  }
+  return nlohmann::json{{"fields", fields}};
+}
+
+/**
+ * @brief Builds the creation-schema struct fields from a V3 data_type
+ * descriptor ({"name": "struct", "configuration": {"fields": [...]}}).
+ */
+inline Result<nlohmann::json> StructFieldsFromV3DataType(
+    const nlohmann::json& data_type, const std::string& variable_name) {
+  if (!data_type.is_object() || !data_type.contains("configuration") ||
+      !data_type.at("configuration").contains("fields")) {
+    return absl::InvalidArgumentError(
+        "Variable '" + variable_name +
+        "' has an unsupported V3 data_type layout.");
+  }
+  nlohmann::json fields = nlohmann::json::array();
+  for (const nlohmann::json& field :
+       data_type.at("configuration").at("fields")) {
+    if (!field.contains("name") || !field.contains("data_type")) {
+      return absl::InvalidArgumentError(
+          "Variable '" + variable_name +
+          "' has a struct field without a name or data_type.");
+    }
+    fields.push_back(
+        {{"name", field.at("name")}, {"format", field.at("data_type")}});
+  }
+  return nlohmann::json{{"fields", fields}};
+}
+
+/**
+ * @brief Builds the creation-schema "dataType" from a Variable's zarr spec.
+ *
+ * Scalars map through the zarr dtype metadata (V2 numpy-style strings, V3
+ * MDIO names). Structured arrays translate their per-field layout into the
+ * schema's {"fields": [{"name", "format"}]} form. The top-level spec "dtype"
+ * is deliberately not used: for structured arrays it is the byte view
+ * ("byte"), which the creation schema rejects.
+ * @param spec The Variable's zarr spec (from Variable::spec()).
+ * @param version The Zarr version of the underlying store.
+ * @param variable_name The Variable name, for error context.
+ * @return The creation-schema dataType (a scalar name or a fields object), or
+ * InvalidArgumentError for an unsupported layout.
+ */
+inline Result<nlohmann::json> DataTypeFromSpec(
+    const nlohmann::json& spec, const zarr::ZarrVersion version,
+    const std::string& variable_name) {
+  const nlohmann::json& metadata = spec.at("metadata");
+  if (version == zarr::ZarrVersion::kV3) {
+    const nlohmann::json& data_type = metadata.at("data_type");
+    if (data_type.is_string()) {
+      return data_type;
+    }
+    return StructFieldsFromV3DataType(data_type, variable_name);
+  }
+  const nlohmann::json& dtype = metadata.at("dtype");
+  if (dtype.is_string()) {
+    return FromZarrV2Dtype(dtype.get<std::string>());
+  }
+  if (dtype.is_array()) {
+    return StructFieldsFromV2Dtype(dtype, variable_name);
+  }
+  return absl::InvalidArgumentError("Variable '" + variable_name +
+                                    "' has an unsupported V2 dtype.");
+}
+
+/**
+ * @brief Builds the creation-schema Blosc compressor from a zarr Blosc
+ * configuration.
+ *
+ * The V2 (numcodecs) integer shuffle form is translated to the schema's
+ * string enum; the V3 form already uses the string enum and passes through.
+ * @param config The Blosc configuration (cname, clevel, shuffle, blocksize,
+ * optional typesize).
+ * @param variable_name The Variable name, for error context.
+ * @return The creation-schema compressor object, or InvalidArgumentError when
+ * a required key is missing.
+ */
+inline Result<nlohmann::json> BloscCompressorFromConfig(
+    const nlohmann::json& config, const std::string& variable_name) {
+  for (const auto* key : {"cname", "clevel", "shuffle", "blocksize"}) {
+    if (!config.contains(key)) {
+      return absl::InvalidArgumentError("Blosc configuration of variable '" +
+                                        variable_name + "' is missing key '" +
+                                        key + "'.");
+    }
+  }
+  nlohmann::json compressor = {
+      {"name", "blosc"},
+      {"cname", config.at("cname")},
+      {"clevel", config.at("clevel")},
+      {"shuffle", blosc_shuffle_to_string(config.at("shuffle"))},
+      {"blocksize", config.at("blocksize")}};
+  if (config.contains("typesize")) {
+    compressor["typesize"] = config.at("typesize");
+  }
+  return compressor;
+}
+
+/**
+ * @brief Builds the creation-schema "compressor" from a Variable's zarr spec.
+ *
+ * V2 stores express compression as metadata.compressor (numcodecs form, null
+ * when uncompressed); V3 stores as a metadata.codecs pipeline ([bytes] alone
+ * means uncompressed, [bytes, blosc] means Blosc). Only Blosc is supported by
+ * the creation path (transform_compressor), so any other codec is reported
+ * instead of being silently dropped.
+ * @param spec The Variable's zarr spec (from Variable::spec()).
+ * @param version The Zarr version of the underlying store.
+ * @param variable_name The Variable name, for error context.
+ * @return The creation-schema compressor object, null when the Variable is
+ * uncompressed, or InvalidArgumentError for an unsupported codec.
+ */
+inline Result<nlohmann::json> CompressorFromSpec(
+    const nlohmann::json& spec, const zarr::ZarrVersion version,
+    const std::string& variable_name) {
+  const nlohmann::json& metadata = spec.at("metadata");
+  if (version == zarr::ZarrVersion::kV3) {
+    if (!metadata.contains("codecs")) {
+      return absl::InvalidArgumentError("Variable '" + variable_name +
+                                        "' has no codecs pipeline.");
+    }
+    for (const nlohmann::json& codec : metadata.at("codecs")) {
+      if (!codec.is_object() || !codec.contains("name")) {
+        return absl::InvalidArgumentError("Variable '" + variable_name +
+                                          "' has a malformed codec.");
+      }
+      if (codec.at("name") == "bytes") {
+        continue;  // Endianness codec, always present.
+      }
+      if (codec.at("name") != "blosc") {
+        return absl::InvalidArgumentError(
+            "Variable '" + variable_name + "' uses codec '" +
+            codec.at("name").get<std::string>() +
+            "', which the creation schema does not support.");
+      }
+      if (!codec.contains("configuration")) {
+        return absl::InvalidArgumentError(
+            "Variable '" + variable_name +
+            "' has a blosc codec without configuration.");
+      }
+      return BloscCompressorFromConfig(codec.at("configuration"),
+                                       variable_name);
+    }
+    return nlohmann::json();  // [bytes] only: uncompressed.
+  }
+  if (!metadata.contains("compressor") || metadata.at("compressor").is_null()) {
+    return nlohmann::json();  // Uncompressed.
+  }
+  const nlohmann::json& compressor = metadata.at("compressor");
+  if (!compressor.contains("id") || compressor.at("id") != "blosc") {
+    return absl::InvalidArgumentError("Variable '" + variable_name +
+                                      "' uses a compressor the creation "
+                                      "schema does not support.");
+  }
+  return BloscCompressorFromConfig(compressor, variable_name);
+}
+
+/**
+ * @brief Reads the chunk grid name from a Variable's zarr spec.
+ *
+ * V3 specs carry it in metadata.chunk_grid.name; V2 "chunks" arrays are
+ * regular grids by definition, so "regular" is returned for them.
+ */
+inline std::string ChunkGridNameFromSpec(const nlohmann::json& spec,
+                                         const zarr::ZarrVersion version) {
+  if (version == zarr::ZarrVersion::kV3) {
+    const nlohmann::json& metadata = spec.at("metadata");
+    if (metadata.contains("chunk_grid") &&
+        metadata.at("chunk_grid").contains("name")) {
+      return metadata.at("chunk_grid").at("name").get<std::string>();
+    }
+  }
+  return "regular";
+}
+
+/**
+ * @brief Builds the creation-schema "dimensions" for a Variable.
+ *
+ * Dimension coordinates (rank 1, name matching the dimension label) use the
+ * object form [{"name", "size"}] so the create path registers the dimension;
+ * every other variable uses the string form. The trailing unlabeled byte axis
+ * of structured arrays is not part of the logical schema and is dropped.
+ * @param var The Variable to serialize.
+ * @return The creation-schema dimensions entry, or InvalidArgumentError when
+ * a dimension is unlabeled in a way the schema cannot express.
+ */
+inline Result<nlohmann::json> DimensionsFromVariable(const Variable<>& var) {
+  const std::string& name = var.get_variable_name();
+  auto dimensions_view = var.dimensions();
+  std::vector<std::string_view> labels(dimensions_view.labels().begin(),
+                                       dimensions_view.labels().end());
+  std::vector<tensorstore::Index> shape(dimensions_view.shape().begin(),
+                                        dimensions_view.shape().end());
+  // Drop the trailing byte axis of structured arrays (unlabeled).
+  while (!labels.empty() && labels.back().empty()) {
+    labels.pop_back();
+    shape.pop_back();
+  }
+  for (const std::string_view& label : labels) {
+    if (label.empty()) {
+      return absl::InvalidArgumentError(
+          "Variable '" + name +
+          "' has an unlabeled dimension that is not "
+          "the trailing byte axis; the creation schema cannot express it.");
+    }
+  }
+  if (labels.size() == 1 && labels.front() == name) {
+    // Dimension coordinate: the object form registers name and size.
+    nlohmann::json dimension = {{"name", name}, {"size", shape.front()}};
+    return nlohmann::json::array({dimension});
+  }
+  return nlohmann::json(std::vector<std::string>(labels.begin(), labels.end()));
+}
+
+/**
+ * @brief Serializes one Variable into a creation-schema variable entry.
+ *
+ * The zarr spec supplies the dataType, dimensions and chunk grid; the stored
+ * attributes ("statsV1"/"unitsV1"/"attributes") are read from the kvstore
+ * because the in-memory forms flatten unitsV1 objects (see
+ * ReadStoredAttributes).
+ * @param var The Variable to serialize.
+ * @param coordinates The non-dimension coordinate names of the Variable.
+ * @param defaults Whether to include default values in the spec
+ * serialization.
+ * @return The creation-schema variable entry, or an error.
+ */
+inline Result<nlohmann::json> VariableToCreationJson(
+    const Variable<>& var, const std::vector<std::string>& coordinates,
+    const IncludeDefaults defaults) {
+  const std::string& name = var.get_variable_name();
+
+  auto spec_result = var.spec();
+  if (!spec_result.ok()) {
+    return spec_result.status();
+  }
+  auto json_result = spec_result.value().ToJson(defaults);
+  if (!json_result.ok()) {
+    return json_result.status();
+  }
+  const nlohmann::json spec = json_result.value();
+  const zarr::ZarrVersion version = zarr::GetVersionFromSpec(spec);
+
+  nlohmann::json entry;
+  entry["name"] = name;
+  MDIO_ASSIGN_OR_RETURN(entry["dataType"],
+                        DataTypeFromSpec(spec, version, name));
+  MDIO_ASSIGN_OR_RETURN(entry["dimensions"], DimensionsFromVariable(var));
+
+  if (!var.get_long_name().empty()) {
+    entry["longName"] = var.get_long_name();
+  }
+
+  MDIO_ASSIGN_OR_RETURN(const nlohmann::json compressor,
+                        CompressorFromSpec(spec, version, name));
+  if (!compressor.is_null()) {
+    entry["compressor"] = compressor;
+  }
+
+  nlohmann::json metadata_block;
+  MDIO_ASSIGN_OR_RETURN(const auto chunk_shape, var.get_chunk_shape());
+  metadata_block["chunkGrid"] = {
+      {"name", ChunkGridNameFromSpec(spec, version)},
+      {"configuration", {{"chunkShape", chunk_shape}}}};
+  MDIO_ASSIGN_OR_RETURN(const nlohmann::json stored_attributes,
+                        ReadStoredAttributes(var, version));
+  for (const auto* attribute_key : {"statsV1", "unitsV1", "attributes"}) {
+    if (stored_attributes.contains(attribute_key) &&
+        !stored_attributes.at(attribute_key).is_null()) {
+      metadata_block[attribute_key] = stored_attributes.at(attribute_key);
+    }
+  }
+  entry["metadata"] = metadata_block;
+
+  if (!coordinates.empty()) {
+    entry["coordinates"] = coordinates;
+  }
+  return entry;
+}
+
+}  // namespace internal
+}  // namespace mdio
 
 #endif  // MDIO_DATASET_FACTORY_H_
