@@ -20,7 +20,7 @@
 /*
 Note before progressing beyond here:
 This string is a direct copy of the MDIO Dataset model schema as emitted by
-mdio-python v1.2.0 (Dataset.model_json_schema()).
+mdio-python v1.2.3 (Dataset.model_json_schema()).
 https://mdio-python.readthedocs.io/en/stable/data_models/version_1.html
 
 It should NOT be modified unless the MDIO Dataset model schema is updated.
@@ -34,7 +34,7 @@ A schema description contains the substring )" (e.g. "...(integer 0-9)"), which
 would prematurely terminate a bare R"( )" literal. Keep the JSON delimiter.
 */
 
-/*NOLINT*/ static const std::string kSchemaVersion = "1.2.0";
+/*NOLINT*/ static const std::string kSchemaVersion = "1.2.3";
 
 // TODO(BrianMichell): Cleanup NOLINT
 // clang-format off
@@ -99,7 +99,7 @@ would prematurely terminate a bare R"( )" literal. Keep the JSON delimiter.
             },
             "clevel": {
                "default": 5,
-               "description": "Compression level (integer 0\u20139)",
+               "description": "Compression level (integer 0–9)",
                "maximum": 9,
                "minimum": 0,
                "title": "Clevel",
@@ -141,20 +141,20 @@ would prematurely terminate a bare R"( )" literal. Keep the JSON delimiter.
          "type": "object"
       },
       "BloscCname": {
-         "description": "Enum for compression library used by blosc.",
+         "description": "Supported Blosc compression algorithms.",
          "enum": [
             "lz4",
             "lz4hc",
             "blosclz",
-            "zstd",
             "snappy",
-            "zlib"
+            "zlib",
+            "zstd"
          ],
          "title": "BloscCname",
          "type": "string"
       },
       "BloscShuffle": {
-         "description": "Enum for shuffle filter used by blosc.",
+         "description": "Supported Blosc shuffle modes.",
          "enum": [
             "noshuffle",
             "shuffle",
@@ -363,6 +363,19 @@ would prematurely terminate a bare R"( )" literal. Keep the JSON delimiter.
                "default": null,
                "description": "User defined attributes as key/value pairs.",
                "title": "Attributes"
+            },
+            "crs": {
+               "anyOf": [
+                  {
+                     "type": "string"
+                  },
+                  {
+                     "type": "null"
+                  }
+               ],
+               "default": null,
+               "description": "Optional coordinate reference system identifier, e.g. 'EPSG:32610'.",
+               "title": "Crs"
             }
          },
          "required": [
@@ -671,7 +684,16 @@ would prematurely terminate a bare R"( )" literal. Keep the JSON delimiter.
          "description": "Structured array field with name, format.",
          "properties": {
             "format": {
-               "$ref": "#/$defs/ScalarType"
+               "anyOf": [
+                  {
+                     "$ref": "#/$defs/ScalarType"
+                  },
+                  {
+                     "pattern": "^[SU][1-9][0-9]*$",
+                     "type": "string"
+                  }
+               ],
+               "title": "Format"
             },
             "name": {
                "title": "Name",
@@ -752,7 +774,7 @@ would prematurely terminate a bare R"( )" literal. Keep the JSON delimiter.
          "description": "Enum class representing units of time.",
          "enum": [
             "ns",
-            "\u00b5s",
+            "μs",
             "ms",
             "s",
             "min",
@@ -785,6 +807,10 @@ would prematurely terminate a bare R"( )" literal. Keep the JSON delimiter.
                "anyOf": [
                   {
                      "$ref": "#/$defs/ScalarType"
+                  },
+                  {
+                     "pattern": "^[SU][1-9][0-9]*$",
+                     "type": "string"
                   },
                   {
                      "$ref": "#/$defs/StructuredType"
@@ -977,7 +1003,7 @@ would prematurely terminate a bare R"( )" literal. Keep the JSON delimiter.
       "VoltageUnitEnum": {
          "description": "Enum class representing units of voltage.",
          "enum": [
-            "\u00b5V",
+            "μV",
             "mV",
             "V"
          ],
