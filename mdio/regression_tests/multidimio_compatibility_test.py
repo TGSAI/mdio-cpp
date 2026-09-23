@@ -50,21 +50,26 @@ def test_multidimio_ingestion(output_path):
     _apply_requested_zarr_format()
     print(f"Using Zarr format: {zarr.config.get('default_zarr_format')}")
 
-    input_url = "http://s3.amazonaws.com/teapot/filt_mig.sgy"
+    # Soda Lake 2010 public shot record (GDR / AWS Open Data). Replaces the
+    # retired Teapot Dome filt_mig.sgy used by older mdio-python docs.
+    input_url = (
+        "https://gdr-data-lake.s3.us-west-2.amazonaws.com/"
+        "soda_lake/raw_seismic/2010/v1.0.0/F7733R1.SGY"
+    )
 
     print(f"Ingesting remote SEG-Y: {input_url} to {output_path}")
 
-    teapot_trace_headers = [
-        HeaderField(name="inline", byte=181, format="int32"),
-        HeaderField(name="crossline", byte=185, format="int32"),
-        HeaderField(name="cdp_x", byte=189, format="int32"),
-        HeaderField(name="cdp_y", byte=193, format="int32"),
+    shot_trace_headers = [
+        HeaderField(name="shot_point", byte=9, format="int32"),
+        HeaderField(name="channel", byte=13, format="int32"),
     ]
 
-    rev0_segy_spec = get_segy_standard(0)
-    teapot_segy_spec = rev0_segy_spec.customize(trace_header_fields=teapot_trace_headers)
+    rev1_segy_spec = get_segy_standard(1.0)
+    soda_lake_segy_spec = rev1_segy_spec.customize(
+        trace_header_fields=shot_trace_headers
+    )
 
-    mdio_template = get_template("PostStack3DTime")
+    mdio_template = get_template("StreamerShotGathers2D")
     unit_ms = TimeUnitModel(time="ms")
     mdio_template.add_units({"time": unit_ms})
 
@@ -77,7 +82,7 @@ def test_multidimio_ingestion(output_path):
                 segy_to_mdio(
                     input_path=input_url,
                     output_path=output_path,
-                    segy_spec=teapot_segy_spec,
+                    segy_spec=soda_lake_segy_spec,
                     mdio_template=mdio_template,
                     overwrite=True,
                 )
@@ -99,7 +104,9 @@ def test_multidimio_ingestion(output_path):
         print("Sizes:", dataset.sizes)
 
         # Verify we can read data variables
-        amp_sample = dataset["amplitude"].isel(inline=0, crossline=0, time=slice(0, 5)).values
+        amp_sample = dataset["amplitude"].isel(
+            shot_point=0, channel=0, time=slice(0, 5)
+        ).values
         print("Sample amplitude data:", amp_sample)
 
         print("Multidimio ingestion and read validation passed.")
