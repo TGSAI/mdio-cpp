@@ -11,7 +11,9 @@ The goal of this user guide is to provide an introduction on how you may want to
 - [Building and installing MDIO](#building-and-installing-mdio)
   - [Standard install](#standard-install)
   - [Monolithic shared library install](#monolithic-shared-library-install)
+  - [Targeting a specific microarchitecture](#targeting-a-specific-microarchitecture)
   - [Consuming the installed package](#consuming-the-installed-package)
+  - [Consuming the monolith without CMake](#consuming-the-monolith-without-cmake)
 - [Concepts](#concepts)
   - [Result based returns](#result-based-returns)
   - [Open options](#open-options)
@@ -147,21 +149,47 @@ $ cmake --build . -j$(nproc) --target install
 This installs the **MDIO** headers, the `mdio::mdio` interface target, and a CMake package config under `/opt/mdio/lib/cmake/mdio`. Because `mdio::mdio` is header-only, a consumer still needs to independently provide the same Tensorstore driver targets **MDIO** was built against (as described in [Linking](#linking)), so this form is best suited to projects that already vendor Tensorstore themselves.
 
 ### Monolithic shared library install
-The monolithic build requires CMake 3.27 *or better*.
+The monolithic build requires CMake 3.27 *or better*. Give the build its own scratch directory, separate from the install prefix, and pass both explicitly:
 ```BASH
-$ cmake -S . -B build-monolith \
+$ cmake -S . -B /path/to/scratch/mdio-build \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_INSTALL_PREFIX="$PWD/install" \
+    -DCMAKE_INSTALL_PREFIX=/path/to/mdio-install \
     -DMDIO_BUILD_MONOLITHIC_SHARED=ON
-$ cmake --build build-monolith --target install -j"$(nproc)"
+$ cmake --build /path/to/scratch/mdio-build --target install -j"$(nproc)"
 ```
+A few things worth knowing before you start:
+- The configure step is slow. Tensorstore's `bazel_to_cmake` translates the entire dependency graph before any compilation happens, so expect several minutes of apparently idle output (`Proto aspect: ...`, `Unknown library: ...`) with no compiler running. Those messages are normal and not errors.
+- Position-independent code is already forced project-wide, so you do not need to add `-fPIC` yourself.
+- The `install` target also builds the **MDIO** test binaries. If you only want the library, build the `mdio_monolith` target and then install as a separate step:
+```BASH
+$ cmake --build /path/to/scratch/mdio-build --target mdio_monolith -j"$(nproc)"
+$ cmake --install /path/to/scratch/mdio-build
+```
+
 This installs:
-- `lib/libmdio_monolith.so` - a single shared object with Tensorstore, Abseil, and the Zarr/file/S3/GCS drivers whole-archived in. Consumers link only this one library, so a process that loads more than one **MDIO**-linked plugin (e.g. via `dlopen`) still gets exactly one copy of Abseil's global state instead of aborting with an ODR violation.
+- `<libdir>/libmdio_monolith.so` - a single shared object with Tensorstore, Abseil, and the Zarr/file/S3/GCS drivers whole-archived in. Consumers link only this one library, so a process that loads more than one **MDIO**-linked plugin (e.g. via `dlopen`) still gets exactly one copy of Abseil's global state instead of aborting with an ODR violation.
 - `include/mdio` - the **MDIO** headers.
-- `include/{tensorstore,absl,riegeli,nlohmann_json,half}-src/...` - the third-party headers **MDIO**'s public headers depend on, vendored so consumers don't need their own copies or network access.
+- `include/{tensorstore,absl,riegeli,nlohmann_json,half}-src/...` - the third-party headers **MDIO**'s public headers depend on, vendored so consumers don't need their own copies or network access. The JSON schema validator header is installed alongside them as `include/nlohmann/json-schema.hpp`.
 - `lib/cmake/mdio` - the CMake package config, including the `mdio::monolith` target.
 
+`<libdir>` is whatever `GNUInstallDirs` selects for the platform: `lib64` on Red Hat family 64-bit distributions, `lib` elsewhere. The CMake package config is always written to `lib/cmake/mdio`, so on a `lib64` platform the library and the package config end up in sibling directories. `find_package(mdio)` handles that on its own, but if you are wiring the install into a hand-written build you should check which one you got, or pin it with `-DCMAKE_INSTALL_LIBDIR=lib`.
+
 The maximum number of slices (`MAX_NUM_SLICES`, see [Slicing](#slicing)) is baked into the installed package at install time. Pass `-DMAX_NUM_SLICES=64` (or whatever value you need) to the first `cmake` invocation above if the default of 32 isn't enough; consumers pick it up automatically and do not need to redefine it.
+
+### Targeting a specific microarchitecture
+The dependency closure contains C, C++, and assembly sources, so a `-march` selection has to be given to both the C and the C++ compiler or the two halves of the build disagree:
+```BASH
+$ cmake -S . -B /path/to/scratch/mdio-build-skylake \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/path/to/mdio-install-skylake \
+    -DCMAKE_C_FLAGS="-march=skylake" \
+    -DCMAKE_CXX_FLAGS="-march=skylake" \
+    -DMDIO_BUILD_MONOLITHIC_SHARED=ON
+$ cmake --build /path/to/scratch/mdio-build-skylake --target install -j"$(nproc)"
+```
+Useful `-march` values are `x86-64` (portable baseline), `sandybridge`, `skylake`, and `armv8.2-a`. The AArch64 build has been exercised with GCC 11, C++17, and `-march=armv8.2-a -O2 -ffast-math`.
+
+Use a separate scratch directory and a separate install prefix per target, both because the CMake cache pins the flags it was configured with and because the resulting `libmdio_monolith.so` is only valid for the architecture it was built for.
 
 ### Consuming the installed package
 Point `CMAKE_PREFIX_PATH` at your install directory (skip this if you installed to a standard system prefix), then `find_package(mdio)` and link `mdio::monolith`:
@@ -180,6 +208,28 @@ $ cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/mdio/install
 $ cmake --build build -j$(nproc)
 ```
 No manual `-I` include paths, `MAX_NUM_SLICES` defines, or Tensorstore driver targets are needed; `mdio::monolith` carries all of it as usage requirements.
+
+Because the monolith is a shared object, the dynamic loader has to be able to find it at run time. Binaries run out of the build tree get that for free from the build RPATH, but anything you install yourself needs either `INSTALL_RPATH` pointed at the **MDIO** `<libdir>` or that directory on the loader's search path.
+
+### Consuming the monolith without CMake
+If your build system cannot consume a CMake package, you have to reproduce by hand what `mdio::monolith` would have carried. Compile with the vendored header trees, in this order:
+```
+-I<prefix>/include
+-I<prefix>/include/tensorstore-src
+-I<prefix>/include/absl-src
+-I<prefix>/include/riegeli-src
+-I<prefix>/include/nlohmann_json-src/include
+-I<prefix>/include/half-src/include
+```
+along with `-std=c++17` and `-DMAX_NUM_SLICES=<value the package was installed with>`.
+
+Link against the one library:
+```
+-L<prefix>/<libdir> -Wl,-rpath,<prefix>/<libdir> -lmdio_monolith -pthread -ldl -lrt -lm
+```
+That is the whole link line. The Tensorstore driver archives and the `--whole-archive` block that a non-monolithic **MDIO** install requires are already inside the `.so`.
+
+One caveat that is easy to lose an afternoon to: nlohmann json encodes its version in an inline namespace (`json_abi_v3_12_0` for the 3.12.0 headers vendored here). If your toolchain also injects a different nlohmann json version, whichever `-I` comes first wins, and a mismatch shows up as a wall of `undefined reference` errors that no amount of link reordering will fix. Make sure `<prefix>/include/nlohmann_json-src/include` precedes any other nlohmann include path, rather than merely appearing somewhere in the list.
 
 ## Concepts
 ### Result based returns
