@@ -49,6 +49,9 @@ target_include_directories(mdio INTERFACE
 )
 
 # Link dependencies
+# NOTE: Abseil libraries (e.g. absl::log used by dataset.h) are provided
+# transitively through EXT_TENSORSTORE::tensorstore, matching the existing
+# convention for absl/strings usage in dataset_factory.h.
 target_link_libraries(mdio INTERFACE
   EXT_TENSORSTORE::tensorstore
   nlohmann_json_schema_validator::nlohmann_json_schema_validator
@@ -291,7 +294,7 @@ mdio_cc_test(
   SRCS
     dataset_test.cc
   COPTS
-    ${mdio_DEFAULT_COPTS} 
+    ${mdio_DEFAULT_COPTS}
   LINKOPTS
     ${mdio_DEFAULT_LINKOPTS}
   DEPS
@@ -307,6 +310,10 @@ mdio_cc_test(
     tensorstore::index_space_index_transform
     tensorstore::util_status_testutil
     nlohmann_json_schema_validator
+    absl::log
+    absl::log_initialize
+    absl::log_sink
+    absl::log_internal_log_sink_set
 )
 
 mdio_cc_test(
