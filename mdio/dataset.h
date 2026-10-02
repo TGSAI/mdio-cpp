@@ -1400,6 +1400,71 @@ class Dataset {
    */
   const nlohmann::json& getMetadata() const { return metadata; }
 
+  /**
+   * @brief Serializes the Dataset into the creation JSON consumed by
+   * from_json().
+   * @details \b Usage
+   * @code
+   *  MDIO_ASSIGN_OR_RETURN(auto creation_json, dataset.to_json());
+   *  auto round_tripped = mdio::Dataset::from_json(
+   *      creation_json, "path/to/copy", mdio::zarr::ZarrVersion::kV3,
+   *      mdio::constants::kCreateClean);
+   * @endcode
+   * The output carries the logical schema: variable names, data types,
+   * dimensions, chunk grids, compressors, long names, coordinates and the
+   * stored user attributes ("statsV1"/"unitsV1"/"attributes"). It is
+   * validated against the dataset creation schema before being returned, so
+   * a successful result can be fed back to from_json().
+   *
+   * Datasets with header variables are rejected: the creation schema has no
+   * representation for them, so serializing them would produce a JSON that
+   * silently drops them when re-created.
+   * @param defaults Whether to include default values in the underlying
+   * spec serialization.
+   * @return The creation JSON on success, or an error.
+   */
+  Result<nlohmann::json> to_json(
+      IncludeDefaults defaults = IncludeDefaults{}) const {
+    if (!header_variables.get_iterable_accessor().empty()) {
+      return absl::InvalidArgumentError(
+          "to_json() does not support datasets with header variables: the "
+          "creation schema consumed by from_json() has no representation for "
+          "them, so the round-trip would silently drop them. Creation-side "
+          "header variable support is a prerequisite.");
+    }
+
+    nlohmann::json out;
+    out["metadata"] = metadata;
+    out["variables"] = nlohmann::json::array();
+    for (const auto& key : variables.get_iterable_accessor()) {
+      auto var_result = variables.at(key);
+      if (!var_result.ok()) {
+        return var_result.status();
+      }
+      std::vector<std::string> var_coordinates;
+      auto coordinate_it = coordinates.find(key);
+      if (coordinate_it != coordinates.end()) {
+        var_coordinates = coordinate_it->second;
+      }
+      MDIO_ASSIGN_OR_RETURN(const nlohmann::json entry,
+                            internal::VariableToCreationJson(
+                                var_result.value(), var_coordinates, defaults));
+      out["variables"].push_back(entry);
+    }
+
+    // The output must be consumable by from_json(); validate a copy because
+    // validate_dataset normalizes legacy compressor keys in place.
+    nlohmann::json validated = out;
+    absl::Status validation = validate_dataset(validated);
+    if (!validation.ok()) {
+      return absl::Status(
+          absl::StatusCode::kInvalidArgument,
+          "to_json() produced a spec that fails creation validation: " +
+              std::string(validation.message()));
+    }
+    return out;
+  }
+
   /// variables contained in the dataset
   VariableCollection variables;
 
